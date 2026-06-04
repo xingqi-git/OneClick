@@ -1,16 +1,15 @@
 ﻿r"""
     启动qtdesigner
-    C:\Users\huang\Documents\PycharmData\venvs\.oneclick\Lib\site-packages\qt6_applications\Qt\bin\designer.exe
-    D:\Users\xingq.FHC-DOMAIN\Documents\MyProjects\venvs\.oneclick\Lib\site-packages\qt6_applications\Qt\bin\designer.exe
+    ./.venv/Lib/site-packages/qt5_applications/Qt/bin/designer.exe
     更新UI命令
-    pyuic6 ./UI/MainWindow.ui -o ./UI/MainWindow.py
-    pyuic6 ./UI/send_cmd_dlg.ui -o ./UI/send_cmd_dlg.py
-    pyuic6 ./UI/send_files_dlg.ui -o ./UI/send_files_dlg.py
-    pyuic6 ./UI/get_files_dlg.ui -o ./UI/get_files_dlg.py
-    pyuic6 ./UI/copy_local_files_dlg.ui -o ./UI/copy_local_files_dlg.py
-    pyuic6 ./UI/edit_servers_dlg.ui -o ./UI/edit_servers_dlg.py
-    pyuic6 ./UI/resource_monitor_dlg.ui -o ./UI/resource_monitor_dlg.py
-    pyuic6 ./UI/GraphMainWindow.ui -o ./UI/GraphMainWindow.py
+    python -m PyQt5.uic.pyuic ./UI/MainWindow.ui -o ./UI/MainWindow.py
+    python -m PyQt5.uic.pyuic ./UI/send_cmd_dlg.ui -o ./UI/send_cmd_dlg.py
+    python -m PyQt5.uic.pyuic ./UI/send_files_dlg.ui -o ./UI/send_files_dlg.py
+    python -m PyQt5.uic.pyuic ./UI/get_files_dlg.ui -o ./UI/get_files_dlg.py
+    python -m PyQt5.uic.pyuic ./UI/copy_local_files_dlg.ui -o ./UI/copy_local_files_dlg.py
+    python -m PyQt5.uic.pyuic ./UI/edit_servers_dlg.ui -o ./UI/edit_servers_dlg.py
+    python -m PyQt5.uic.pyuic ./UI/resource_monitor_dlg.ui -o ./UI/resource_monitor_dlg.py
+    python -m PyQt5.uic.pyuic ./UI/GraphMainWindow.ui -o ./UI/GraphMainWindow.py
 
     打包命令：pyinstaller -F -w OneClick.py --upx-dir "../upx"
     pyinstaller -F -w OneClick.py --upx-dir "D:\WPS云盘\Projects\upx"
