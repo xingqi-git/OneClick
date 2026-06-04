@@ -1,6 +1,6 @@
 ﻿r"""
     启动qtdesigner
-    ./.venv/Lib/site-packages/qt5_applications/Qt/bin/designer.exe
+    .\.venv\Lib\site-packages\qt5_applications\Qt\bin\designer.exe
     更新UI命令
     python -m PyQt5.uic.pyuic ./UI/MainWindow.ui -o ./UI/MainWindow.py
     python -m PyQt5.uic.pyuic ./UI/send_cmd_dlg.ui -o ./UI/send_cmd_dlg.py
