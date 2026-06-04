@@ -1,0 +1,31 @@
+# 忽略 Python 虚拟环境
+venv/
+.venv/
+env/
+ENV/
+
+# 忽略 Python 编译文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 其他环境文件
+.env
+.venv
+.envrc
