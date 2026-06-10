@@ -2066,7 +2066,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
             local proc_cpu=0.00
             if [[ $sys_cpu_diff -gt 0 ]]; then
-                proc_cpu=$(awk -v p="$proc_cpu_diff" -v s="$sys_cpu_diff" \ 'BEGIN{printf "%.2f", (p/s)*100}')
+                proc_cpu=$(awk -v p="$proc_cpu_diff" -v s="$sys_cpu_diff" \ 'BEGIN{printf "%.1f", (p/s)*100}')
             fi
 
             # 进程文件描述符数
@@ -2254,9 +2254,9 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             # 1. 内存（MB）- 缓存OS对象减少调用
             $script:osCache = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
 
-            $totalMemMB = [math]::Round($script:osCache.TotalVisibleMemorySize / 1024, 0)
-            $freeMemMB = [math]::Round($script:osCache.FreePhysicalMemory / 1024, 0)
-            $usedMemMB = [math]::Round($totalMemMB - $freeMemMB, 0)
+            $totalMemMB = [math]::Round($script:osCache.TotalVisibleMemorySize / 1024, 2)
+            $freeMemMB = [math]::Round($script:osCache.FreePhysicalMemory / 1024, 2)
+            $usedMemMB = [math]::Round($totalMemMB - $freeMemMB, 2)
 
             # 2. CPU整体使用率（优化：改用Get-CimInstance，比Get-WmiObject快）
             $cpuLoad = Get-CimInstance -ClassName Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select-Object -ExpandProperty Average
@@ -2321,8 +2321,8 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 }
                 
                 # WorkingSetPrivate 是任务管理器“专用(KB)”的官方属性（单位：KB）
-                $memMB = [math]::Round($wmiProc.WorkingSetPrivate / 1024 / 1024, 0)
-                #$memMB = [math]::Round($process.WorkingSet64 / 1024 / 1024, 0)
+                $memMB = [math]::Round($wmiProc.WorkingSetPrivate / 1024 / 1024, 2)
+                #$memMB = [math]::Round($process.WorkingSet64 / 1024 / 1024, 2)
                 
                 $handle = $process.HandleCount
 
@@ -2339,7 +2339,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     # CPU时间差（秒）
                     $cpuDiffSec = ($cpuTimeNow - $lastCpuTime).TotalSeconds
                     # 计算CPU使用率（核心公式）
-                    $procCpu = [math]::Round(($cpuDiffSec / $intervalSec) / $LOGICAL_CORES * 100, 0)
+                    $procCpu = [math]::Round(($cpuDiffSec / $intervalSec) / $LOGICAL_CORES * 100, 1)
                     $procCpu = [math]::Max(0, [math]::Min(100, $procCpu))
                 }
 
@@ -2412,8 +2412,8 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 							# 拆分单个进程的Data，提取数值（格式：时间,内存,CPU,句柄）
 							$dataParts = $procData.Data -split ','
 							if ($dataParts.Count -eq 4) {
-								$totalMemMB += [int]$dataParts[1]    # 累加内存
-								$totalCpu += [int]$dataParts[2]      # 累加CPU
+								$totalMemMB += [double ]$dataParts[1]    # 累加内存
+								$totalCpu += [double]$dataParts[2]      # 累加CPU
 								$totalHandle += [int]$dataParts[3]   # 累加句柄
 							}
 						}
@@ -2425,7 +2425,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 							Generate-ProcessSummaryHeader -ProcName $singleP | Out-File -FilePath $summaryLog -Encoding utf8
 						}
 						# 组装汇总数据行
-						$summaryData = "$($sysResult.Time),$totalMemMB,$totalCpu,$totalHandle"
+                        $summaryData = "$($sysResult.Time),$($totalMemMB.ToString('0.00')),$($totalCpu.ToString('0.0')),$totalHandle"
 						# 写入汇总日志
 						$summaryData | Out-File -FilePath $summaryLog -Encoding utf8 -Append
 						# 输出汇总日志提示
