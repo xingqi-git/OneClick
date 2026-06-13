@@ -91,6 +91,8 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             proc_items = []
 
         for menu in service_names: # [系统,top_123.log,top_443.log,nms_567.log,top.log]
+            if menu in added_list:
+                continue
             # 因为一个进程名只生成一个菜单栏，所以判断proc_full_name是否已经在了，比如先处理了top_123，进程取了top,其他top开头的不需要处理了
             # 或者有的进程自带下划线pdt_gui_123已经处理了，pdt_gui就不再处理了
             if '_' in menu:
