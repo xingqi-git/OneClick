@@ -30,7 +30,14 @@ OneClick 是一款专为 Windows 平台设计的服务器运维管理工具，�
 - 实时数据采集与日志记录
 - 图形化数据展示（matplotlib 图表）
 
-### 5. 配置管理
+### 5. 弱网模拟
+- 基于 Linux tc（Traffic Control）的网络模拟
+- 支持延迟、丢包、带宽限制、损坏、重复、重排等规则
+- 多规则队列循环执行，支持持续时长与间隔时长
+- 运行日志自动记录，可随时查看历史运行记录
+- 脚本后台执行，不影响其他操作
+
+### 6. 配置管理
 - 服务器配置导入/导出
 - 快捷按钮配置保存
 - 支持多配置文件（JSON格式）
@@ -97,7 +104,8 @@ OneClick/
 │   ├── get_files_dlg.py    # 获取文件对话框
 │   ├── copy_local_files_dlg.py  # 复制本地文件对话框
 │   ├── edit_servers_dlg.py      # 编辑服务器对话框
-│   └── resource_monitor_dlg.py    # 资源监控对话框
+│   ├── resource_monitor_dlg.py    # 资源监控对话框
+│   └── weak_net_control_dlg.py    # 弱网控制对话框
 ├── utils/                 # 工具模块
 │   ├── ssh_tools.py       # SSH 工具类
 │   ├── windows_tools.py    # Windows 工具类
@@ -126,7 +134,21 @@ OneClick/
 
 选择 `快捷按钮类型选择 `资源监控`，配置需要监控的进程和采样频率。
 
-### 5. 查看监控图表
+### 5. 弱网模拟
+
+选择 `快捷按钮类型选择 `弱网`，配置服务器信息后生成快捷按钮。点击按钮进入弱网控制面板：
+
+1. 选择目标网卡（自动获取服务器网卡列表）
+2. 编辑规则：设置延迟、丢包率、带宽限制等参数，以及持续时长和间隔时长
+3. 将规则添加到队列，可调整顺序或删除
+4. 设置循环次数（0 表示无限循环）
+5. 点击 `开始弱网` 执行，脚本将在服务器后台运行
+6. 点击 `查看运行日志` 可查看实时进度和历史记录
+7. 点击 `停止弱网` 终止脚本并清除 tc 规则
+
+**注意**：弱网设置可能导致 SSH 连接中断，请确保已配置好停止条件或保留其他可用连接通道。
+
+### 6. 查看监控图表
 
 监控数据会自动保存到 local/OneClick/ 目录下的 .log 文件中，可通过图表功能查看历史数据。
 
@@ -145,6 +167,7 @@ python -m PyQt5.uic.pyuic ./UI/get_files_dlg.ui -o ./UI/get_files_dlg.py
 python -m PyQt5.uic.pyuic ./UI/copy_local_files_dlg.ui -o ./UI/copy_local_files_dlg.py
 python -m PyQt5.uic.pyuic ./UI/edit_servers_dlg.ui -o ./UI/edit_servers_dlg.py
 python -m PyQt5.uic.pyuic ./UI/resource_monitor_dlg.ui -o ./UI/resource_monitor_dlg.py
+python -m PyQt5.uic.pyuic ./UI/weak_net_control_dlg.ui -o ./UI/weak_net_control_dlg.py
 python -m PyQt5.uic.pyuic ./UI/GraphMainWindow.ui -o ./UI/GraphMainWindow.py
 ```
 
@@ -164,3 +187,5 @@ python -m PyQt5.uic.pyuic ./UI/GraphMainWindow.ui -o ./UI/GraphMainWindow.py
 1. 请妥善保管服务器密码，配置文件包含敏感信息
 2. 建议使用非 root 用户进行日常操作
 3. 监控数据日志文件会随时间增长，请注意定期清理
+4. 弱网功能仅在 Linux 服务器上有效，需要 root 权限或 sudo 权限
+5. 使用弱网功能前请确保了解当前网络环境，避免误操作导致连接中断

@@ -287,6 +287,17 @@ HELP_HTML = '''<!DOCTYPE html>
         </ul>
     </div>
 
+    <div class="feature-card">
+        <div class="feature-title">🌐 5. 弱网模拟</div>
+        <ul>
+            <li><strong>基于 tc：</strong>使用 Linux Traffic Control 进行网络模拟</li>
+            <li><strong>多种规则：</strong>支持延迟、丢包、带宽限制、损坏、重复、重排等</li>
+            <li><strong>规则队列：</strong>多规则循环执行，支持持续时长与间隔时长</li>
+            <li><strong>后台运行：</strong>脚本在服务器后台执行，不影响其他操作</li>
+            <li><strong>运行日志：</strong>自动记录运行进度，支持随时查看历史记录</li>
+        </ul>
+    </div>
+
     <h2>🚀 三、快速上手</h2>
 
     <div class="feature-card">
@@ -414,6 +425,11 @@ HELP_HTML = '''<!DOCTYPE html>
             <td>进程资源实时监控（支持本机/远程服务器）</td>
             <td>性能监控、故障排查</td>
         </tr>
+        <tr>
+            <td><strong>弱网</strong></td>
+            <td>基于 tc 的网络模拟，支持延迟/丢包/带宽等规则</td>
+            <td>网络稳定性测试、故障注入</td>
+        </tr>
     </table>
 
     <h4>3. 资源监控功能详解</h4>
@@ -432,6 +448,37 @@ HELP_HTML = '''<!DOCTYPE html>
         <li>点击按钮启动监控，监控数据自动写入日志文件</li>
         <li>监控数据保存在 <code>local/OneClick/</code> 目录下，可生成趋势图表</li>
     </ol>
+
+    <h4>4. 弱网模拟功能详解</h4>
+    <div class="warning-box">
+        <div class="warning-title">⚠️ 重要提醒</div>
+        <p>弱网设置可能导致 SSH 连接中断，请确保已配置好停止条件或保留其他可用连接通道。</p>
+    </div>
+
+    <ol class="step-list">
+        <li>创建"弱网"类型快捷按钮，配置服务器信息</li>
+        <li>点击按钮进入弱网控制面板，选择目标网卡（自动获取服务器网卡列表）</li>
+        <li>编辑规则：设置延迟、丢包率、带宽限制、损坏率、重复率、重排率等参数</li>
+        <li>设置每条规则的<strong>持续时长</strong>（规则生效时间）和<strong>间隔时长</strong>（恢复正常网络的时间）</li>
+        <li>将规则添加到队列，可调整顺序或删除不需要的规则</li>
+        <li>设置循环次数（0 表示无限循环）</li>
+        <li>点击<code>开始弱网</code>执行，脚本将在服务器后台运行</li>
+        <li>点击<code>查看运行日志</code>可查看实时进度和历史运行记录（日志会自动下载到本地）</li>
+        <li>点击<code>停止弱网</code>终止脚本并清除所有 tc 规则</li>
+    </ol>
+
+    <div class="tip-box">
+        <div class="tip-title">💡 规则参数说明</div>
+        <ul>
+            <li><strong>延迟：</strong>增加网络延迟，单位毫秒（如 100ms）</li>
+            <li><strong>抖动：</strong>延迟的波动范围，需配合延迟使用</li>
+            <li><strong>丢包率：</strong>随机丢弃数据包的百分比（如 5%）</li>
+            <li><strong>损坏率：</strong>随机损坏数据包的百分比</li>
+            <li><strong>重复率：</strong>重复发送数据包的百分比</li>
+            <li><strong>重排率：</strong>乱序发送数据包的百分比</li>
+            <li><strong>带宽：</strong>限制网络带宽（如 1mbit、100kbit）</li>
+        </ul>
+    </div>
 
     <h2>❓ 四、常见问题</h2>
 
@@ -462,7 +509,28 @@ HELP_HTML = '''<!DOCTYPE html>
     <h3>Q5: 如何备份配置？</h3>
     <p>A: 点击菜单栏 <code>配置保存</code> → <code>另存为</code>，选择保存位置即可备份当前配置。配置文件包含服务器列表和所有快捷按钮设置。</p>
 
-    <h3>Q6: Windows 7 无法运行？</h3>
+    <h3>Q6: 弱网功能无法使用？</h3>
+    <p>A: 弱网功能基于 Linux tc 命令，仅限远程 Linux 服务器使用，且需要 root 权限或 sudo 权限。请确认：</p>
+    <ul>
+        <li>目标服务器为 Linux 系统（CentOS、Ubuntu、RHEL 等）</li>
+        <li>当前用户为 root，或在 sudoers 列表中</li>
+        <li>服务器已安装 iproute2 / tc 工具</li>
+        <li>网卡名称正确（如 eth0、ens33 等）</li>
+    </ul>
+
+    <h3>Q7: 弱网开始后 SSH 连接断了怎么办？</h3>
+    <p>A: 弱网设置（特别是高延迟、丢包、带宽限制）可能导致当前 SSH 连接卡顿或中断。建议：</p>
+    <ul>
+        <li>使用另一台机器或带外管理（如 IPMI、KVM）连接服务器</li>
+        <li>设置较短的持续时长和间隔时长，确保有规律的网络恢复窗口</li>
+        <li>提前配置好停止条件，脚本会在到达持续时长后自动恢复正常网络</li>
+        <li>也可通过其他网络路径连接服务器执行 <code>tc qdisc del dev {网卡} root</code> 手动清除规则</li>
+    </ul>
+
+    <h3>Q8: 弱网日志保存在哪里？</h3>
+    <p>A: 服务器上的日志保存在 <code>/home/{用户名}/OneClick/WeakNet/OneClickWeakNet.log</code>。点击"查看运行日志"时会自动下载到本地 <code>local/{IP}/WeakNet/</code> 目录下。</p>
+
+    <h3>Q9: Windows 7 无法运行？</h3>
     <p>A: Windows 7 需要安装 <span class="highlight">SP1 服务包</span> 和相关系统补丁后才能正常运行。</p>
 
     <div class="footer">

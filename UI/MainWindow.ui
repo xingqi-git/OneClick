@@ -293,6 +293,7 @@
     <addaction name="get_file_action"/>
     <addaction name="copy_local_action"/>
     <addaction name="resource_monitor_action"/>
+    <addaction name="weak_net_action"/>
     <addaction name="separator"/>
     <addaction name="get_sc_from_cfg_action"/>
    </widget>
@@ -383,6 +384,11 @@
   <action name="help_action">
    <property name="text">
     <string>使用说明</string>
+   </property>
+  </action>
+  <action name="weak_net_action">
+   <property name="text">
+    <string>弱网</string>
    </property>
   </action>
  </widget>

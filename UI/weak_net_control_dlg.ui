@@ -1,0 +1,466 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Dialog</class>
+ <widget class="QDialog" name="Dialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>620</width>
+    <height>580</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>弱网控制面板</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <layout class="QHBoxLayout" name="nicLayout">
+     <item>
+      <widget class="QLabel" name="nic_label">
+       <property name="text">
+        <string>网卡:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="nic_comboBox">
+       <property name="minimumSize">
+        <size>
+         <width>150</width>
+         <height>0</height>
+        </size>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="refresh_nic_pushButton">
+       <property name="text">
+        <string>刷新</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer_nic">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="tcBtnLayout">
+     <item>
+      <widget class="QPushButton" name="show_tc_pushButton">
+       <property name="text">
+        <string>查看运行日志</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer_tc">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QTextBrowser" name="tc_rule_textBrowser">
+     <property name="maximumSize">
+      <size>
+       <width>16777215</width>
+       <height>80</height>
+      </size>
+     </property>
+     <property name="placeholderText">
+      <string>当前tc规则将显示在这里...</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QGridLayout" name="ruleEditLayout" columnstretch="1,2,1,2">
+     <item row="0" column="0">
+      <widget class="QLabel" name="delay_label">
+       <property name="text">
+        <string>延迟(ms)</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="1">
+      <widget class="QLineEdit" name="delay_lineEdit">
+       <property name="placeholderText">
+        <string>0</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="2">
+      <widget class="QLabel" name="jitter_label">
+       <property name="text">
+        <string>抖动(ms)</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="3">
+      <widget class="QLineEdit" name="jitter_lineEdit">
+       <property name="placeholderText">
+        <string>0</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="0">
+      <widget class="QLabel" name="loss_label">
+       <property name="text">
+        <string>丢包率(%)</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QLineEdit" name="loss_lineEdit">
+       <property name="placeholderText">
+        <string>0</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="2">
+      <widget class="QLabel" name="corrupt_label">
+       <property name="text">
+        <string>损坏率(%)</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="3">
+      <widget class="QLineEdit" name="corrupt_lineEdit">
+       <property name="placeholderText">
+        <string>0</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="0">
+      <widget class="QLabel" name="duplicate_label">
+       <property name="text">
+        <string>重复率(%)</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="1">
+      <widget class="QLineEdit" name="duplicate_lineEdit">
+       <property name="placeholderText">
+        <string>0</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="2">
+      <widget class="QLabel" name="reorder_label">
+       <property name="text">
+        <string>重排率(%)</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="3">
+      <widget class="QLineEdit" name="reorder_lineEdit">
+       <property name="placeholderText">
+        <string>0</string>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="0">
+      <widget class="QLabel" name="rate_label">
+       <property name="text">
+        <string>带宽</string>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="1">
+      <layout class="QHBoxLayout" name="rateLayout">
+       <item>
+        <widget class="QLineEdit" name="rate_lineEdit">
+         <property name="placeholderText">
+          <string>不限速</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="rate_unit_comboBox">
+         <item>
+          <property name="text">
+           <string>kbit</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>mbit</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>gbit</string>
+          </property>
+         </item>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item row="3" column="2">
+      <widget class="QLabel" name="duration_label">
+       <property name="text">
+        <string>持续时长(s)</string>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="3">
+      <widget class="QLineEdit" name="duration_lineEdit">
+       <property name="placeholderText">
+        <string>10</string>
+       </property>
+      </widget>
+     </item>
+     <item row="4" column="0">
+      <widget class="QLabel" name="interval_label">
+       <property name="text">
+        <string>间隔时长(s)</string>
+       </property>
+      </widget>
+     </item>
+     <item row="4" column="1">
+      <widget class="QLineEdit" name="interval_lineEdit">
+       <property name="placeholderText">
+        <string>0</string>
+       </property>
+      </widget>
+     </item>
+     <item row="4" column="2" colspan="2">
+      <widget class="QPushButton" name="add_rule_pushButton">
+       <property name="text">
+        <string>添加到队列</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QTableWidget" name="rule_tableWidget">
+     <property name="selectionBehavior">
+      <enum>QAbstractItemView::SelectRows</enum>
+     </property>
+     <column>
+      <property name="text">
+       <string>序号</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>延迟</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>丢包</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>带宽</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>持续</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>间隔</string>
+      </property>
+     </column>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="queueBtnLayout">
+     <item>
+      <widget class="QPushButton" name="del_rule_pushButton">
+       <property name="text">
+        <string>删除选中</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="move_up_pushButton">
+       <property name="text">
+        <string>上移</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="move_down_pushButton">
+       <property name="text">
+        <string>下移</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="loop_label">
+       <property name="text">
+        <string>循环次数(0=无限):</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="loop_lineEdit">
+       <property name="maximumSize">
+        <size>
+         <width>60</width>
+         <height>16777215</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>0</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer_queue">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="statusLayout" stretch="1,1,2,1,2,1">
+     <item>
+      <spacer name="horizontalSpacer_status">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QLabel" name="ssh_label">
+       <property name="text">
+        <string>连接状态：</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="ssh_stutas_label">
+       <property name="text">
+        <string/>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="script_label">
+       <property name="text">
+        <string>脚本状态：</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="script_stutas_label">
+       <property name="text">
+        <string/>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer_status2">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="actionLayout">
+     <item>
+      <widget class="QPushButton" name="start_pushButton">
+       <property name="text">
+        <string>开始弱网</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="stop_pushButton">
+       <property name="text">
+        <string>停止弱网</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer_action">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>nic_comboBox</tabstop>
+  <tabstop>refresh_nic_pushButton</tabstop>
+  <tabstop>show_tc_pushButton</tabstop>
+  <tabstop>delay_lineEdit</tabstop>
+  <tabstop>jitter_lineEdit</tabstop>
+  <tabstop>loss_lineEdit</tabstop>
+  <tabstop>corrupt_lineEdit</tabstop>
+  <tabstop>duplicate_lineEdit</tabstop>
+  <tabstop>reorder_lineEdit</tabstop>
+  <tabstop>rate_lineEdit</tabstop>
+  <tabstop>rate_unit_comboBox</tabstop>
+  <tabstop>duration_lineEdit</tabstop>
+  <tabstop>interval_lineEdit</tabstop>
+  <tabstop>add_rule_pushButton</tabstop>
+  <tabstop>rule_tableWidget</tabstop>
+  <tabstop>del_rule_pushButton</tabstop>
+  <tabstop>move_up_pushButton</tabstop>
+  <tabstop>move_down_pushButton</tabstop>
+  <tabstop>loop_lineEdit</tabstop>
+  <tabstop>start_pushButton</tabstop>
+  <tabstop>stop_pushButton</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>

@@ -5,7 +5,7 @@ from PyQt5.QtCore import QThread
 from PyQt5.QtWidgets import QDialog, QPushButton, QWidget, QVBoxLayout, QMenu, QFileDialog, QMessageBox, \
     QDialogButtonBox, QAbstractItemView, QHeaderView, QTableWidgetItem, QMainWindow
 
-from UI import MainWindow, send_cmd_dlg, send_files_dlg, get_files_dlg, copy_local_files_dlg, edit_servers_dlg, resource_monitor_dlg
+from UI import MainWindow, send_cmd_dlg, send_files_dlg, get_files_dlg, copy_local_files_dlg, edit_servers_dlg, resource_monitor_dlg, weak_net_control_dlg
 from utils import ssh_tools, windows_tools, qthread_worker
 import GraphWindowLogic
 import json
@@ -21,7 +21,8 @@ sc_class2str = {
     'SendFilesDialog': "发送文件",
     'GetFilesDialog': "获取文件",
     'CopyFilesDialog': "复制本地文件",
-    'ResourceMonitorDialog1': "资源监控"
+    'ResourceMonitorDialog1': "资源监控",
+    'WeakNetDialog1': "弱网"
 }
 
 
@@ -38,6 +39,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.get_file_action.triggered.connect(self.get_file_dialog)  # 获取文件的编辑框
         self.copy_local_action.triggered.connect(self.copy_file_dialog)  # 复制本地文件编辑框
         self.resource_monitor_action.triggered.connect(self.resource_monitor_dialog)  # 资源监控编辑框
+        self.weak_net_action.triggered.connect(self.weak_net_dialog)  # 弱网编辑框
         self.get_sc_from_cfg_action.triggered.connect(self.load_sc_config)  # 从配置文件获取快捷按钮
 
         self.edit_server_action.triggered.connect(self.server_cfg_dialog)  # 服务器列表的编辑框
@@ -187,7 +189,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if button_id:  # 以编辑模式打开时会传入button_id，以创建模式打开时不传参数，会自动传入False
             r_monitor_dlg.setWindowTitle('编辑<资源监控>配置')
             r_monitor_dlg.edit_sc(button_id)
-        # 显示弹出窗口（模态显示，阻止操作主窗口）,按下’生成快捷按钮‘按钮时调用accpted()，主窗口打印日志
+        # 显示弹出窗口（模态显示，阻止操作主窗口）,按下'生成快捷按钮'按钮时调用accpted()，主窗口打印日志
         if r_monitor_dlg.exec_() == QtWidgets.QDialog.DialogCode.Accepted:
             if button_id:
                 self.update_run_info('<资源监控>快捷按钮编辑成功')
@@ -199,6 +201,23 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             else:
                 self.update_run_info('取消创建快捷按钮')
         pass
+
+    def weak_net_dialog(self, button_id=None):
+        """创建弱网的窗口实例"""
+        w_net_dlg = WeakNetDialog1(parent=self)
+        if button_id:
+            w_net_dlg.setWindowTitle('编辑<弱网>配置')
+            w_net_dlg.edit_sc(button_id)
+        if w_net_dlg.exec_() == QtWidgets.QDialog.DialogCode.Accepted:
+            if button_id:
+                self.update_run_info('<弱网>快捷按钮编辑成功')
+            else:
+                self.update_run_info('<弱网>快捷按钮创建成功')
+        else:
+            if button_id:
+                self.update_run_info('取消编辑弱网快捷按钮')
+            else:
+                self.update_run_info('取消创建弱网快捷按钮')
 
     def server_cfg_dialog(self):
         s_cfg_dlg = SetServerDialog(parent=self)
@@ -258,6 +277,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             new_button.clicked.connect(lambda _, para=button_id: self.click_copy_files(para))
         elif config_data['指令类型'] == '资源监控':
             new_button.clicked.connect(lambda _, para=button_id: self.resource_monitor(para))
+        elif config_data['指令类型'] == '弱网':
+            new_button.clicked.connect(lambda _, para=button_id: self.weak_net(para))
         else:
             self.update_run_info(f'添加快捷按钮{button_text}失败:错误的指令类型')
             return
@@ -708,6 +729,20 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if result != QtWidgets.QDialog.DialogCode.Accepted:
                 self.sc_buttons[button_id]['button'].setEnabled(True)
 
+    def weak_net(self, button_id):
+        """按下快捷键时调用，打开弱网控制面板"""
+        if button_id in self.sc_buttons:
+            self.sc_buttons[button_id]['button'].setEnabled(False)
+            weak_net_dlg = WeakNetControlDialog(button_id, self)
+            ip = self.sc_buttons[button_id]['config']['IP']
+            if ip == '':
+                weak_net_dlg.setWindowTitle('本机<弱网>控制面板')
+            else:
+                weak_net_dlg.setWindowTitle(f"{ip}<弱网>控制面板")
+            result = weak_net_dlg.exec_()
+            if result != QtWidgets.QDialog.DialogCode.Accepted:
+                self.sc_buttons[button_id]['button'].setEnabled(True)
+
     def update_run_info(self, text):
         # 将输出添加到run_info_browser, 并打印时间戳
         formatted_datetime = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -788,6 +823,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 '获取文件': self.get_file_dialog,
                 '复制本地文件': self.copy_file_dialog,
                 '资源监控': self.resource_monitor_dialog,
+                '弱网': self.weak_net_dialog,
             }
             sc_ty = self.sc_buttons[button_id]['config']['指令类型']
             dialog_func = ty_dialog.get(sc_ty)  # 假设指令类型是发送命令，dialog_func就是self.cmd1_dialog
@@ -2119,8 +2155,8 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
             def do_local_worker():
                 # 生成本地脚本的地址
-                os.makedirs(self.monitor_data_path + "/OneClick", mode=0o777, exist_ok=True)
-                ps1_path = self.monitor_data_path + "/OneClick/OneClickMonitor.ps1"
+                os.makedirs(self.monitor_data_path + "/Monitor", mode=0o777, exist_ok=True)
+                ps1_path = self.monitor_data_path + "/Monitor/OneClickMonitor.ps1"
 
                 # 构建脚本执行的指令
                 cmd = [
@@ -2243,7 +2279,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
             # 构建并检查指令的内容
             try:
-                user_path = f"/home/{username}/OneClick"
+                user_path = f"/home/{username}/OneClick/Monitor"
                 script_path = f"{user_path}/OneClickMonitor.sh"
                 monitor_cmd = f"{script_path} -o {user_path}"
 
@@ -2274,9 +2310,9 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
             def do_ssh_monitor_worker():
                 try:
-                    # 生成本地IP/OneClick文件夹
-                    os.makedirs(self.monitor_data_path + "/OneClick", mode=0o777, exist_ok=True)
-                    monitor_sh_path = self.monitor_data_path + "/OneClick/OneClickMonitor.sh"
+                    # 生成本地IP/Monitor文件夹
+                    os.makedirs(self.monitor_data_path + "/Monitor", mode=0o777, exist_ok=True)
+                    monitor_sh_path = self.monitor_data_path + "/Monitor/OneClickMonitor.sh"
 
                     # 在本地创建脚本
                     with open(monitor_sh_path, "w", encoding="utf-8", newline='\n') as f:
@@ -2532,15 +2568,16 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             if result == QMessageBox.StandardButton.Yes:
                 try:
                     # 尝试递归删除文件夹及所有内容
-                    shutil.rmtree(self.monitor_data_path)
-                    self.message_info_box(("提示", f"本机监控数据已删除{self.monitor_data_path}"))
-                    self.parent.update_run_info(f"本机监控数据已删除{self.monitor_data_path}")
+                    local_monitor_path = self.monitor_data_path + "/Monitor"
+                    shutil.rmtree(local_monitor_path)
+                    self.message_info_box(("提示", f"本机监控数据已删除{local_monitor_path}"))
+                    self.parent.update_run_info(f"本机监控数据已删除{local_monitor_path}")
                 except FileNotFoundError:
-                    # 捕获“文件夹不存在”的异常，不做任何操作
-                    self.message_info_box(("提示", f"没有本机监控数据，无需删除{self.monitor_data_path}"))
+                    # 捕获"文件夹不存在"的异常，不做任何操作
+                    self.message_info_box(("提示", f"没有本机监控数据，无需删除{local_monitor_path}"))
                 except Exception as e:
                     # 捕获其他未知异常
-                    self.message_info_box(("提示", f"出错：文件夹 {self.monitor_data_path} ：{str(e)}"))
+                    self.message_info_box(("提示", f"出错：文件夹 {local_monitor_path} ：{str(e)}"))
                 finally:
                     self.set_all_buttons_enable()
             else:
@@ -2573,22 +2610,23 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 # 清除本地
                 try:
                     # 尝试递归删除文件夹及所有内容
-                    shutil.rmtree(self.monitor_data_path)
-                    self.message_info_box(("提示", f"本机监控数据已删除{self.monitor_data_path}"))
-                    self.parent.update_run_info(f"本机监控数据已删除{self.monitor_data_path}")
+                    local_monitor_path = self.monitor_data_path + "/Monitor"
+                    shutil.rmtree(local_monitor_path)
+                    self.message_info_box(("提示", f"本机监控数据已删除{local_monitor_path}"))
+                    self.parent.update_run_info(f"本机监控数据已删除{local_monitor_path}")
                 except FileNotFoundError:
-                    # 捕获“文件夹不存在”的异常，不做任何操作
-                    self.message_info_box(("提示", f"没有本机监控数据，无需删除{self.monitor_data_path}"))
+                    # 捕获"文件夹不存在"的异常，不做任何操作
+                    self.message_info_box(("提示", f"没有本机监控数据，无需删除{local_monitor_path}"))
                 except Exception as e:
                     # 捕获其他未知异常
-                    self.message_info_box(("提示", f"删除出错：文件夹 {self.monitor_data_path} ：{str(e)}"))
+                    self.message_info_box(("提示", f"删除出错：文件夹 {local_monitor_path} ：{str(e)}"))
 
                 if self.ssh_stutas_label.text() != '已连接':
                     self.message_info_box(("提示", f"未连接服务器，服务器数据未删除"))
                     self.set_all_buttons_enable()
                     return
 
-                user_path = f"/home/{username}/OneClick"
+                user_path = f"/home/{username}/OneClick/Monitor"
 
                 clean_cmd = f"rm -rf {user_path}"
 
@@ -2676,7 +2714,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
         self.set_all_buttons_enable(False)
         # 服务器监控数据的位置
-        user_path = f"/home/{username}/OneClick"
+        user_path = f"/home/{username}/OneClick/Monitor"
 
         # 本地保存路径
         def do_download_data():
@@ -2700,8 +2738,8 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
         def on_download_data_finished(result):
             if result:
-                self.message_info_box(("提示", f"监控数据已下载到{self.monitor_data_path}"))
-                self.parent.update_run_info(f"监控数据已下载到{self.monitor_data_path}")
+                self.message_info_box(("提示", f"监控数据已下载到{self.monitor_data_path}/Monitor"))
+                self.parent.update_run_info(f"监控数据已下载到{self.monitor_data_path}/Monitor")
             self.set_all_buttons_enable()
             thread.quit()
 
@@ -2759,7 +2797,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
     def display_resource(self):
         if self.data_dir_name != 'local':
             self.message_info_box(("提示", "仅处理已下载的监控数据"))
-        data_path = self.monitor_data_path + '/OneClick'
+        data_path = self.monitor_data_path + '/Monitor'
         g_window = GraphWindowLogic.GraphWindow(data_path, self)
 
         g_window.destroyed.connect(
@@ -2807,6 +2845,609 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
         event.accept()
 
+
+class WeakNetDialog1(SendCMDDialog):
+    """继承SendCMDDialog，移除指令内容，用于配置弱网按钮的服务器信息"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("添加<弱网>配置")
+        self.resize(420, 230)
+        # 移除指令输入框
+        self.label_7.setParent(None)
+        self.label_7.deleteLater()
+        self.cmd_TextEdit.setParent(None)
+        self.cmd_TextEdit.deleteLater()
+
+    def create_sc(self):
+        text_list = [
+            self.linux_ip_lineEdit,
+            self.username_lineEdit,
+            self.passwd_lineEdit,
+            self.sshport_lineEdit,
+            self.sc_name_lineEdit
+        ]
+        for t in text_list:
+            t.setStyleSheet("")
+        for t in text_list:
+            if not t.text().strip():
+                t.setStyleSheet("QLineEdit { border: 2px solid red; }")
+                return
+
+        self.sc_cfg['指令类型'] = sc_class2str[self.__class__.__name__]
+        self.sc_cfg['IP'] = self.linux_ip_lineEdit.text()
+        self.sc_cfg['用户名'] = self.username_lineEdit.text()
+        self.sc_cfg['密码'] = self.passwd_lineEdit.text()
+        self.sc_cfg['端口'] = self.sshport_lineEdit.text()
+        self.sc_cfg['规则列表'] = []
+        self.sc_cfg['循环次数'] = '0'
+        self.sc_cfg['指令名称'] = self.sc_name_lineEdit.text()
+
+        if self.parent:
+            if hasattr(self, 'button_id'):
+                self.parent.edit_button(self.sc_cfg, self.button_id)
+            else:
+                self.parent.add_button(self.sc_cfg)
+        self.accept()
+
+    def edit_sc(self, button_id):
+        self.button_id = button_id
+        sc_data = self.parent.sc_buttons[button_id]['config']
+        self.linux_ip_lineEdit.setText(sc_data['IP'])
+        self.sshport_lineEdit.setText(sc_data['端口'])
+        self.username_lineEdit.setText(sc_data['用户名'])
+        self.passwd_lineEdit.setText(sc_data['密码'])
+        self.sc_name_lineEdit.setText(sc_data['指令名称'])
+
+
+class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
+    """弱网控制面板"""
+    def __init__(self, button_id, parent=None):
+        super().__init__(parent)
+        self.setupUi(self)
+        self.setWindowFlags(QtCore.Qt.WindowType.Dialog | QtCore.Qt.WindowType.WindowCloseButtonHint)
+
+        self.button_id = button_id
+        self.parent = parent
+        self.rule_queue = []
+        self.ssh_client = ssh_tools.SSHTools()
+        self.stop_flag = False
+        self.work_thread_id = None
+        self.lookup_thread_id = None
+        self.script_running = False
+        self.current_nic = ''
+
+        # 从配置恢复
+        cfg = self.parent.sc_buttons[button_id]['config']
+        self.rule_queue = list(cfg.get('规则列表', []))
+        self.loop_lineEdit.setText(cfg.get('循环次数', '0'))
+
+        self.init_ssh_from_config()
+        self.refresh_rule_table()
+
+        # 信号连接
+        self.refresh_nic_pushButton.clicked.connect(self.refresh_nics)
+        self.add_rule_pushButton.clicked.connect(self.add_rule_to_queue)
+        self.del_rule_pushButton.clicked.connect(self.del_rule_from_queue)
+        self.move_up_pushButton.clicked.connect(self.move_rule_up)
+        self.move_down_pushButton.clicked.connect(self.move_rule_down)
+        self.start_pushButton.clicked.connect(self.start_weak_net)
+        self.stop_pushButton.clicked.connect(self.stop_weak_net)
+        self.show_tc_pushButton.clicked.connect(self.show_weaknet_log)
+
+        self.closeEvent = self.on_close_event
+        self._can_close = True
+
+        self.update_status(('连接中...', '未知'))
+        self.start_status_check()
+
+    def init_ssh_from_config(self):
+        cfg = self.parent.sc_buttons[self.button_id]['config']
+        try:
+            self.ssh_client.ip = cfg['IP']
+            self.ssh_client.port = cfg['端口']
+            self.ssh_client.username = cfg['用户名']
+            self.ssh_client.password = cfg['密码']
+        except Exception as e:
+            self.update_status(('配置错误', '未知'))
+
+    def start_status_check(self):
+        ip = self.parent.sc_buttons[self.button_id]['config']['IP']
+
+        def do_status_check():
+            while True:
+                if self.stop_flag:
+                    return
+                time.sleep(2)
+                if not self.ssh_client.is_connected():
+                    result = self.ssh_client.connect()
+                    if not result:
+                        worker.info_signal.emit(('连接中...', '未知'))
+                        continue
+                try:
+                    # 获取网卡列表（首次或网卡下拉为空时）
+                    if self.nic_comboBox.count() == 0:
+                        stdin, stdout, stderr = self.ssh_client.ssh.exec_command(
+                            "ls /sys/class/net/ | grep -v '^lo$'"
+                        )
+                        nics = stdout.read().decode('utf-8').strip().split('\n')
+                        nics = [n.strip() for n in nics if n.strip()]
+                        worker.log_signal.emit(f'网卡列表: {nics}')
+                        if nics:
+                            worker.info_signal.emit(('已连接', None, nics))
+                    else:
+                        # 仅检查脚本状态
+                        cmd = "ps -ef | grep OneClickWeakNet.sh | grep -v grep | wc -l"
+                        stdin, stdout, stderr = self.ssh_client.ssh.exec_command(cmd)
+                        count = stdout.read().decode('utf-8').strip()
+                        is_running = count and count[-1] != '0'
+                        worker.info_signal.emit(('已连接', '运行中' if is_running else '已停止', None))
+                except Exception as e:
+                    worker.log_signal.emit(f'状态检查失败: {e}')
+                    continue
+
+        def on_info(data):
+            ssh_status = data[0]
+            script_status = data[1] if len(data) > 1 else None
+            nics = data[2] if len(data) > 2 else None
+            self.ssh_stutas_label.setText(ssh_status)
+            if script_status:
+                self.script_stutas_label.setText(script_status)
+            if nics:
+                current = self.nic_comboBox.currentText()
+                self.nic_comboBox.clear()
+                for nic in nics:
+                    self.nic_comboBox.addItem(nic)
+                if current:
+                    idx = self.nic_comboBox.findText(current)
+                    if idx >= 0:
+                        self.nic_comboBox.setCurrentIndex(idx)
+            # 同步脚本运行状态标记
+            if script_status == '运行中' and not self.script_running:
+                self.script_running = True
+            elif script_status == '已停止' and self.script_running:
+                self.script_running = False
+
+        def on_thread_finished():
+            thread.deleteLater()
+            if self.lookup_thread_id in self.parent.sc_threads:
+                self.parent.sc_threads.pop(self.lookup_thread_id)
+            self.lookup_thread_id = None
+
+        worker = qthread_worker.OneClickWorker(do_status_check)
+        thread = QThread()
+        self.parent.thread_count += 1
+        self.lookup_thread_id = f'sc_thread_{self.parent.thread_count}'
+        self.parent.sc_threads[self.lookup_thread_id] = {'worker': worker, 'thread': thread}
+
+        worker.moveToThread(thread)
+        worker.log_signal.connect(self.parent.update_run_info)
+        worker.info_signal.connect(on_info)
+        worker.finished.connect(worker.deleteLater)
+        thread.started.connect(worker.run_task)
+        thread.finished.connect(on_thread_finished)
+        thread.start()
+
+    def refresh_nics(self):
+        if not self.ssh_client.is_connected():
+            self.message_info_box(("提示", "SSH未连接"))
+            return
+        try:
+            stdin, stdout, stderr = self.ssh_client.ssh.exec_command(
+                "ls /sys/class/net/ | grep -v '^lo$'"
+            )
+            nics = stdout.read().decode('utf-8').strip().split('\n')
+            nics = [n.strip() for n in nics if n.strip()]
+            current = self.nic_comboBox.currentText()
+            self.nic_comboBox.clear()
+            for nic in nics:
+                self.nic_comboBox.addItem(nic)
+            if current:
+                idx = self.nic_comboBox.findText(current)
+                if idx >= 0:
+                    self.nic_comboBox.setCurrentIndex(idx)
+            self.parent.update_run_info(f"网卡列表刷新: {nics}")
+        except Exception as e:
+            self.message_info_box(("错误", f"获取网卡失败: {e}"))
+
+    def show_weaknet_log(self):
+        if not self.ssh_client.is_connected():
+            self.message_info_box(("提示", "SSH未连接"))
+            return
+        cfg = self.parent.sc_buttons[self.button_id]['config']
+        ip_name = cfg['IP'] if cfg['IP'] else 'local'
+        local_dir = os.path.join(self.parent.get_default_path(), ip_name, "WeakNet").replace('\\', '/')
+        local_log = local_dir + "/OneClickWeakNet.log"
+        remote_log = f"/home/{self.ssh_client.username}/OneClick/WeakNet/OneClickWeakNet.log"
+
+        try:
+            os.makedirs(local_dir, mode=0o777, exist_ok=True)
+            self.ssh_client.get_files(remote_log, local_dir)
+        except Exception as e:
+            self.parent.update_run_info(f"下载日志失败: {e}")
+
+        try:
+            if os.path.exists(local_log):
+                with open(local_log, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                if content:
+                    self.tc_rule_textBrowser.setPlainText(content)
+                else:
+                    self.tc_rule_textBrowser.setPlainText("日志文件为空")
+            else:
+                self.tc_rule_textBrowser.setPlainText("暂无运行日志（尚未运行过弱网脚本）")
+        except Exception as e:
+            self.tc_rule_textBrowser.setPlainText(f"读取日志失败: {e}")
+
+    def add_rule_to_queue(self):
+        rule = {
+            '延迟': self.delay_lineEdit.text().strip(),
+            '抖动': self.jitter_lineEdit.text().strip(),
+            '丢包率': self.loss_lineEdit.text().strip(),
+            '损坏率': self.corrupt_lineEdit.text().strip(),
+            '重复率': self.duplicate_lineEdit.text().strip(),
+            '重排率': self.reorder_lineEdit.text().strip(),
+            '带宽': self.rate_lineEdit.text().strip(),
+            '带宽单位': self.rate_unit_comboBox.currentText(),
+            '持续时长': self.duration_lineEdit.text().strip(),
+            '间隔时长': self.interval_lineEdit.text().strip(),
+        }
+        if not rule['持续时长']:
+            self.message_info_box(("提示", "持续时长不能为空"))
+            return
+        try:
+            int(rule['持续时长'])
+        except ValueError:
+            self.message_info_box(("提示", "持续时长必须是整数"))
+            return
+        if rule['间隔时长']:
+            try:
+                int(rule['间隔时长'])
+            except ValueError:
+                self.message_info_box(("提示", "间隔时长必须是整数"))
+                return
+        self.rule_queue.append(rule)
+        self.refresh_rule_table()
+
+    def del_rule_from_queue(self):
+        row = self.rule_tableWidget.currentRow()
+        if row < 0 or row >= len(self.rule_queue):
+            return
+        self.rule_queue.pop(row)
+        self.refresh_rule_table()
+
+    def move_rule_up(self):
+        row = self.rule_tableWidget.currentRow()
+        if row <= 0:
+            return
+        self.rule_queue[row], self.rule_queue[row - 1] = self.rule_queue[row - 1], self.rule_queue[row]
+        self.refresh_rule_table()
+        self.rule_tableWidget.selectRow(row - 1)
+
+    def move_rule_down(self):
+        row = self.rule_tableWidget.currentRow()
+        if row < 0 or row >= len(self.rule_queue) - 1:
+            return
+        self.rule_queue[row], self.rule_queue[row + 1] = self.rule_queue[row + 1], self.rule_queue[row]
+        self.refresh_rule_table()
+        self.rule_tableWidget.selectRow(row + 1)
+
+    def refresh_rule_table(self):
+        self.rule_tableWidget.setRowCount(len(self.rule_queue))
+        for i, rule in enumerate(self.rule_queue):
+            delay = rule.get('延迟', '')
+            loss = rule.get('丢包率', '')
+            rate = rule.get('带宽', '')
+            if rate:
+                rate += rule.get('带宽单位', 'kbit')
+            duration = rule.get('持续时长', '')
+            interval = rule.get('间隔时长', '')
+            self.rule_tableWidget.setItem(i, 0, QTableWidgetItem(str(i + 1)))
+            self.rule_tableWidget.setItem(i, 1, QTableWidgetItem(delay + 'ms' if delay else '-'))
+            self.rule_tableWidget.setItem(i, 2, QTableWidgetItem(loss + '%' if loss else '-'))
+            self.rule_tableWidget.setItem(i, 3, QTableWidgetItem(rate if rate else '-'))
+            self.rule_tableWidget.setItem(i, 4, QTableWidgetItem(duration + 's'))
+            self.rule_tableWidget.setItem(i, 5, QTableWidgetItem(interval + 's' if interval else '0s'))
+
+    def build_tc_add_cmd(self, nic, rule):
+        netem_parts = []
+        delay = rule.get('延迟', '').strip()
+        jitter = rule.get('抖动', '').strip()
+        loss = rule.get('丢包率', '').strip()
+        corrupt = rule.get('损坏率', '').strip()
+        duplicate = rule.get('重复率', '').strip()
+        reorder = rule.get('重排率', '').strip()
+        rate = rule.get('带宽', '').strip()
+        rate_unit = rule.get('带宽单位', 'kbit')
+
+        if delay and delay != '0':
+            part = f"delay {delay}ms"
+            if jitter and jitter != '0':
+                part += f" {jitter}ms"
+            netem_parts.append(part)
+        if loss and loss != '0':
+            netem_parts.append(f"loss {loss}%")
+        if corrupt and corrupt != '0':
+            netem_parts.append(f"corrupt {corrupt}%")
+        if duplicate and duplicate != '0':
+            netem_parts.append(f"duplicate {duplicate}%")
+        if reorder and reorder != '0':
+            netem_parts.append(f"reorder {reorder}%")
+
+        has_netem = len(netem_parts) > 0
+        has_rate = bool(rate) and rate != '0'
+        rate_str = f"{rate}{rate_unit}" if has_rate else ""
+
+        if has_rate and has_netem:
+            return (
+                f"tc qdisc add dev {nic} root handle 1: htb default 1 && "
+                f"tc class add dev {nic} parent 1: classid 1:1 htb rate {rate_str} && "
+                f"tc qdisc add dev {nic} parent 1:1 handle 10: netem {' '.join(netem_parts)}"
+            )
+        elif has_rate:
+            return f"tc qdisc add dev {nic} root tbf rate {rate_str} burst 32kbit latency 400ms"
+        elif has_netem:
+            return f"tc qdisc add dev {nic} root netem {' '.join(netem_parts)}"
+        return None
+
+    def generate_script(self, nic, loop_count):
+        log_file = f"/home/{self.ssh_client.username}/OneClick/WeakNet/OneClickWeakNet.log"
+        lines = [
+            '#!/bin/bash',
+            'set -euo pipefail',
+            f'NIC="{nic}"',
+            f'LOOP={loop_count}',
+            f'LOGFILE="{log_file}"',
+            '',
+            'log() {',
+            '    echo "[$(date "+%Y-%m-%d %H:%M:%S")] $*" >> "$LOGFILE"',
+            '}',
+            '',
+            '# 清空旧日志',
+            '> "$LOGFILE"',
+            '',
+            'cleanup() {',
+            '    tc qdisc del dev "$NIC" root 2>/dev/null || true',
+            '    log "弱网脚本已终止，tc规则已清除"',
+            '    exit 0',
+            '}',
+            'trap cleanup SIGINT SIGTERM',
+            '',
+            'log "弱网脚本启动"',
+            f'log "网卡: {nic}"',
+            f'log "循环次数: {loop_count}"',
+            'log "规则队列:"',
+        ]
+        for idx, rule in enumerate(self.rule_queue, 1):
+            parts = []
+            if rule.get('延迟'):
+                parts.append(f"延迟: {rule['延迟']}ms")
+            if rule.get('抖动'):
+                parts.append(f"抖动: {rule['抖动']}ms")
+            if rule.get('丢包率'):
+                parts.append(f"丢包率: {rule['丢包率']}%")
+            if rule.get('损坏率'):
+                parts.append(f"损坏率: {rule['损坏率']}%")
+            if rule.get('重复率'):
+                parts.append(f"重复率: {rule['重复率']}%")
+            if rule.get('重排率'):
+                parts.append(f"重排率: {rule['重排率']}%")
+            if rule.get('带宽'):
+                parts.append(f"带宽: {rule['带宽']}{rule.get('带宽单位', 'kbit')}")
+            parts.append(f"持续: {rule.get('持续时长', '10')}s")
+            parts.append(f"间隔: {rule.get('间隔时长', '0')}s")
+            lines.append(f'log "  [规则{idx}] {" | ".join(parts)}"')
+        lines.append('')
+        lines.append('for i in $(seq 1 $LOOP); do')
+        lines.append('    log "第 $i/$LOOP 次循环开始"')
+        for idx, rule in enumerate(self.rule_queue, 1):
+            tc_cmd = self.build_tc_add_cmd(nic, rule)
+            duration = rule.get('持续时长', '10')
+            interval = rule.get('间隔时长', '0')
+            lines.append(f'    tc qdisc del dev "$NIC" root 2>/dev/null || true')
+            if tc_cmd:
+                lines.append(f'    {tc_cmd}')
+                lines.append(f'    log "  应用规则{idx}: {tc_cmd}"')
+            else:
+                lines.append(f'    log "  规则{idx}无tc参数，仅清除规则"')
+            lines.append(f'    sleep {duration}')
+            lines.append(f'    log "  规则{idx}弱网结束（持续{duration}s），进入间隔{interval}s"')
+            if interval and interval != '0':
+                lines.append(f'    tc qdisc del dev "$NIC" root 2>/dev/null || true')
+                lines.append(f'    sleep {interval}')
+                lines.append(f'    log "  间隔结束（{interval}s）"')
+        lines.append('done')
+        lines.append('')
+        lines.append('log "所有循环已完成，清除tc规则"')
+        lines.append('cleanup')
+        return '\n'.join(lines)
+
+    def start_weak_net(self):
+        if self.script_running:
+            self.message_info_box(("提示", "弱网脚本正在运行，请先停止"))
+            return
+        if not self.rule_queue:
+            self.message_info_box(("提示", "请先添加规则到队列"))
+            return
+        nic = self.nic_comboBox.currentText()
+        if not nic:
+            self.message_info_box(("提示", "请先选择网卡"))
+            return
+
+        reply = QMessageBox.warning(
+            self, "警告",
+            "弱网设置可能导致SSH连接中断！\n"
+            "请确保已配置好停止条件（持续时长/间隔时长），\n"
+            "或在另一终端准备好恢复命令。\n\n"
+            "确定要开始弱网吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            loop_val = self.loop_lineEdit.text().strip()
+            loop_count = int(loop_val) if loop_val else 0
+            if loop_count <= 0:
+                loop_count = 99999999
+        except ValueError:
+            self.message_info_box(("提示", "循环次数必须是整数"))
+            return
+
+        script_content = self.generate_script(nic, loop_count)
+        cfg = self.parent.sc_buttons[self.button_id]['config']
+        username = cfg['用户名']
+        ip_name = cfg['IP'] if cfg['IP'] else 'local'
+        local_dir = os.path.join(self.parent.get_default_path(), ip_name, "WeakNet").replace('\\', '/')
+        user_path = f"/home/{username}/OneClick/WeakNet"
+        script_path = f"{user_path}/OneClickWeakNet.sh"
+        monitor_cmd = f"nohup bash {script_path} >/dev/null 2>&1 & echo $!"
+
+        def do_start():
+            try:
+                os.makedirs(local_dir, mode=0o777, exist_ok=True)
+                local_path = local_dir + "/OneClickWeakNet.sh"
+                with open(local_path, "w", encoding="utf-8", newline='\n') as f:
+                    f.write(script_content)
+                ssh_result = self.ssh_client.connect()
+                if not ssh_result:
+                    worker.info_signal.emit(("提示", "连接服务器失败"))
+                    return False
+                mkdir_cmd = f"mkdir -p \"{user_path}\""
+                stdin, stdout, stderr = self.ssh_client.ssh.exec_command(mkdir_cmd)
+                stdout.read(); stderr.read()
+                send_result = self.ssh_client.send_files(local_path, f"{user_path}/")
+                if not send_result:
+                    worker.info_signal.emit(("提示", "上传脚本失败"))
+                    return False
+            except Exception as e:
+                worker.info_signal.emit(("提示", f"准备脚本失败: {e}"))
+                self.ssh_client.disconnect()
+                return False
+
+            try:
+                stdin, stdout, stderr = self.ssh_client.ssh.exec_command(monitor_cmd)
+                pid = stdout.read().decode().strip()
+                err = stderr.read().decode().strip()
+                self.ssh_client.disconnect()
+                if err:
+                    worker.info_signal.emit(("提示", f"执行指令失败: {err}"))
+                    return False
+                if pid.isdigit():
+                    return True
+                return False
+            except Exception as e:
+                worker.info_signal.emit(("提示", f"执行指令失败: {e}"))
+                self.ssh_client.disconnect()
+                return False
+
+        def on_finished(result):
+            if result:
+                self.message_info_box(("提示", "弱网脚本已启动"))
+                self.parent.update_run_info(f"{cfg['IP']}弱网脚本已启动")
+                self.script_running = True
+            else:
+                self.parent.update_run_info(f"{cfg['IP']}弱网脚本启动失败")
+            thread.quit()
+
+        def on_thread_finished():
+            thread.deleteLater()
+            if self.work_thread_id in self.parent.sc_threads:
+                self.parent.sc_threads.pop(self.work_thread_id)
+            self.work_thread_id = None
+
+        worker = qthread_worker.OneClickWorker(do_start)
+        thread = QThread()
+        self.parent.thread_count += 1
+        self.work_thread_id = f'sc_thread_{self.parent.thread_count}'
+        self.parent.sc_threads[self.work_thread_id] = {'worker': worker, 'thread': thread}
+
+        worker.moveToThread(thread)
+        worker.info_signal.connect(self.message_info_box)
+        worker.log_signal.connect(self.parent.update_run_info)
+        worker.finished.connect(on_finished)
+        worker.finished.connect(worker.deleteLater)
+        thread.started.connect(worker.run_task)
+        thread.finished.connect(on_thread_finished)
+        thread.start()
+
+    def stop_weak_net(self):
+        if not self.script_running:
+            self.message_info_box(("提示", "弱网脚本未在运行"))
+            return
+        stop_cmd = "pkill -f OneClickWeakNet.sh"
+
+        def do_stop():
+            connect_result = self.ssh_client.connect()
+            if not connect_result:
+                worker.info_signal.emit(("提示", "停止失败，连接服务器失败"))
+                return False
+            try:
+                self.ssh_client.ssh.exec_command(stop_cmd)
+                time.sleep(1)
+                self.ssh_client.disconnect()
+                return True
+            except Exception as e:
+                worker.info_signal.emit(("提示", f"停止失败: {e}"))
+                self.ssh_client.disconnect()
+                return False
+
+        def on_finished(result):
+            if result:
+                self.message_info_box(("提示", "弱网已停止"))
+                self.parent.update_run_info("弱网已停止")
+                self.script_running = False
+            thread.quit()
+
+        def on_thread_finished():
+            thread.deleteLater()
+            if self.work_thread_id in self.parent.sc_threads:
+                self.parent.sc_threads.pop(self.work_thread_id)
+            self.work_thread_id = None
+
+        worker = qthread_worker.OneClickWorker(do_stop)
+        thread = QThread()
+        self.parent.thread_count += 1
+        self.work_thread_id = f'sc_thread_{self.parent.thread_count}'
+        self.parent.sc_threads[self.work_thread_id] = {'worker': worker, 'thread': thread}
+
+        worker.moveToThread(thread)
+        worker.info_signal.connect(self.message_info_box)
+        worker.log_signal.connect(self.parent.update_run_info)
+        worker.finished.connect(on_finished)
+        worker.finished.connect(worker.deleteLater)
+        thread.started.connect(worker.run_task)
+        thread.finished.connect(on_thread_finished)
+        thread.start()
+
+    def set_ui_editable(self, editable):
+        pass
+
+    def update_status(self, data):
+        self.ssh_stutas_label.setText(data[0])
+        if len(data) > 1:
+            self.script_stutas_label.setText(data[1])
+
+    def message_info_box(self, data):
+        QMessageBox.information(self, data[0], data[1], QMessageBox.StandardButton.Ok)
+
+    def on_close_event(self, event):
+        if not self._can_close:
+            event.ignore()
+            self.message_info_box(("提示", "操作中，请稍后"))
+            return
+        # 保存配置
+        self.parent.sc_buttons[self.button_id]['config']['规则列表'] = list(self.rule_queue)
+        self.parent.sc_buttons[self.button_id]['config']['循环次数'] = self.loop_lineEdit.text()
+        # 结束线程
+        self.stop_flag = True
+        if self.lookup_thread_id and self.lookup_thread_id in self.parent.sc_threads:
+            self.parent.sc_threads[self.lookup_thread_id]['thread'].quit()
+        if self.work_thread_id and self.work_thread_id in self.parent.sc_threads:
+            self.parent.sc_threads[self.work_thread_id]['thread'].quit()
+        event.accept()
+
+
 class HelpDialog(QDialog):
     """帮助文档对话框"""
     def __init__(self, parent=None):
@@ -2831,5 +3472,7 @@ class HelpDialog(QDialog):
         button_box = QDialogButtonBox(QDialogButtonBox.Ok)
         button_box.accepted.connect(self.accept)
         layout.addWidget(button_box)
+
+
 if __name__ == '__main__':
     pass
