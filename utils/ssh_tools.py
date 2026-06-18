@@ -65,15 +65,6 @@ class SSHTools(object):
                     else:
                         print(f"root切换失败")
                         return False
-                    # output = self.send_get_output_once(f"{self.password}", False)
-                    # print(output)
-                    # if "#" not in output:
-                    #     print(f"root密码错误{output}\n")
-                    #     return False
-                    # else:
-                    #     self.sudo = True
-                    #     print("非root用户已切换root权限")
-                    #     return True
                 else:
                     print(f"不支持sudo -i，切换root权限失败{output}")
                     return False
@@ -225,20 +216,24 @@ class SSHTools(object):
                     break
                 if not self.is_connected():
                     break
-                if self.channel.recv_ready():
-                    output = self.channel.recv(4096).decode().strip()
-                    output = self.purify_output(output, False)
+                try:
+                    if self.channel.recv_ready():
+                        output = self.channel.recv(4096).decode().strip()
+                        output = self.purify_output(output, False)
 
-                    if echo_signal is not None:
-                        echo_signal.emit(output)
+                        if echo_signal is not None:
+                            echo_signal.emit(output)
 
-                    timeout_count = 0  # 重置超时计数器
-                else:
-                    timeout_count += 1
-                    # 无数据超时退出
-                    if timeout_count > timeout * 30:
-                        print(f"超时({timeout}秒)无内容，回显退出")
-                        break
+                        timeout_count = 0  # 重置超时计数器
+                    else:
+                        timeout_count += 1
+                        # 无数据超时退出
+                        if timeout_count > timeout * 30:
+                            print(f"超时({timeout}秒)无内容，回显退出")
+                            break
+                except (AttributeError, EOFError):
+                    # 断开操作把 channel 设为 None 时，直接退出
+                    break
             return True
         except Exception as e:
             print(f"执行命令时出错: {e}")
@@ -496,7 +491,7 @@ class SSHTools(object):
         sorted_dirs = sorted(all_dirs, key=lambda x: len(x), reverse=True)
         created_dirs = set()
 
-        print(f"开始创建服务器临时目录")
+        print("开始创建服务器临时目录")
         for dst_dir in sorted_dirs:
             if self.transfer_stat == 0:
                 print('上传被中止！')
@@ -585,7 +580,7 @@ class SSHTools(object):
         stdout.read()
         stderr.read()
 
-        print("\n上传完成，开始移动文件到目标目录...")
+        print("上传完成，开始移动文件到目标目录...")
 
         target_path = f"{remote_path}/{local_base}"
         if self.username != 'root':
@@ -759,7 +754,7 @@ class SSHTools(object):
         sorted_dirs = sorted(all_dirs, key=lambda x: len(x), reverse=True)
         created_dirs = set()
 
-        print(f"开始创建目录")
+        print("开始创建目录")
         for dst_dir in sorted_dirs:
             if self.transfer_stat == 0:
                 print('下载被中止！')
@@ -852,7 +847,6 @@ class SSHTools(object):
         stderr.read()
 
         print(f"开始下载，大小: {dst_size/1048576:.2f} M")
-        print("传输进度: |          |")
 
         try:
             with SCPClient(self.transport, progress=lambda name, size, sent: self._print_progress(sent, dst_size)) as client:

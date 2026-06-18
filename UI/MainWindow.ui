@@ -166,11 +166,35 @@
        <number>2</number>
       </property>
       <item>
-       <widget class="QLabel" name="run_info_label">
-        <property name="text">
-         <string>运行信息</string>
-        </property>
-       </widget>
+       <layout class="QHBoxLayout" name="horizontalLayout_run_info_header">
+        <item>
+         <widget class="QLabel" name="run_info_label">
+          <property name="text">
+           <string>运行信息</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="horizontalSpacer_run_info">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QCheckBox" name="log_file_checkBox">
+          <property name="text">
+           <string>日志实时写入本地</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </item>
       <item>
        <widget class="QTextBrowser" name="run_info_browser">

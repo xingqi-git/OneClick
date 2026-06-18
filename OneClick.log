@@ -1,0 +1,1417 @@
+[2026-06-17 17:42:48] [INFO] [MainWindow] 文件日志已开启
+[2026-06-17 17:42:50] [INFO] [MainWindow] 文件日志已开启
+[2026-06-18 09:23:45] [INFO] [MainWindow] 文件日志已开启
+[2026-06-18 09:23:48] [INFO] [MainWindow] [DEBUG] 检查连接: is_connected=False
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] starting thread (client mode): 0x45533e80
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Local version/idstring: SSH-2.0-paramiko_2.10.4
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Remote version/idstring: SSH-2.0-OpenSSH_7.4
+[2026-06-18 09:23:48] [INFO] [paramiko.transport] Connected (version 2.0, client OpenSSH_7.4)
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] === Key exchange possibilities ===
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] kex algos: diffie-hellman-group14-sha1, diffie-hellman-group14-sha256, ecdh-sha2-nistp256, curve25519-sha256
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] server key: ssh-rsa, rsa-sha2-512, rsa-sha2-256, ecdsa-sha2-nistp256, ssh-ed25519
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] client encrypt: aes256-ctr, aes192-ctr, aes128-ctr
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] server encrypt: aes256-ctr, aes192-ctr, aes128-ctr
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] client mac: hmac-sha2-512, hmac-sha2-256
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] server mac: hmac-sha2-512, hmac-sha2-256
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] client compress: none, zlib@openssh.com
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] server compress: none, zlib@openssh.com
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] client lang: <none>
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] server lang: <none>
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] kex follows: False
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] === Key exchange agreements ===
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Kex: ecdh-sha2-nistp256
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] HostKey: ssh-ed25519
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Cipher: aes128-ctr
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] MAC: hmac-sha2-256
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Compression: none
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] === End of kex handshake ===
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] kex engine KexNistp256 specified hash_algo <built-in function openssl_sha256>
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Switch to new keys ...
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Adding ssh-ed25519 host key for [192.168.198.2]:22: b'24ad618db0129188fcbb64a5c8d08aec'
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Got EXT_INFO: {'server-sig-algs': b'rsa-sha2-256,rsa-sha2-512'}
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Trying discovered key b'5cd4e8f108050ee4f6cfed98a16476db' in C:\Users\xingq.FHC-DOMAIN/.ssh/id_rsa
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Finalizing pubkey algorithm for key of type 'ssh-rsa'
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Our pubkey algorithm list: ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa']
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Server-side algorithm list: ['rsa-sha2-256', 'rsa-sha2-512']
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Agreed upon 'rsa-sha2-512' pubkey algorithm
+[2026-06-18 09:23:48] [INFO] [paramiko.transport] Authentication (publickey) failed.
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Trying discovered key b'91928894cb1650bf60207672151d07d0' in C:\Users\xingq.FHC-DOMAIN/.ssh/id_ed25519
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:23:48] [INFO] [paramiko.transport] Authentication (publickey) failed.
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:23:48] [INFO] [paramiko.transport] Authentication (password) successful!
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] [chan 0] Max packet in: 32768 bytes
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Received global request "hostkeys-00@openssh.com"
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Rejecting "hostkeys-00@openssh.com" global request from server.
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] [chan 0] Max packet out: 32768 bytes
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Secsh channel 0 opened.
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] [chan 0] Sesch channel 0 request ok
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] [chan 0] Sesch channel 0 request ok
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] [chan 1] Max packet in: 32768 bytes
+[2026-06-18 09:23:48] [INFO] [MainWindow] ssh连接成功
+[2026-06-18 09:23:48] [INFO] [MainWindow] [DEBUG] 连接结果: True
+[2026-06-18 09:23:48] [INFO] [MainWindow] [DEBUG] 网卡数量: 0
+[2026-06-18 09:23:48] [INFO] [MainWindow] [DEBUG] 进入获取网卡分支
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] [chan 1] Max packet out: 32768 bytes
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] Secsh channel 1 opened.
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] [chan 1] Sesch channel 1 request ok
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] [chan 1] EOF received (1)
+[2026-06-18 09:23:48] [DEBUG] [paramiko.transport] [chan 1] EOF sent (1)
+[2026-06-18 09:23:48] [INFO] [MainWindow] [DEBUG] 原始输出: 'eth0\n'
+[2026-06-18 09:23:48] [INFO] [MainWindow] [DEBUG] 解析后网卡: ['eth0']
+[2026-06-18 09:23:48] [INFO] [MainWindow] [DEBUG] 异常: OneClickWorker.log_signal[str, str] signal has 2 argument(s) but 1 provided
+[2026-06-18 09:23:48] [INFO] [MainWindow] [DEBUG] 堆栈: Traceback (most recent call last):
+  File "d:\Users\xingq.FHC-DOMAIN\Desktop\projects\OneClick\MainWindowLogic.py", line 3104, in do_status_check
+    worker.log_signal.emit(f'网卡列表: {nics}')
+TypeError: OneClickWorker.log_signal[str, str] signal has 2 argument(s) but 1 provided
+[2026-06-18 09:23:53] [DEBUG] [paramiko.transport] Sending global request "keepalive@lag.net"
+[2026-06-18 09:23:58] [DEBUG] [paramiko.transport] Sending global request "keepalive@lag.net"
+[2026-06-18 09:24:03] [DEBUG] [paramiko.transport] Sending global request "keepalive@lag.net"
+[2026-06-18 09:24:09] [DEBUG] [paramiko.transport] Sending global request "keepalive@lag.net"
+[2026-06-18 09:24:14] [DEBUG] [paramiko.transport] Sending global request "keepalive@lag.net"
+[2026-06-18 09:24:19] [DEBUG] [paramiko.transport] Sending global request "keepalive@lag.net"
+[2026-06-18 09:24:24] [DEBUG] [paramiko.transport] Sending global request "keepalive@lag.net"
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] starting thread (client mode): 0x493326d0
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] Local version/idstring: SSH-2.0-paramiko_2.10.4
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] Remote version/idstring: SSH-2.0-OpenSSH_7.4
+[2026-06-18 09:24:26] [INFO] [paramiko.transport] Connected (version 2.0, client OpenSSH_7.4)
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] === Key exchange possibilities ===
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] kex algos: diffie-hellman-group14-sha1, diffie-hellman-group14-sha256, ecdh-sha2-nistp256, curve25519-sha256
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] server key: ssh-rsa, rsa-sha2-512, rsa-sha2-256, ecdsa-sha2-nistp256, ssh-ed25519
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] client encrypt: aes256-ctr, aes192-ctr, aes128-ctr
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] server encrypt: aes256-ctr, aes192-ctr, aes128-ctr
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] client mac: hmac-sha2-512, hmac-sha2-256
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] server mac: hmac-sha2-512, hmac-sha2-256
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] client compress: none, zlib@openssh.com
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] server compress: none, zlib@openssh.com
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] client lang: <none>
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] server lang: <none>
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] kex follows: False
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] === Key exchange agreements ===
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] Kex: ecdh-sha2-nistp256
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] HostKey: ssh-ed25519
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] Cipher: aes128-ctr
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] MAC: hmac-sha2-256
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] Compression: none
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] === End of kex handshake ===
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] kex engine KexNistp256 specified hash_algo <built-in function openssl_sha256>
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] Switch to new keys ...
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] Adding ssh-ed25519 host key for [192.168.198.2]:22: b'24ad618db0129188fcbb64a5c8d08aec'
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] Got EXT_INFO: {'server-sig-algs': b'rsa-sha2-256,rsa-sha2-512'}
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] Trying discovered key b'5cd4e8f108050ee4f6cfed98a16476db' in C:\Users\xingq.FHC-DOMAIN/.ssh/id_rsa
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] Finalizing pubkey algorithm for key of type 'ssh-rsa'
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] Our pubkey algorithm list: ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa']
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] Server-side algorithm list: ['rsa-sha2-256', 'rsa-sha2-512']
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] Agreed upon 'rsa-sha2-512' pubkey algorithm
+[2026-06-18 09:24:26] [INFO] [paramiko.transport] Authentication (publickey) failed.
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] Trying discovered key b'91928894cb1650bf60207672151d07d0' in C:\Users\xingq.FHC-DOMAIN/.ssh/id_ed25519
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:24:26] [INFO] [paramiko.transport] Authentication (publickey) failed.
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:24:26] [INFO] [paramiko.transport] Authentication (password) successful!
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] [chan 0] Max packet in: 32768 bytes
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] Received global request "hostkeys-00@openssh.com"
+[2026-06-18 09:24:26] [DEBUG] [paramiko.transport] Rejecting "hostkeys-00@openssh.com" global request from server.
+[2026-06-18 09:24:27] [DEBUG] [paramiko.transport] [chan 0] Max packet out: 32768 bytes
+[2026-06-18 09:24:27] [DEBUG] [paramiko.transport] Secsh channel 0 opened.
+[2026-06-18 09:24:27] [DEBUG] [paramiko.transport] [chan 0] Sesch channel 0 request ok
+[2026-06-18 09:24:27] [DEBUG] [paramiko.transport] [chan 0] Sesch channel 0 request ok
+[2026-06-18 09:24:27] [DEBUG] [paramiko.transport] [chan 1] Max packet in: 32768 bytes
+[2026-06-18 09:24:27] [INFO] [MainWindow] ssh连接成功
+[2026-06-18 09:24:27] [DEBUG] [paramiko.transport] [chan 1] Max packet out: 32768 bytes
+[2026-06-18 09:24:27] [DEBUG] [paramiko.transport] Secsh channel 1 opened.
+[2026-06-18 09:24:27] [DEBUG] [paramiko.transport] [chan 1] Sesch channel 1 request ok
+[2026-06-18 09:24:27] [DEBUG] [paramiko.transport] [chan 1] EOF received (1)
+[2026-06-18 09:24:27] [DEBUG] [paramiko.transport] [chan 1] EOF sent (1)
+[2026-06-18 09:24:28] [DEBUG] [paramiko.transport] [chan 2] Max packet in: 32768 bytes
+[2026-06-18 09:24:28] [DEBUG] [paramiko.transport] [chan 2] Max packet out: 32768 bytes
+[2026-06-18 09:24:28] [DEBUG] [paramiko.transport] Secsh channel 2 opened.
+[2026-06-18 09:24:28] [DEBUG] [paramiko.transport] [chan 2] Sesch channel 2 request ok
+[2026-06-18 09:24:28] [DEBUG] [paramiko.transport] [chan 2] EOF received (2)
+[2026-06-18 09:24:28] [DEBUG] [paramiko.transport] [chan 2] EOF sent (2)
+[2026-06-18 09:24:28] [DEBUG] [paramiko.transport] [chan 3] Max packet in: 32768 bytes
+[2026-06-18 09:24:28] [DEBUG] [paramiko.transport] [chan 3] Max packet out: 32768 bytes
+[2026-06-18 09:24:28] [DEBUG] [paramiko.transport] Secsh channel 3 opened.
+[2026-06-18 09:24:28] [DEBUG] [paramiko.transport] [chan 3] Sesch channel 3 request ok
+[2026-06-18 09:24:28] [DEBUG] [paramiko.transport] [chan 3] EOF received (3)
+[2026-06-18 09:24:28] [DEBUG] [paramiko.transport] [chan 3] EOF sent (3)
+[2026-06-18 09:24:29] [DEBUG] [paramiko.transport] [chan 4] Max packet in: 32768 bytes
+[2026-06-18 09:24:29] [DEBUG] [paramiko.transport] [chan 4] Max packet out: 32768 bytes
+[2026-06-18 09:24:29] [DEBUG] [paramiko.transport] Secsh channel 4 opened.
+[2026-06-18 09:24:29] [DEBUG] [paramiko.transport] [chan 4] Sesch channel 4 request ok
+[2026-06-18 09:24:29] [DEBUG] [paramiko.transport] [chan 4] EOF received (4)
+[2026-06-18 09:24:29] [DEBUG] [paramiko.transport] [chan 4] EOF sent (4)
+[2026-06-18 09:24:29] [DEBUG] [paramiko.transport] [chan 5] Max packet in: 32768 bytes
+[2026-06-18 09:24:29] [DEBUG] [paramiko.transport] [chan 5] Max packet out: 32768 bytes
+[2026-06-18 09:24:29] [DEBUG] [paramiko.transport] Secsh channel 5 opened.
+[2026-06-18 09:24:29] [DEBUG] [paramiko.transport] [chan 5] Sesch channel 5 request ok
+[2026-06-18 09:24:29] [DEBUG] [paramiko.transport] [chan 5] EOF received (5)
+[2026-06-18 09:24:29] [DEBUG] [paramiko.transport] [chan 5] EOF sent (5)
+[2026-06-18 09:24:29] [DEBUG] [paramiko.transport] Sending global request "keepalive@lag.net"
+[2026-06-18 09:24:30] [INFO] [MainWindow] 已保存配置到D:\Users\xingq.FHC-DOMAIN\Desktop\projects\OneClick\config.json
+[2026-06-18 09:24:30] [DEBUG] [paramiko.transport] [chan 0] EOF sent (0)
+[2026-06-18 09:24:30] [DEBUG] [paramiko.transport] [chan 0] EOF sent (0)
+[2026-06-18 09:24:30] [DEBUG] [paramiko.transport] EOF in transport thread
+[2026-06-18 09:25:24] [INFO] [MainWindow] 文件日志已开启
+[2026-06-18 09:25:24] [INFO] [MainWindow] 存在默认配置文件，开始添加服务器和快捷按钮
+[2026-06-18 09:25:24] [INFO] [MainWindow] 批量添加服务器 成功，来自D:/Users/xingq.FHC-DOMAIN/Desktop/projects/OneClick/config.json
+[2026-06-18 09:25:24] [INFO] [MainWindow] 批量添加快捷按钮 成功，来自D:/Users/xingq.FHC-DOMAIN/Desktop/projects/OneClick/config.json
+[2026-06-18 09:25:24] [INFO] [MainWindow] OneClick 启动成功
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] starting thread (client mode): 0xe5f92e80
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Local version/idstring: SSH-2.0-paramiko_2.10.4
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Remote version/idstring: SSH-2.0-OpenSSH_7.4
+[2026-06-18 09:25:27] [INFO] [paramiko.transport] Connected (version 2.0, client OpenSSH_7.4)
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] === Key exchange possibilities ===
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] kex algos: diffie-hellman-group14-sha1, diffie-hellman-group14-sha256, ecdh-sha2-nistp256, curve25519-sha256
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] server key: ssh-rsa, rsa-sha2-512, rsa-sha2-256, ecdsa-sha2-nistp256, ssh-ed25519
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] client encrypt: aes256-ctr, aes192-ctr, aes128-ctr
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] server encrypt: aes256-ctr, aes192-ctr, aes128-ctr
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] client mac: hmac-sha2-512, hmac-sha2-256
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] server mac: hmac-sha2-512, hmac-sha2-256
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] client compress: none, zlib@openssh.com
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] server compress: none, zlib@openssh.com
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] client lang: <none>
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] server lang: <none>
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] kex follows: False
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] === Key exchange agreements ===
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Kex: ecdh-sha2-nistp256
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] HostKey: ssh-ed25519
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Cipher: aes128-ctr
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] MAC: hmac-sha2-256
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Compression: none
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] === End of kex handshake ===
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] kex engine KexNistp256 specified hash_algo <built-in function openssl_sha256>
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Switch to new keys ...
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Adding ssh-ed25519 host key for [192.168.198.2]:22: b'24ad618db0129188fcbb64a5c8d08aec'
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Got EXT_INFO: {'server-sig-algs': b'rsa-sha2-256,rsa-sha2-512'}
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Trying discovered key b'5cd4e8f108050ee4f6cfed98a16476db' in C:\Users\xingq.FHC-DOMAIN/.ssh/id_rsa
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Finalizing pubkey algorithm for key of type 'ssh-rsa'
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Our pubkey algorithm list: ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa']
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Server-side algorithm list: ['rsa-sha2-256', 'rsa-sha2-512']
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Agreed upon 'rsa-sha2-512' pubkey algorithm
+[2026-06-18 09:25:27] [INFO] [paramiko.transport] Authentication (publickey) failed.
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Trying discovered key b'91928894cb1650bf60207672151d07d0' in C:\Users\xingq.FHC-DOMAIN/.ssh/id_ed25519
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:25:27] [INFO] [paramiko.transport] Authentication (publickey) failed.
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:25:27] [INFO] [paramiko.transport] Authentication (password) successful!
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] [chan 0] Max packet in: 32768 bytes
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Received global request "hostkeys-00@openssh.com"
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Rejecting "hostkeys-00@openssh.com" global request from server.
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] [chan 0] Max packet out: 32768 bytes
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Secsh channel 0 opened.
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] [chan 0] Sesch channel 0 request ok
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] [chan 0] Sesch channel 0 request ok
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] [chan 1] Max packet in: 32768 bytes
+[2026-06-18 09:25:27] [INFO] [MainWindow] ssh连接成功
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] [chan 1] Max packet out: 32768 bytes
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] Secsh channel 1 opened.
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] [chan 1] Sesch channel 1 request ok
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] [chan 1] EOF received (1)
+[2026-06-18 09:25:27] [INFO] [MainWindow] 网卡列表: ['eth0']
+[2026-06-18 09:25:27] [DEBUG] [paramiko.transport] [chan 1] EOF sent (1)
+[2026-06-18 09:25:29] [DEBUG] [paramiko.transport] [chan 2] Max packet in: 32768 bytes
+[2026-06-18 09:25:29] [DEBUG] [paramiko.transport] [chan 2] Max packet out: 32768 bytes
+[2026-06-18 09:25:29] [DEBUG] [paramiko.transport] Secsh channel 2 opened.
+[2026-06-18 09:25:29] [DEBUG] [paramiko.transport] [chan 2] Sesch channel 2 request ok
+[2026-06-18 09:25:29] [DEBUG] [paramiko.transport] [chan 2] EOF received (2)
+[2026-06-18 09:25:29] [DEBUG] [paramiko.transport] [chan 2] EOF sent (2)
+[2026-06-18 09:25:29] [DEBUG] [paramiko.transport] [chan 3] Max packet in: 32768 bytes
+[2026-06-18 09:25:29] [DEBUG] [paramiko.transport] [chan 3] Max packet out: 32768 bytes
+[2026-06-18 09:25:29] [DEBUG] [paramiko.transport] Secsh channel 3 opened.
+[2026-06-18 09:25:29] [DEBUG] [paramiko.transport] [chan 3] Sesch channel 3 request ok
+[2026-06-18 09:25:29] [DEBUG] [paramiko.transport] [chan 3] EOF received (3)
+[2026-06-18 09:25:29] [DEBUG] [paramiko.transport] [chan 3] EOF sent (3)
+[2026-06-18 09:25:31] [DEBUG] [paramiko.transport] [chan 4] Max packet in: 32768 bytes
+[2026-06-18 09:25:31] [DEBUG] [paramiko.transport] [chan 4] Max packet out: 32768 bytes
+[2026-06-18 09:25:31] [DEBUG] [paramiko.transport] Secsh channel 4 opened.
+[2026-06-18 09:25:31] [DEBUG] [paramiko.transport] [chan 4] Sesch channel 4 request ok
+[2026-06-18 09:25:31] [DEBUG] [paramiko.transport] [chan 4] EOF received (4)
+[2026-06-18 09:25:31] [DEBUG] [paramiko.transport] [chan 4] EOF sent (4)
+[2026-06-18 09:25:31] [DEBUG] [paramiko.transport] [chan 5] Max packet in: 32768 bytes
+[2026-06-18 09:25:31] [DEBUG] [paramiko.transport] [chan 5] Max packet out: 32768 bytes
+[2026-06-18 09:25:31] [DEBUG] [paramiko.transport] Secsh channel 5 opened.
+[2026-06-18 09:25:31] [DEBUG] [paramiko.transport] [chan 5] Sesch channel 5 request ok
+[2026-06-18 09:25:31] [DEBUG] [paramiko.transport] [chan 5] EOF received (5)
+[2026-06-18 09:25:31] [DEBUG] [paramiko.transport] [chan 5] EOF sent (5)
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] starting thread (client mode): 0xe9ad0460
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Local version/idstring: SSH-2.0-paramiko_2.10.4
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Remote version/idstring: SSH-2.0-OpenSSH_7.4
+[2026-06-18 09:25:33] [INFO] [paramiko.transport] Connected (version 2.0, client OpenSSH_7.4)
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] === Key exchange possibilities ===
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] kex algos: diffie-hellman-group14-sha1, diffie-hellman-group14-sha256, ecdh-sha2-nistp256, curve25519-sha256
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] server key: ssh-rsa, rsa-sha2-512, rsa-sha2-256, ecdsa-sha2-nistp256, ssh-ed25519
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] client encrypt: aes256-ctr, aes192-ctr, aes128-ctr
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] server encrypt: aes256-ctr, aes192-ctr, aes128-ctr
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] client mac: hmac-sha2-512, hmac-sha2-256
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] server mac: hmac-sha2-512, hmac-sha2-256
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] client compress: none, zlib@openssh.com
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] server compress: none, zlib@openssh.com
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] client lang: <none>
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] server lang: <none>
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] kex follows: False
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] === Key exchange agreements ===
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Kex: ecdh-sha2-nistp256
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] HostKey: ssh-ed25519
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Cipher: aes128-ctr
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] MAC: hmac-sha2-256
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Compression: none
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] === End of kex handshake ===
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] kex engine KexNistp256 specified hash_algo <built-in function openssl_sha256>
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Switch to new keys ...
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Adding ssh-ed25519 host key for [192.168.198.2]:22: b'24ad618db0129188fcbb64a5c8d08aec'
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Got EXT_INFO: {'server-sig-algs': b'rsa-sha2-256,rsa-sha2-512'}
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Trying discovered key b'5cd4e8f108050ee4f6cfed98a16476db' in C:\Users\xingq.FHC-DOMAIN/.ssh/id_rsa
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Finalizing pubkey algorithm for key of type 'ssh-rsa'
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Our pubkey algorithm list: ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa']
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Server-side algorithm list: ['rsa-sha2-256', 'rsa-sha2-512']
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Agreed upon 'rsa-sha2-512' pubkey algorithm
+[2026-06-18 09:25:33] [INFO] [paramiko.transport] Authentication (publickey) failed.
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Trying discovered key b'91928894cb1650bf60207672151d07d0' in C:\Users\xingq.FHC-DOMAIN/.ssh/id_ed25519
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:25:33] [INFO] [paramiko.transport] Authentication (publickey) failed.
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:25:33] [INFO] [paramiko.transport] Authentication (password) successful!
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] [chan 0] Max packet in: 32768 bytes
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Received global request "hostkeys-00@openssh.com"
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Rejecting "hostkeys-00@openssh.com" global request from server.
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] [chan 0] Max packet out: 32768 bytes
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Secsh channel 0 opened.
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] [chan 0] Sesch channel 0 request ok
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] [chan 0] Sesch channel 0 request ok
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] [chan 1] Max packet in: 32768 bytes
+[2026-06-18 09:25:33] [INFO] [MainWindow] ssh连接成功
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] [chan 1] Max packet out: 32768 bytes
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] Secsh channel 1 opened.
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] [chan 1] Sesch channel 1 request ok
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] [chan 1] EOF received (1)
+[2026-06-18 09:25:33] [DEBUG] [paramiko.transport] [chan 1] EOF sent (1)
+[2026-06-18 09:25:34] [DEBUG] [paramiko.transport] [chan 2] Max packet in: 32768 bytes
+[2026-06-18 09:25:34] [DEBUG] [paramiko.transport] [chan 2] Max packet out: 32768 bytes
+[2026-06-18 09:25:34] [DEBUG] [paramiko.transport] Secsh channel 2 opened.
+[2026-06-18 09:25:34] [DEBUG] [paramiko.transport] [chan 2] Sesch channel 2 request ok
+[2026-06-18 09:25:34] [DEBUG] [paramiko.transport] [chan 2] EOF received (2)
+[2026-06-18 09:25:34] [DEBUG] [paramiko.transport] [chan 2] EOF sent (2)
+[2026-06-18 09:25:34] [DEBUG] [paramiko.transport] [chan 3] Max packet in: 32768 bytes
+[2026-06-18 09:25:34] [DEBUG] [paramiko.transport] [chan 3] Max packet out: 32768 bytes
+[2026-06-18 09:25:34] [DEBUG] [paramiko.transport] Secsh channel 3 opened.
+[2026-06-18 09:25:34] [DEBUG] [paramiko.transport] [chan 3] Sesch channel 3 request ok
+[2026-06-18 09:25:34] [DEBUG] [paramiko.transport] [chan 3] EOF received (3)
+[2026-06-18 09:25:34] [DEBUG] [paramiko.transport] [chan 3] EOF sent (3)
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] starting thread (client mode): 0xe9aef610
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Local version/idstring: SSH-2.0-paramiko_2.10.4
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Remote version/idstring: SSH-2.0-OpenSSH_7.4
+[2026-06-18 09:25:36] [INFO] [paramiko.transport] Connected (version 2.0, client OpenSSH_7.4)
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] === Key exchange possibilities ===
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] kex algos: diffie-hellman-group14-sha1, diffie-hellman-group14-sha256, ecdh-sha2-nistp256, curve25519-sha256
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] server key: ssh-rsa, rsa-sha2-512, rsa-sha2-256, ecdsa-sha2-nistp256, ssh-ed25519
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] client encrypt: aes256-ctr, aes192-ctr, aes128-ctr
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] server encrypt: aes256-ctr, aes192-ctr, aes128-ctr
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] client mac: hmac-sha2-512, hmac-sha2-256
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] server mac: hmac-sha2-512, hmac-sha2-256
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] client compress: none, zlib@openssh.com
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] server compress: none, zlib@openssh.com
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] client lang: <none>
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] server lang: <none>
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] kex follows: False
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] === Key exchange agreements ===
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Kex: ecdh-sha2-nistp256
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] HostKey: ssh-ed25519
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Cipher: aes128-ctr
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] MAC: hmac-sha2-256
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Compression: none
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] === End of kex handshake ===
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] kex engine KexNistp256 specified hash_algo <built-in function openssl_sha256>
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Switch to new keys ...
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Adding ssh-ed25519 host key for [192.168.198.2]:22: b'24ad618db0129188fcbb64a5c8d08aec'
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Got EXT_INFO: {'server-sig-algs': b'rsa-sha2-256,rsa-sha2-512'}
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Trying discovered key b'5cd4e8f108050ee4f6cfed98a16476db' in C:\Users\xingq.FHC-DOMAIN/.ssh/id_rsa
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Finalizing pubkey algorithm for key of type 'ssh-rsa'
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Our pubkey algorithm list: ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa']
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Server-side algorithm list: ['rsa-sha2-256', 'rsa-sha2-512']
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Agreed upon 'rsa-sha2-512' pubkey algorithm
+[2026-06-18 09:25:36] [INFO] [paramiko.transport] Authentication (publickey) failed.
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Trying discovered key b'91928894cb1650bf60207672151d07d0' in C:\Users\xingq.FHC-DOMAIN/.ssh/id_ed25519
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:25:36] [INFO] [paramiko.transport] Authentication (publickey) failed.
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] [chan 0] EOF sent (0)
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] [chan 0] EOF sent (0)
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Ignoring message for dead channel 0
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Ignoring message for dead channel 0
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Ignoring message for dead channel 0
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Ignoring message for dead channel 0
+[2026-06-18 09:25:36] [INFO] [paramiko.transport] Authentication (password) successful!
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] [chan 0] Max packet in: 32768 bytes
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Received global request "hostkeys-00@openssh.com"
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Rejecting "hostkeys-00@openssh.com" global request from server.
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] [chan 0] Max packet out: 32768 bytes
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Secsh channel 0 opened.
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] [chan 0] Sesch channel 0 request ok
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] [chan 0] Sesch channel 0 request ok
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] [chan 1] Max packet in: 32768 bytes
+[2026-06-18 09:25:36] [INFO] [MainWindow] ssh连接成功
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] [chan 1] Max packet out: 32768 bytes
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] Secsh channel 1 opened.
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] [chan 1] Sesch channel 1 request ok
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] [chan 1] EOF received (1)
+[2026-06-18 09:25:36] [DEBUG] [paramiko.transport] [chan 1] EOF sent (1)
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 2] Max packet in: 32768 bytes
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 2] Max packet out: 32768 bytes
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Secsh channel 2 opened.
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 2] Sesch channel 2 request ok
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 2] EOF received (2)
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 2] EOF sent (2)
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 3] Max packet in: 32768 bytes
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 3] Max packet out: 32768 bytes
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Secsh channel 3 opened.
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 3] Sesch channel 3 request ok
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 3] EOF received (3)
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 3] EOF sent (3)
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] starting thread (client mode): 0xe9ad0b50
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Local version/idstring: SSH-2.0-paramiko_2.10.4
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Remote version/idstring: SSH-2.0-OpenSSH_7.4
+[2026-06-18 09:25:37] [INFO] [paramiko.transport] Connected (version 2.0, client OpenSSH_7.4)
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] === Key exchange possibilities ===
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] kex algos: diffie-hellman-group14-sha1, diffie-hellman-group14-sha256, ecdh-sha2-nistp256, curve25519-sha256
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] server key: ssh-rsa, rsa-sha2-512, rsa-sha2-256, ecdsa-sha2-nistp256, ssh-ed25519
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] client encrypt: aes256-ctr, aes192-ctr, aes128-ctr
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] server encrypt: aes256-ctr, aes192-ctr, aes128-ctr
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] client mac: hmac-sha2-512, hmac-sha2-256
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] server mac: hmac-sha2-512, hmac-sha2-256
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] client compress: none, zlib@openssh.com
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] server compress: none, zlib@openssh.com
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] client lang: <none>
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] server lang: <none>
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] kex follows: False
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] === Key exchange agreements ===
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Kex: ecdh-sha2-nistp256
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] HostKey: ssh-ed25519
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Cipher: aes128-ctr
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] MAC: hmac-sha2-256
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Compression: none
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] === End of kex handshake ===
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] kex engine KexNistp256 specified hash_algo <built-in function openssl_sha256>
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Switch to new keys ...
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Adding ssh-ed25519 host key for [192.168.198.2]:22: b'24ad618db0129188fcbb64a5c8d08aec'
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Got EXT_INFO: {'server-sig-algs': b'rsa-sha2-256,rsa-sha2-512'}
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Trying discovered key b'5cd4e8f108050ee4f6cfed98a16476db' in C:\Users\xingq.FHC-DOMAIN/.ssh/id_rsa
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Finalizing pubkey algorithm for key of type 'ssh-rsa'
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Our pubkey algorithm list: ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa']
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Server-side algorithm list: ['rsa-sha2-256', 'rsa-sha2-512']
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Agreed upon 'rsa-sha2-512' pubkey algorithm
+[2026-06-18 09:25:37] [INFO] [paramiko.transport] Authentication (publickey) failed.
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Trying discovered key b'91928894cb1650bf60207672151d07d0' in C:\Users\xingq.FHC-DOMAIN/.ssh/id_ed25519
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:25:37] [INFO] [paramiko.transport] Authentication (publickey) failed.
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:25:37] [INFO] [paramiko.transport] Authentication (password) successful!
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 0] Max packet in: 32768 bytes
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Received global request "hostkeys-00@openssh.com"
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Rejecting "hostkeys-00@openssh.com" global request from server.
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 0] Max packet out: 32768 bytes
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Secsh channel 0 opened.
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 0] Sesch channel 0 request ok
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 0] Sesch channel 0 request ok
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 1] Max packet in: 32768 bytes
+[2026-06-18 09:25:37] [INFO] [MainWindow] ssh连接成功
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 1] Max packet out: 32768 bytes
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Secsh channel 1 opened.
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 1] Sesch channel 1 request ok
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 1] EOF received (1)
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 2] Max packet in: 32768 bytes
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 1] EOF sent (1)
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 2] Max packet out: 32768 bytes
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] Secsh channel 2 opened.
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 2] Sesch channel 2 request ok
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 2] EOF received (2)
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 2] EOF sent (2)
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] [chan 0] EOF sent (0)
+[2026-06-18 09:25:37] [DEBUG] [paramiko.transport] EOF in transport thread
+[2026-06-18 09:25:37] [INFO] [MainWindow] ssh断开成功
+[2026-06-18 09:25:38] [DEBUG] [paramiko.transport] [chan 4] Max packet in: 32768 bytes
+[2026-06-18 09:25:38] [DEBUG] [paramiko.transport] [chan 4] Max packet out: 32768 bytes
+[2026-06-18 09:25:38] [DEBUG] [paramiko.transport] Secsh channel 4 opened.
+[2026-06-18 09:25:38] [DEBUG] [paramiko.transport] [chan 4] Sesch channel 4 request ok
+[2026-06-18 09:25:38] [DEBUG] [paramiko.transport] [chan 4] EOF received (4)
+[2026-06-18 09:25:38] [DEBUG] [paramiko.transport] [chan 4] EOF sent (4)
+[2026-06-18 09:25:38] [DEBUG] [paramiko.transport] [chan 5] Max packet in: 32768 bytes
+[2026-06-18 09:25:38] [DEBUG] [paramiko.transport] [chan 5] Max packet out: 32768 bytes
+[2026-06-18 09:25:38] [DEBUG] [paramiko.transport] Secsh channel 5 opened.
+[2026-06-18 09:25:38] [DEBUG] [paramiko.transport] [chan 5] Sesch channel 5 request ok
+[2026-06-18 09:25:38] [DEBUG] [paramiko.transport] [chan 5] EOF received (5)
+[2026-06-18 09:25:38] [DEBUG] [paramiko.transport] [chan 5] EOF sent (5)
+[2026-06-18 09:25:38] [INFO] [MainWindow] 192.168.198.2监控已经停止
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] starting thread (client mode): 0xe9adee20
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Local version/idstring: SSH-2.0-paramiko_2.10.4
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Remote version/idstring: SSH-2.0-OpenSSH_7.4
+[2026-06-18 09:25:39] [INFO] [paramiko.transport] Connected (version 2.0, client OpenSSH_7.4)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] === Key exchange possibilities ===
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] kex algos: diffie-hellman-group14-sha1, diffie-hellman-group14-sha256, ecdh-sha2-nistp256, curve25519-sha256
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] server key: ssh-rsa, rsa-sha2-512, rsa-sha2-256, ecdsa-sha2-nistp256, ssh-ed25519
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] client encrypt: aes256-ctr, aes192-ctr, aes128-ctr
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] server encrypt: aes256-ctr, aes192-ctr, aes128-ctr
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] client mac: hmac-sha2-512, hmac-sha2-256
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] server mac: hmac-sha2-512, hmac-sha2-256
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] client compress: none, zlib@openssh.com
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] server compress: none, zlib@openssh.com
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] client lang: <none>
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] server lang: <none>
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] kex follows: False
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] === Key exchange agreements ===
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Kex: ecdh-sha2-nistp256
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] HostKey: ssh-ed25519
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Cipher: aes128-ctr
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] MAC: hmac-sha2-256
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Compression: none
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] === End of kex handshake ===
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] kex engine KexNistp256 specified hash_algo <built-in function openssl_sha256>
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Switch to new keys ...
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Got EXT_INFO: {'server-sig-algs': b'rsa-sha2-256,rsa-sha2-512'}
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Adding ssh-ed25519 host key for [192.168.198.2]:22: b'24ad618db0129188fcbb64a5c8d08aec'
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Trying discovered key b'5cd4e8f108050ee4f6cfed98a16476db' in C:\Users\xingq.FHC-DOMAIN/.ssh/id_rsa
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Finalizing pubkey algorithm for key of type 'ssh-rsa'
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Our pubkey algorithm list: ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa']
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Server-side algorithm list: ['rsa-sha2-256', 'rsa-sha2-512']
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Agreed upon 'rsa-sha2-512' pubkey algorithm
+[2026-06-18 09:25:39] [INFO] [paramiko.transport] Authentication (publickey) failed.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Trying discovered key b'91928894cb1650bf60207672151d07d0' in C:\Users\xingq.FHC-DOMAIN/.ssh/id_ed25519
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:25:39] [INFO] [paramiko.transport] Authentication (publickey) failed.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] userauth is OK
+[2026-06-18 09:25:39] [INFO] [paramiko.transport] Authentication (password) successful!
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 0] Max packet in: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Received global request "hostkeys-00@openssh.com"
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Rejecting "hostkeys-00@openssh.com" global request from server.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 0] Max packet out: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Secsh channel 0 opened.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 0] Sesch channel 0 request ok
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 0] Sesch channel 0 request ok
+[2026-06-18 09:25:39] [INFO] [MainWindow] ssh连接成功
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 1] Max packet in: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 1] Max packet out: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Secsh channel 1 opened.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 1] Sesch channel 1 request ok
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 1] EOF received (1)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 1] EOF sent (1)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 2] Max packet in: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 2] Max packet out: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Secsh channel 2 opened.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 2] Sesch channel 2 request ok
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 2] EOF received (2)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 3] Max packet in: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 2] EOF sent (2)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 3] Max packet out: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Secsh channel 3 opened.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 3] Sesch channel 3 request ok
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 3] EOF received (3)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 3] EOF sent (3)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 4] Max packet in: 32768 bytes
+[2026-06-18 09:25:39] [INFO] [MainWindow] 开始查找符合条件的文件...
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 6] Max packet in: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 6] Max packet out: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Secsh channel 6 opened.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 6] Sesch channel 6 request ok
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 6] EOF received (6)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 6] EOF sent (6)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 7] Max packet in: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 4] Max packet out: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Secsh channel 4 opened.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 4] Sesch channel 4 request ok
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 4] EOF received (4)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 5] Max packet in: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 4] EOF sent (4)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 5] Max packet out: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Secsh channel 5 opened.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 7] Max packet out: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Secsh channel 7 opened.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 7] Sesch channel 7 request ok
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 7] EOF received (7)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 7] EOF sent (7)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 5] Sesch channel 5 request ok
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 5] EOF received (5)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 6] Max packet in: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 5] EOF sent (5)
+[2026-06-18 09:25:39] [INFO] [MainWindow] 找到1个目录, 2个文件
+[2026-06-18 09:25:39] [INFO] [MainWindow] 开始创建目录
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 6] Max packet out: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Secsh channel 6 opened.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 6] Sesch channel 6 request ok
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 6] EOF received (6)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 7] Max packet in: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 6] EOF sent (6)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 7] Max packet out: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Secsh channel 7 opened.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 7] Sesch channel 7 request ok
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 7] EOF received (7)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 8] Max packet in: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 7] EOF sent (7)
+[2026-06-18 09:25:39] [INFO] [MainWindow] 开始复制文件到远程临时目录，共2个文件
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 8] Max packet out: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Secsh channel 8 opened.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 8] Sesch channel 8 request ok
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 8] EOF received (8)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 9] Max packet in: 32768 bytes
+[2026-06-18 09:25:39] [INFO] [MainWindow] 已复制到临时目录 1/2: /home/root/OneClick/Monitor/OneClickMonitor.sh -> /home/root/OneClick_temp1781745939.370478260/Monitor/OneClickMonitor.sh
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 8] EOF sent (8)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 9] Max packet out: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Secsh channel 9 opened.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 9] Sesch channel 9 request ok
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 9] EOF received (9)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 9] EOF sent (9)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 10] Max packet in: 32768 bytes
+[2026-06-18 09:25:39] [INFO] [MainWindow] 已复制到临时目录 2/2: /home/root/OneClick/Monitor/system.log -> /home/root/OneClick_temp1781745939.370478260/Monitor/system.log
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 10] Max packet out: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Secsh channel 10 opened.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 10] Sesch channel 10 request ok
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 10] EOF received (10)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 11] Max packet in: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 10] EOF sent (10)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 11] Max packet out: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Secsh channel 11 opened.
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 11] Sesch channel 11 request ok
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 11] EOF received (11)
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 12] Max packet in: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 11] EOF sent (11)
+[2026-06-18 09:25:39] [INFO] [MainWindow] 开始下载，大小: 0.03 M
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] [chan 12] Max packet out: 32768 bytes
+[2026-06-18 09:25:39] [DEBUG] [paramiko.transport] Secsh channel 12 opened.
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 12] Sesch channel 12 request ok
+[2026-06-18 09:25:40] [INFO] [MainWindow] 传输进度: |---       |
+[2026-06-18 09:25:40] [INFO] [MainWindow] 传输进度: |-----     |
+[2026-06-18 09:25:40] [INFO] [MainWindow] 传输进度: |------    |
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 12] EOF received (12)
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 12] EOF sent (12)
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 13] Max packet in: 32768 bytes
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 13] Max packet out: 32768 bytes
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] Secsh channel 13 opened.
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 13] Sesch channel 13 request ok
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 13] EOF received (13)
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 13] EOF sent (13)
+[2026-06-18 09:25:40] [INFO] [MainWindow] 远程临时目录已删除
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 14] Max packet in: 32768 bytes
+[2026-06-18 09:25:40] [INFO] [MainWindow] 下载完毕！文件已保存到: D:/Users/xingq.FHC-DOMAIN/Desktop/projects/OneClick/192.168.198.2/Monitor
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 14] Max packet out: 32768 bytes
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] Secsh channel 14 opened.
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 14] Sesch channel 14 request ok
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 14] EOF received (14)
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 14] EOF sent (14)
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 0] EOF sent (0)
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] EOF in transport thread
+[2026-06-18 09:25:40] [INFO] [MainWindow] ssh断开成功
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 8] Max packet in: 32768 bytes
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 8] Max packet out: 32768 bytes
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] Secsh channel 8 opened.
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 8] Sesch channel 8 request ok
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 8] EOF received (8)
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 8] EOF sent (8)
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 9] Max packet in: 32768 bytes
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 9] Max packet out: 32768 bytes
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] Secsh channel 9 opened.
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 9] Sesch channel 9 request ok
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 9] EOF received (9)
+[2026-06-18 09:25:40] [DEBUG] [paramiko.transport] [chan 9] EOF sent (9)
+[2026-06-18 09:25:41] [INFO] [MainWindow] 监控数据已下载到D:/Users/xingq.FHC-DOMAIN/Desktop/projects/OneClick/192.168.198.2/Monitor
+[2026-06-18 09:25:41] [DEBUG] [paramiko.transport] Sending global request "keepalive@lag.net"
+[2026-06-18 09:25:41] [DEBUG] [paramiko.transport] Sending global request "keepalive@lag.net"
+[2026-06-18 09:25:41] [DEBUG] [paramiko.transport] [chan 10] Max packet in: 32768 bytes
+[2026-06-18 09:25:41] [DEBUG] [paramiko.transport] [chan 10] Max packet out: 32768 bytes
+[2026-06-18 09:25:41] [DEBUG] [paramiko.transport] Secsh channel 10 opened.
+[2026-06-18 09:25:41] [DEBUG] [paramiko.transport] [chan 10] Sesch channel 10 request ok
+[2026-06-18 09:25:41] [DEBUG] [paramiko.transport] [chan 10] EOF received (10)
+[2026-06-18 09:25:41] [DEBUG] [paramiko.transport] [chan 10] EOF sent (10)
+[2026-06-18 09:25:41] [DEBUG] [paramiko.transport] [chan 11] Max packet in: 32768 bytes
+[2026-06-18 09:25:41] [DEBUG] [paramiko.transport] [chan 11] Max packet out: 32768 bytes
+[2026-06-18 09:25:41] [DEBUG] [paramiko.transport] Secsh channel 11 opened.
+[2026-06-18 09:25:41] [DEBUG] [paramiko.transport] [chan 11] Sesch channel 11 request ok
+[2026-06-18 09:25:41] [DEBUG] [paramiko.transport] [chan 11] EOF received (11)
+[2026-06-18 09:25:41] [DEBUG] [paramiko.transport] [chan 11] EOF sent (11)
+[2026-06-18 09:25:42] [DEBUG] [paramiko.transport] [chan 12] Max packet in: 32768 bytes
+[2026-06-18 09:25:42] [DEBUG] [paramiko.transport] [chan 12] Max packet out: 32768 bytes
+[2026-06-18 09:25:42] [DEBUG] [paramiko.transport] Secsh channel 12 opened.
+[2026-06-18 09:25:42] [DEBUG] [paramiko.transport] [chan 12] Sesch channel 12 request ok
+[2026-06-18 09:25:42] [DEBUG] [paramiko.transport] [chan 12] EOF received (12)
+[2026-06-18 09:25:42] [DEBUG] [paramiko.transport] [chan 12] EOF sent (12)
+[2026-06-18 09:25:42] [DEBUG] [paramiko.transport] [chan 13] Max packet in: 32768 bytes
+[2026-06-18 09:25:42] [DEBUG] [paramiko.transport] [chan 13] Max packet out: 32768 bytes
+[2026-06-18 09:25:42] [DEBUG] [paramiko.transport] Secsh channel 13 opened.
+[2026-06-18 09:25:42] [DEBUG] [paramiko.transport] [chan 13] Sesch channel 13 request ok
+[2026-06-18 09:25:42] [DEBUG] [paramiko.transport] [chan 13] EOF received (13)
+[2026-06-18 09:25:42] [DEBUG] [paramiko.transport] [chan 13] EOF sent (13)
+[2026-06-18 09:25:43] [DEBUG] [paramiko.transport] [chan 14] Max packet in: 32768 bytes
+[2026-06-18 09:25:43] [DEBUG] [paramiko.transport] [chan 14] Max packet out: 32768 bytes
+[2026-06-18 09:25:43] [DEBUG] [paramiko.transport] Secsh channel 14 opened.
+[2026-06-18 09:25:43] [DEBUG] [paramiko.transport] [chan 14] Sesch channel 14 request ok
+[2026-06-18 09:25:43] [DEBUG] [paramiko.transport] [chan 14] EOF received (14)
+[2026-06-18 09:25:43] [DEBUG] [paramiko.transport] [chan 14] EOF sent (14)
+[2026-06-18 09:25:43] [DEBUG] [paramiko.transport] [chan 15] Max packet in: 32768 bytes
+[2026-06-18 09:25:43] [DEBUG] [paramiko.transport] [chan 15] Max packet out: 32768 bytes
+[2026-06-18 09:25:43] [DEBUG] [paramiko.transport] Secsh channel 15 opened.
+[2026-06-18 09:25:43] [DEBUG] [paramiko.transport] [chan 15] Sesch channel 15 request ok
+[2026-06-18 09:25:43] [DEBUG] [paramiko.transport] [chan 15] EOF received (15)
+[2026-06-18 09:25:43] [DEBUG] [paramiko.transport] [chan 15] EOF sent (15)
+[2026-06-18 09:25:44] [DEBUG] [paramiko.transport] [chan 16] Max packet in: 32768 bytes
+[2026-06-18 09:25:44] [DEBUG] [paramiko.transport] [chan 16] Max packet out: 32768 bytes
+[2026-06-18 09:25:44] [DEBUG] [paramiko.transport] Secsh channel 16 opened.
+[2026-06-18 09:25:45] [DEBUG] [paramiko.transport] [chan 16] Sesch channel 16 request ok
+[2026-06-18 09:25:45] [DEBUG] [paramiko.transport] [chan 16] EOF received (16)
+[2026-06-18 09:25:45] [DEBUG] [paramiko.transport] [chan 16] EOF sent (16)
+[2026-06-18 09:25:45] [DEBUG] [paramiko.transport] [chan 17] Max packet in: 32768 bytes
+[2026-06-18 09:25:45] [DEBUG] [paramiko.transport] [chan 17] Max packet out: 32768 bytes
+[2026-06-18 09:25:45] [DEBUG] [paramiko.transport] Secsh channel 17 opened.
+[2026-06-18 09:25:45] [DEBUG] [paramiko.transport] [chan 17] Sesch channel 17 request ok
+[2026-06-18 09:25:45] [DEBUG] [paramiko.transport] [chan 17] EOF received (17)
+[2026-06-18 09:25:45] [DEBUG] [paramiko.transport] [chan 17] EOF sent (17)
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.figure] Executing constrainedlayout
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: Matching sans\-serif:style=normal:variant=normal:weight=normal:stretch=normal:size=8.0.
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmmi10' (cmmi10.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeOneSym' (STIXSizOneSymBol.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeOneSym' (STIXSizOneSymReg.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmr10' (cmr10.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXGeneral' (STIXGeneralItalic.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXGeneral' (STIXGeneralBolIta.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Serif' (DejaVuSerif-Bold.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXNonUnicode' (STIXNonUniBolIta.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Serif Display' (DejaVuSerifDisplay.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Serif' (DejaVuSerif.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans Mono' (DejaVuSansMono-BoldOblique.ttf) oblique normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmtt10' (cmtt10.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans Mono' (DejaVuSansMono.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmex10' (cmex10.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Serif' (DejaVuSerif-BoldItalic.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmb10' (cmb10.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans' (DejaVuSans-Oblique.ttf) oblique normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXNonUnicode' (STIXNonUni.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans Mono' (DejaVuSansMono-Bold.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmss10' (cmss10.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmsy10' (cmsy10.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeThreeSym' (STIXSizThreeSymBol.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans Display' (DejaVuSansDisplay.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeThreeSym' (STIXSizThreeSymReg.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans Mono' (DejaVuSansMono-Oblique.ttf) oblique normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXNonUnicode' (STIXNonUniIta.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeFourSym' (STIXSizFourSymReg.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeTwoSym' (STIXSizTwoSymBol.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXNonUnicode' (STIXNonUniBol.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans' (DejaVuSans-BoldOblique.ttf) oblique normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXGeneral' (STIXGeneralBol.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans' (DejaVuSans-Bold.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Serif' (DejaVuSerif-Italic.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeFiveSym' (STIXSizFiveSymReg.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeFourSym' (STIXSizFourSymBol.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans' (DejaVuSans.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeTwoSym' (STIXSizTwoSymReg.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXGeneral' (STIXGeneral.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial' (arialbi.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Sans Serif' (micross.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'HYYeYXSJ' (HTYYXSTJ.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Verdana' (verdanai.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DengXian' (Dengb.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Himalaya' (himalaya.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Courier New' (courbi.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Sitka Small' (SitkaB.ttc) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Sitka Small' (SitkaZ.ttc) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Georgia' (georgiaz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Georgia' (georgiab.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Tahoma' (tahomabd.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Kingsoft UE' (KingsoftUE.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbell.ttf) normal normal 300 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Century' (CENTURY.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Trebuchet MS' (trebuc.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Constantia' (constani.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'SimSun-ExtB' (simsunb.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candaraz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Consolas' (consola.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeuil.ttf) normal normal 300 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Trebuchet MS' (trebucit.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibrii.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STZhongsong' (STZHONGS.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguisbi.ttf) italic normal 600 normal>) = 11.24
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Leelawadee UI' (LeelaUIb.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft YaHei' (msyhl.ttc) normal normal 290 normal>) = 10.1545
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeuib.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial' (arial.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STXinwei' (STXINWEI.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'KaiTi' (simkai.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Material Design Icons 5.9.55' (materialdesignicons5-webfont-5.9.55.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Yu Gothic' (YuGothB.ttc) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe Print' (segoepr.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'FangSong' (simfang.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Symbol' (symbol.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Uighur' (MSUIGHUB.TTF) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft PhagsPa' (phagspab.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbelz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candarab.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe Script' (segoescb.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI Historic' (seguihis.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Verdana' (verdana.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbelb.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibrib.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Javanese Text' (javatext.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Math TeX Gyre' (DejaVuMathTeXGyre.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cambria' (cambriai.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STSong' (STSONG.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Comic Sans MS' (comic.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Palatino Linotype' (palab.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe MDL2 Assets' (segmdl2.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft YaHei' (msyh.ttc) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Times New Roman' (timesbi.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Consolas' (consolab.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STLiti' (STLITI.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe Print' (segoeprb.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Consolas' (consolaz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Georgia' (georgia.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font '?????' (人教版拼音.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DengXian' (Dengl.ttf) normal normal 300 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'MV Boli' (mvboli.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Nirmala UI' (Nirmala.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Comic Sans MS' (comicbd.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Gadugi' (gadugi.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Wingdings 2' (WINGDNG2.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Georgia' (georgiai.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Sitka Small' (SitkaI.ttc) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Malgun Gothic' (malgun.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Yu Gothic' (YuGothR.ttc) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'HoloLens MDL2 Assets' (holomdl2.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Phosphor' (phosphor-1.3.0.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeui.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'codicon' (codicon-0.0.35.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STXihei' (STXIHEI.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguisli.ttf) italic normal 350 normal>) = 11.0975
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Franklin Gothic Medium' (framdit.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft PhagsPa' (phagspa.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbelli.ttf) italic normal 300 normal>) = 11.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Gabriola' (Gabriola.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft New Tai Lue' (ntailub.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'SimHei' (simhei.ttf) normal normal 400 normal>) = 0.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft JhengHei' (msjhl.ttc) normal normal 290 normal>) = 10.1545
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Uighur' (MSUIGHUR.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Tai Le' (taileb.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibri.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candaral.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'FZYaoTi' (FZYTK.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft New Tai Lue' (ntailu.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Myanmar Text' (mmrtextb.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Leelawadee' (LEELAWDB.TTF) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Franklin Gothic Medium' (framd.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'FZFangSong-Z02' (FZFS_GBK.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Ink Free' (Inkfree.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'FZShuTi' (FZSTK.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Mongolian Baiti' (monbaiti.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Leelawadee UI' (LeelawUI.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Comic Sans MS' (comici.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Constantia' (constanb.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'MS Gothic' (msgothic.ttc) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'YouYuan' (SIMYOU.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibrili.ttf) italic normal 300 normal>) = 11.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'HYZhongYuanB5' (HYZYB5.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Yu Gothic' (YuGothL.ttc) normal normal 300 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STFangsong' (STFANGSO.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Ebrima' (ebrimabd.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'FontAwesome' (fontawesome4-webfont-4.7.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Bahnschrift' (bahnschrift.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Myanmar Text' (mmrtext.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Material Design Icons' (materialdesignicons6-webfont-6.9.96.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STHupo' (STHUPO.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Tai Le' (taile.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Constantia' (constan.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cambria' (cambriaz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Leelawadee' (LEELAWAD.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Trebuchet MS' (trebucbi.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Nirmala UI' (NirmalaB.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Nirmala UI' (NirmalaS.ttf) normal normal 350 normal>) = 10.0975
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Courier New' (cour.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Impact' (impact.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Verdana' (verdanaz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Times New Roman' (timesbd.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Verdana' (verdanab.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguisb.ttf) normal normal 600 normal>) = 10.24
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibril.ttf) normal normal 300 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Palatino Linotype' (pala.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STCaiyun' (STCAIYUN.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'GWZT-EN' (GWZT-EN.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial Unicode MS' (ARIALUNI.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cambria' (cambria.ttc) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguibli.ttf) italic normal 900 normal>) = 11.525
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Yu Gothic' (YuGothM.ttc) normal normal 500 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STKaiti' (STKAITI.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Wingdings 3' (WINGDNG3.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'remixicon' (remixicon-2.5.0.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbel.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Font Awesome 5 Free Regular' (fontawesome5-regular-webfont-5.15.4.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Courier New' (couri.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cascadia Code' (CascadiaCode.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeuisl.ttf) normal normal 350 normal>) = 10.0975
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Lucida Console' (lucon.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cascadia Mono' (CascadiaMono.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial' (arialbd.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI Symbol' (seguisym.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Sylfaen' (sylfaen.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candarai.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial' (ariblk.ttf) normal normal 900 normal>) = 10.525
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'elusiveicons' (elusiveicons-webfont-2.0.ttf) normal normal 500 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font '????' (语文格子.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Gadugi' (gadugib.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Times New Roman' (timesi.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Leelawadee UI' (LeelUIsl.ttf) normal normal 350 normal>) = 10.0975
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeuiz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguibl.ttf) normal normal 900 normal>) = 10.525
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Palatino Linotype' (palai.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Palatino Linotype' (palabi.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Sitka Small' (Sitka.ttc) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Webdings' (webdings.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'SimSun-ExtG' (SimsunExtG.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DengXian' (Deng.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbeli.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Consolas' (consolai.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Font Awesome 5 Free Solid' (fontawesome5-solid-webfont-5.15.4.ttf) normal normal 900 normal>) = 10.525
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'MingLiU-ExtB' (mingliub.ttc) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Times New Roman' (times.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe Script' (segoesc.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibriz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Ebrima' (ebrima.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Comic Sans MS' (comicz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI Emoji' (seguiemj.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Trebuchet MS' (trebucbd.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STXingkai' (STXINGKA.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'LiSu' (SIMLI.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Constantia' (constanz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft JhengHei' (msjh.ttc) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial' (ariali.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Courier New' (courbd.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Malgun Gothic' (malgunsl.ttf) normal normal 300 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Wingdings' (wingding.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguili.ttf) italic normal 300 normal>) = 11.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Tahoma' (tahoma.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Font Awesome 5 Brands' (fontawesome5-brands-webfont-5.15.4.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'MT Extra' (mtextra.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cambria' (cambriab.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft JhengHei' (msjhbd.ttc) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Malgun Gothic' (malgunbd.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Lucida Sans Unicode' (l_10646.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft YaHei' (msyhbd.ttc) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Yi Baiti' (msyi.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeuii.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'SimSun' (simsun.ttc) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font '????' (不坑盒子.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candara.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candarali.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: Matching sans\-serif:style=normal:variant=normal:weight=normal:stretch=normal:size=8.0 to SimHei ('C:\\Windows\\Fonts\\simhei.ttf') with score of 0.050000.
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: Matching sans\-serif:style=normal:variant=normal:weight=normal:stretch=normal:size=10.0.
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmmi10' (cmmi10.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeOneSym' (STIXSizOneSymBol.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeOneSym' (STIXSizOneSymReg.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmr10' (cmr10.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXGeneral' (STIXGeneralItalic.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXGeneral' (STIXGeneralBolIta.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Serif' (DejaVuSerif-Bold.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXNonUnicode' (STIXNonUniBolIta.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Serif Display' (DejaVuSerifDisplay.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Serif' (DejaVuSerif.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans Mono' (DejaVuSansMono-BoldOblique.ttf) oblique normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmtt10' (cmtt10.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans Mono' (DejaVuSansMono.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmex10' (cmex10.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Serif' (DejaVuSerif-BoldItalic.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmb10' (cmb10.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans' (DejaVuSans-Oblique.ttf) oblique normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXNonUnicode' (STIXNonUni.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans Mono' (DejaVuSansMono-Bold.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmss10' (cmss10.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmsy10' (cmsy10.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeThreeSym' (STIXSizThreeSymBol.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans Display' (DejaVuSansDisplay.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeThreeSym' (STIXSizThreeSymReg.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans Mono' (DejaVuSansMono-Oblique.ttf) oblique normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXNonUnicode' (STIXNonUniIta.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeFourSym' (STIXSizFourSymReg.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeTwoSym' (STIXSizTwoSymBol.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXNonUnicode' (STIXNonUniBol.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans' (DejaVuSans-BoldOblique.ttf) oblique normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXGeneral' (STIXGeneralBol.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans' (DejaVuSans-Bold.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Serif' (DejaVuSerif-Italic.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeFiveSym' (STIXSizFiveSymReg.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeFourSym' (STIXSizFourSymBol.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans' (DejaVuSans.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeTwoSym' (STIXSizTwoSymReg.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXGeneral' (STIXGeneral.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial' (arialbi.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Sans Serif' (micross.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'HYYeYXSJ' (HTYYXSTJ.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Verdana' (verdanai.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DengXian' (Dengb.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Himalaya' (himalaya.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Courier New' (courbi.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Sitka Small' (SitkaB.ttc) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Sitka Small' (SitkaZ.ttc) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Georgia' (georgiaz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Georgia' (georgiab.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Tahoma' (tahomabd.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Kingsoft UE' (KingsoftUE.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbell.ttf) normal normal 300 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Century' (CENTURY.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Trebuchet MS' (trebuc.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Constantia' (constani.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'SimSun-ExtB' (simsunb.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candaraz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Consolas' (consola.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeuil.ttf) normal normal 300 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Trebuchet MS' (trebucit.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibrii.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STZhongsong' (STZHONGS.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguisbi.ttf) italic normal 600 normal>) = 11.24
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Leelawadee UI' (LeelaUIb.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft YaHei' (msyhl.ttc) normal normal 290 normal>) = 10.1545
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeuib.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial' (arial.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STXinwei' (STXINWEI.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'KaiTi' (simkai.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Material Design Icons 5.9.55' (materialdesignicons5-webfont-5.9.55.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Yu Gothic' (YuGothB.ttc) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe Print' (segoepr.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'FangSong' (simfang.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Symbol' (symbol.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Uighur' (MSUIGHUB.TTF) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft PhagsPa' (phagspab.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbelz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candarab.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe Script' (segoescb.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI Historic' (seguihis.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Verdana' (verdana.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbelb.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibrib.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Javanese Text' (javatext.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Math TeX Gyre' (DejaVuMathTeXGyre.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cambria' (cambriai.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STSong' (STSONG.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Comic Sans MS' (comic.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Palatino Linotype' (palab.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe MDL2 Assets' (segmdl2.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft YaHei' (msyh.ttc) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Times New Roman' (timesbi.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Consolas' (consolab.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STLiti' (STLITI.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe Print' (segoeprb.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Consolas' (consolaz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Georgia' (georgia.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font '?????' (人教版拼音.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DengXian' (Dengl.ttf) normal normal 300 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'MV Boli' (mvboli.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Nirmala UI' (Nirmala.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Comic Sans MS' (comicbd.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Gadugi' (gadugi.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Wingdings 2' (WINGDNG2.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Georgia' (georgiai.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Sitka Small' (SitkaI.ttc) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Malgun Gothic' (malgun.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Yu Gothic' (YuGothR.ttc) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'HoloLens MDL2 Assets' (holomdl2.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Phosphor' (phosphor-1.3.0.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeui.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'codicon' (codicon-0.0.35.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STXihei' (STXIHEI.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguisli.ttf) italic normal 350 normal>) = 11.0975
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Franklin Gothic Medium' (framdit.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft PhagsPa' (phagspa.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbelli.ttf) italic normal 300 normal>) = 11.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Gabriola' (Gabriola.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft New Tai Lue' (ntailub.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'SimHei' (simhei.ttf) normal normal 400 normal>) = 0.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft JhengHei' (msjhl.ttc) normal normal 290 normal>) = 10.1545
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Uighur' (MSUIGHUR.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Tai Le' (taileb.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibri.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candaral.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'FZYaoTi' (FZYTK.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft New Tai Lue' (ntailu.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Myanmar Text' (mmrtextb.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Leelawadee' (LEELAWDB.TTF) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Franklin Gothic Medium' (framd.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'FZFangSong-Z02' (FZFS_GBK.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Ink Free' (Inkfree.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'FZShuTi' (FZSTK.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Mongolian Baiti' (monbaiti.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Leelawadee UI' (LeelawUI.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Comic Sans MS' (comici.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Constantia' (constanb.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'MS Gothic' (msgothic.ttc) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'YouYuan' (SIMYOU.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibrili.ttf) italic normal 300 normal>) = 11.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'HYZhongYuanB5' (HYZYB5.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Yu Gothic' (YuGothL.ttc) normal normal 300 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STFangsong' (STFANGSO.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Ebrima' (ebrimabd.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'FontAwesome' (fontawesome4-webfont-4.7.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Bahnschrift' (bahnschrift.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Myanmar Text' (mmrtext.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Material Design Icons' (materialdesignicons6-webfont-6.9.96.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STHupo' (STHUPO.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Tai Le' (taile.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Constantia' (constan.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cambria' (cambriaz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Leelawadee' (LEELAWAD.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Trebuchet MS' (trebucbi.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Nirmala UI' (NirmalaB.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Nirmala UI' (NirmalaS.ttf) normal normal 350 normal>) = 10.0975
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Courier New' (cour.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Impact' (impact.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Verdana' (verdanaz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Times New Roman' (timesbd.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Verdana' (verdanab.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguisb.ttf) normal normal 600 normal>) = 10.24
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibril.ttf) normal normal 300 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Palatino Linotype' (pala.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STCaiyun' (STCAIYUN.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'GWZT-EN' (GWZT-EN.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial Unicode MS' (ARIALUNI.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cambria' (cambria.ttc) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguibli.ttf) italic normal 900 normal>) = 11.525
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Yu Gothic' (YuGothM.ttc) normal normal 500 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STKaiti' (STKAITI.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Wingdings 3' (WINGDNG3.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'remixicon' (remixicon-2.5.0.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbel.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Font Awesome 5 Free Regular' (fontawesome5-regular-webfont-5.15.4.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Courier New' (couri.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cascadia Code' (CascadiaCode.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeuisl.ttf) normal normal 350 normal>) = 10.0975
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Lucida Console' (lucon.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cascadia Mono' (CascadiaMono.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial' (arialbd.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI Symbol' (seguisym.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Sylfaen' (sylfaen.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candarai.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial' (ariblk.ttf) normal normal 900 normal>) = 10.525
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'elusiveicons' (elusiveicons-webfont-2.0.ttf) normal normal 500 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font '????' (语文格子.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Gadugi' (gadugib.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Times New Roman' (timesi.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Leelawadee UI' (LeelUIsl.ttf) normal normal 350 normal>) = 10.0975
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeuiz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguibl.ttf) normal normal 900 normal>) = 10.525
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Palatino Linotype' (palai.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Palatino Linotype' (palabi.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Sitka Small' (Sitka.ttc) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Webdings' (webdings.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'SimSun-ExtG' (SimsunExtG.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DengXian' (Deng.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbeli.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Consolas' (consolai.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Font Awesome 5 Free Solid' (fontawesome5-solid-webfont-5.15.4.ttf) normal normal 900 normal>) = 10.525
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'MingLiU-ExtB' (mingliub.ttc) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Times New Roman' (times.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe Script' (segoesc.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibriz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Ebrima' (ebrima.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Comic Sans MS' (comicz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI Emoji' (seguiemj.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Trebuchet MS' (trebucbd.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STXingkai' (STXINGKA.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'LiSu' (SIMLI.TTF) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Constantia' (constanz.ttf) italic normal 700 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft JhengHei' (msjh.ttc) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial' (ariali.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Courier New' (courbd.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Malgun Gothic' (malgunsl.ttf) normal normal 300 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Wingdings' (wingding.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguili.ttf) italic normal 300 normal>) = 11.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Tahoma' (tahoma.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Font Awesome 5 Brands' (fontawesome5-brands-webfont-5.15.4.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'MT Extra' (mtextra.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cambria' (cambriab.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft JhengHei' (msjhbd.ttc) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Malgun Gothic' (malgunbd.ttf) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Lucida Sans Unicode' (l_10646.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft YaHei' (msyhbd.ttc) normal normal 700 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Yi Baiti' (msyi.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeuii.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'SimSun' (simsun.ttc) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font '????' (不坑盒子.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candara.ttf) normal normal 400 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candarali.ttf) italic normal 400 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: Matching sans\-serif:style=normal:variant=normal:weight=normal:stretch=normal:size=10.0 to SimHei ('C:\\Windows\\Fonts\\simhei.ttf') with score of 0.050000.
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: Matching sans\-serif:style=normal:variant=normal:weight=bold:stretch=normal:size=12.0.
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmmi10' (cmmi10.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeOneSym' (STIXSizOneSymBol.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeOneSym' (STIXSizOneSymReg.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmr10' (cmr10.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXGeneral' (STIXGeneralItalic.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXGeneral' (STIXGeneralBolIta.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Serif' (DejaVuSerif-Bold.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXNonUnicode' (STIXNonUniBolIta.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Serif Display' (DejaVuSerifDisplay.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Serif' (DejaVuSerif.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans Mono' (DejaVuSansMono-BoldOblique.ttf) oblique normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmtt10' (cmtt10.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans Mono' (DejaVuSansMono.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmex10' (cmex10.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Serif' (DejaVuSerif-BoldItalic.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmb10' (cmb10.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans' (DejaVuSans-Oblique.ttf) oblique normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXNonUnicode' (STIXNonUni.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans Mono' (DejaVuSansMono-Bold.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmss10' (cmss10.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'cmsy10' (cmsy10.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeThreeSym' (STIXSizThreeSymBol.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans Display' (DejaVuSansDisplay.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeThreeSym' (STIXSizThreeSymReg.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans Mono' (DejaVuSansMono-Oblique.ttf) oblique normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXNonUnicode' (STIXNonUniIta.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeFourSym' (STIXSizFourSymReg.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeTwoSym' (STIXSizTwoSymBol.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXNonUnicode' (STIXNonUniBol.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans' (DejaVuSans-BoldOblique.ttf) oblique normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXGeneral' (STIXGeneralBol.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans' (DejaVuSans-Bold.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Serif' (DejaVuSerif-Italic.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeFiveSym' (STIXSizFiveSymReg.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeFourSym' (STIXSizFourSymBol.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Sans' (DejaVuSans.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXSizeTwoSym' (STIXSizTwoSymReg.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STIXGeneral' (STIXGeneral.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial' (arialbi.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Sans Serif' (micross.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'HYYeYXSJ' (HTYYXSTJ.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Verdana' (verdanai.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DengXian' (Dengb.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Himalaya' (himalaya.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Courier New' (courbi.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Sitka Small' (SitkaB.ttc) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Sitka Small' (SitkaZ.ttc) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Georgia' (georgiaz.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Georgia' (georgiab.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Tahoma' (tahomabd.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Kingsoft UE' (KingsoftUE.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbell.ttf) normal normal 300 normal>) = 10.43
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Century' (CENTURY.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Trebuchet MS' (trebuc.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Constantia' (constani.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'SimSun-ExtB' (simsunb.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candaraz.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Consolas' (consola.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeuil.ttf) normal normal 300 normal>) = 10.43
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Trebuchet MS' (trebucit.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibrii.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STZhongsong' (STZHONGS.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguisbi.ttf) italic normal 600 normal>) = 11.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Leelawadee UI' (LeelaUIb.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft YaHei' (msyhl.ttc) normal normal 290 normal>) = 10.4395
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeuib.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial' (arial.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STXinwei' (STXINWEI.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'KaiTi' (simkai.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Material Design Icons 5.9.55' (materialdesignicons5-webfont-5.9.55.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Yu Gothic' (YuGothB.ttc) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe Print' (segoepr.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'FangSong' (simfang.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Symbol' (symbol.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Uighur' (MSUIGHUB.TTF) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft PhagsPa' (phagspab.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbelz.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candarab.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe Script' (segoescb.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI Historic' (seguihis.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Verdana' (verdana.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbelb.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibrib.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Javanese Text' (javatext.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DejaVu Math TeX Gyre' (DejaVuMathTeXGyre.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cambria' (cambriai.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STSong' (STSONG.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Comic Sans MS' (comic.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Palatino Linotype' (palab.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe MDL2 Assets' (segmdl2.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft YaHei' (msyh.ttc) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Times New Roman' (timesbi.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Consolas' (consolab.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STLiti' (STLITI.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe Print' (segoeprb.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Consolas' (consolaz.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Georgia' (georgia.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font '?????' (人教版拼音.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DengXian' (Dengl.ttf) normal normal 300 normal>) = 10.43
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'MV Boli' (mvboli.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Nirmala UI' (Nirmala.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Comic Sans MS' (comicbd.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Gadugi' (gadugi.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Wingdings 2' (WINGDNG2.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Georgia' (georgiai.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Sitka Small' (SitkaI.ttc) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Malgun Gothic' (malgun.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Yu Gothic' (YuGothR.ttc) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'HoloLens MDL2 Assets' (holomdl2.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Phosphor' (phosphor-1.3.0.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeui.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'codicon' (codicon-0.0.35.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STXihei' (STXIHEI.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguisli.ttf) italic normal 350 normal>) = 11.3825
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Franklin Gothic Medium' (framdit.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft PhagsPa' (phagspa.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbelli.ttf) italic normal 300 normal>) = 11.43
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Gabriola' (Gabriola.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft New Tai Lue' (ntailub.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'SimHei' (simhei.ttf) normal normal 400 normal>) = 0.33499999999999996
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft JhengHei' (msjhl.ttc) normal normal 290 normal>) = 10.4395
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Uighur' (MSUIGHUR.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Tai Le' (taileb.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibri.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candaral.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'FZYaoTi' (FZYTK.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft New Tai Lue' (ntailu.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Myanmar Text' (mmrtextb.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Leelawadee' (LEELAWDB.TTF) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Franklin Gothic Medium' (framd.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'FZFangSong-Z02' (FZFS_GBK.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Ink Free' (Inkfree.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'FZShuTi' (FZSTK.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Mongolian Baiti' (monbaiti.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Leelawadee UI' (LeelawUI.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Comic Sans MS' (comici.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Constantia' (constanb.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'MS Gothic' (msgothic.ttc) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'YouYuan' (SIMYOU.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibrili.ttf) italic normal 300 normal>) = 11.43
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'HYZhongYuanB5' (HYZYB5.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Yu Gothic' (YuGothL.ttc) normal normal 300 normal>) = 10.43
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STFangsong' (STFANGSO.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Ebrima' (ebrimabd.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'FontAwesome' (fontawesome4-webfont-4.7.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Bahnschrift' (bahnschrift.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Myanmar Text' (mmrtext.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Material Design Icons' (materialdesignicons6-webfont-6.9.96.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STHupo' (STHUPO.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Tai Le' (taile.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Constantia' (constan.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cambria' (cambriaz.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Leelawadee' (LEELAWAD.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Trebuchet MS' (trebucbi.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Nirmala UI' (NirmalaB.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Nirmala UI' (NirmalaS.ttf) normal normal 350 normal>) = 10.3825
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Courier New' (cour.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Impact' (impact.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Verdana' (verdanaz.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Times New Roman' (timesbd.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Verdana' (verdanab.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguisb.ttf) normal normal 600 normal>) = 10.145
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibril.ttf) normal normal 300 normal>) = 10.43
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Palatino Linotype' (pala.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STCaiyun' (STCAIYUN.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'GWZT-EN' (GWZT-EN.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial Unicode MS' (ARIALUNI.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cambria' (cambria.ttc) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguibli.ttf) italic normal 900 normal>) = 11.24
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Yu Gothic' (YuGothM.ttc) normal normal 500 normal>) = 10.24
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STKaiti' (STKAITI.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Wingdings 3' (WINGDNG3.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'remixicon' (remixicon-2.5.0.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbel.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Font Awesome 5 Free Regular' (fontawesome5-regular-webfont-5.15.4.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Courier New' (couri.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cascadia Code' (CascadiaCode.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeuisl.ttf) normal normal 350 normal>) = 10.3825
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Lucida Console' (lucon.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cascadia Mono' (CascadiaMono.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial' (arialbd.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI Symbol' (seguisym.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Sylfaen' (sylfaen.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candarai.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial' (ariblk.ttf) normal normal 900 normal>) = 10.24
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'elusiveicons' (elusiveicons-webfont-2.0.ttf) normal normal 500 normal>) = 10.24
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font '????' (语文格子.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Gadugi' (gadugib.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Times New Roman' (timesi.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Leelawadee UI' (LeelUIsl.ttf) normal normal 350 normal>) = 10.3825
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeuiz.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguibl.ttf) normal normal 900 normal>) = 10.24
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Palatino Linotype' (palai.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Palatino Linotype' (palabi.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Sitka Small' (Sitka.ttc) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Webdings' (webdings.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'SimSun-ExtG' (SimsunExtG.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'DengXian' (Deng.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Corbel' (corbeli.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Consolas' (consolai.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Font Awesome 5 Free Solid' (fontawesome5-solid-webfont-5.15.4.ttf) normal normal 900 normal>) = 10.24
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'MingLiU-ExtB' (mingliub.ttc) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Times New Roman' (times.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe Script' (segoesc.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Calibri' (calibriz.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Ebrima' (ebrima.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Comic Sans MS' (comicz.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI Emoji' (seguiemj.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Trebuchet MS' (trebucbd.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'STXingkai' (STXINGKA.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'LiSu' (SIMLI.TTF) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Constantia' (constanz.ttf) italic normal 700 normal>) = 11.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft JhengHei' (msjh.ttc) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Arial' (ariali.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Courier New' (courbd.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Malgun Gothic' (malgunsl.ttf) normal normal 300 normal>) = 10.43
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Wingdings' (wingding.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (seguili.ttf) italic normal 300 normal>) = 11.43
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Tahoma' (tahoma.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Font Awesome 5 Brands' (fontawesome5-brands-webfont-5.15.4.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'MT Extra' (mtextra.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Cambria' (cambriab.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft JhengHei' (msjhbd.ttc) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Malgun Gothic' (malgunbd.ttf) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Lucida Sans Unicode' (l_10646.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft YaHei' (msyhbd.ttc) normal normal 700 normal>) = 10.05
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Microsoft Yi Baiti' (msyi.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Segoe UI' (segoeuii.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'SimSun' (simsun.ttc) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font '????' (不坑盒子.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candara.ttf) normal normal 400 normal>) = 10.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: score(<Font 'Candara' (Candarali.ttf) italic normal 400 normal>) = 11.335
+[2026-06-18 09:25:45] [DEBUG] [matplotlib.font_manager] findfont: Matching sans\-serif:style=normal:variant=normal:weight=bold:stretch=normal:size=12.0 to SimHei ('C:\\Windows\\Fonts\\simhei.ttf') with score of 0.335000.
+[2026-06-18 09:25:46] [DEBUG] [paramiko.transport] [chan 18] Max packet in: 32768 bytes
+[2026-06-18 09:25:46] [DEBUG] [paramiko.transport] [chan 18] Max packet out: 32768 bytes
+[2026-06-18 09:25:46] [DEBUG] [paramiko.transport] Secsh channel 18 opened.
+[2026-06-18 09:25:46] [DEBUG] [paramiko.transport] [chan 18] Sesch channel 18 request ok
+[2026-06-18 09:25:46] [DEBUG] [paramiko.transport] [chan 18] EOF received (18)
+[2026-06-18 09:25:46] [DEBUG] [paramiko.transport] [chan 18] EOF sent (18)
+[2026-06-18 09:25:46] [DEBUG] [paramiko.transport] [chan 19] Max packet in: 32768 bytes
+[2026-06-18 09:25:46] [DEBUG] [paramiko.transport] [chan 19] Max packet out: 32768 bytes
+[2026-06-18 09:25:46] [DEBUG] [paramiko.transport] Secsh channel 19 opened.
+[2026-06-18 09:25:46] [DEBUG] [paramiko.transport] [chan 19] Sesch channel 19 request ok
+[2026-06-18 09:25:46] [DEBUG] [paramiko.transport] [chan 19] EOF received (19)
+[2026-06-18 09:25:46] [DEBUG] [paramiko.transport] [chan 19] EOF sent (19)
+[2026-06-18 09:25:46] [DEBUG] [paramiko.transport] Sending global request "keepalive@lag.net"
+[2026-06-18 09:25:46] [DEBUG] [paramiko.transport] Sending global request "keepalive@lag.net"
+[2026-06-18 09:25:47] [DEBUG] [paramiko.transport] [chan 20] Max packet in: 32768 bytes
+[2026-06-18 09:25:47] [DEBUG] [paramiko.transport] [chan 20] Max packet out: 32768 bytes
+[2026-06-18 09:25:47] [DEBUG] [paramiko.transport] Secsh channel 20 opened.
+[2026-06-18 09:25:47] [DEBUG] [paramiko.transport] [chan 20] Sesch channel 20 request ok
+[2026-06-18 09:25:47] [DEBUG] [paramiko.transport] [chan 20] EOF received (20)
+[2026-06-18 09:25:47] [DEBUG] [paramiko.transport] [chan 20] EOF sent (20)
+[2026-06-18 09:25:47] [DEBUG] [paramiko.transport] [chan 21] Max packet in: 32768 bytes
+[2026-06-18 09:25:47] [DEBUG] [paramiko.transport] [chan 21] Max packet out: 32768 bytes
+[2026-06-18 09:25:47] [DEBUG] [paramiko.transport] Secsh channel 21 opened.
+[2026-06-18 09:25:47] [DEBUG] [paramiko.transport] [chan 21] Sesch channel 21 request ok
+[2026-06-18 09:25:47] [DEBUG] [paramiko.transport] [chan 21] EOF received (21)
+[2026-06-18 09:25:47] [DEBUG] [paramiko.transport] [chan 21] EOF sent (21)
+[2026-06-18 09:25:48] [DEBUG] [paramiko.transport] [chan 22] Max packet in: 32768 bytes
+[2026-06-18 09:25:48] [DEBUG] [paramiko.transport] [chan 22] Max packet out: 32768 bytes
+[2026-06-18 09:25:48] [DEBUG] [paramiko.transport] Secsh channel 22 opened.
+[2026-06-18 09:25:48] [DEBUG] [paramiko.transport] [chan 22] Sesch channel 22 request ok
+[2026-06-18 09:25:48] [DEBUG] [paramiko.transport] [chan 22] EOF received (22)
+[2026-06-18 09:25:48] [DEBUG] [paramiko.transport] [chan 22] EOF sent (22)
+[2026-06-18 09:25:48] [DEBUG] [paramiko.transport] [chan 23] Max packet in: 32768 bytes
+[2026-06-18 09:25:48] [DEBUG] [paramiko.transport] [chan 23] Max packet out: 32768 bytes
+[2026-06-18 09:25:48] [DEBUG] [paramiko.transport] Secsh channel 23 opened.
+[2026-06-18 09:25:48] [DEBUG] [paramiko.transport] [chan 23] Sesch channel 23 request ok
+[2026-06-18 09:25:48] [DEBUG] [paramiko.transport] [chan 23] EOF received (23)
+[2026-06-18 09:25:48] [DEBUG] [paramiko.transport] [chan 23] EOF sent (23)
+[2026-06-18 09:25:51] [DEBUG] [paramiko.transport] Sending global request "keepalive@lag.net"
+[2026-06-18 09:25:51] [DEBUG] [paramiko.transport] Sending global request "keepalive@lag.net"
+[2026-06-18 09:25:51] [DEBUG] [paramiko.transport] EOF in transport thread
+[2026-06-18 09:25:51] [DEBUG] [paramiko.transport] EOF in transport thread
+[2026-06-18 09:25:51] [DEBUG] [paramiko.transport] EOF in transport thread

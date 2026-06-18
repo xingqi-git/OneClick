@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import psutil
 import time
+from utils.logger import setup_logging, get_logger
 
 sc_class2str = {
     'SendCMDDialog': "发送命令",
@@ -85,6 +86,34 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 配置文件的默认路径
         self.default_config_path = self.get_default_path() + '/' + 'config.json'
 
+        # 初始化日志系统（必须在 update_run_info 之前）
+        self._log_emitter = setup_logging(
+            log_dir=self.get_default_path(),
+            enable_file_logging=False,  # 默认关闭，由勾选框控制
+            enable_qt_bridge=False,
+        )
+        self.logger = get_logger("MainWindow")
+
+        # 先连接状态变化信号，然后设置初始状态（从配置文件读取）
+        self.log_file_checkBox.stateChanged.connect(self._on_log_file_checkbox_changed)
+
+        # 从配置文件读取初始状态（如果有）
+        initial_log_enabled = False
+        if os.path.exists(self.default_config_path):
+            try:
+                with open(self.default_config_path, 'r', encoding='utf-8') as f:
+                    import json
+                    cfg_data = json.load(f)
+                    if '日志配置' in cfg_data:
+                        initial_log_enabled = cfg_data['日志配置'].get('文件日志', False)
+            except Exception:
+                pass
+
+        # 设置勾选框初始状态（会触发 stateChanged，自动初始化文件日志开关）
+        self.log_file_checkBox.setChecked(initial_log_enabled)
+
+        self.showMaximized()
+        
         # 如果有默认配置文件，则获取
         if os.path.exists(self.default_config_path):
             self.update_run_info('存在默认配置文件，开始添加服务器和快捷按钮')
@@ -93,7 +122,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 主界面服务器选择下拉表
         self.server_comboBox.setCurrentIndex(-1)
         self.update_server_combobox()
-        self.showMaximized()
+        self.update_run_info("OneClick 启动成功")
 
     def cmd1_dialog(self, button_id=None):
         """创建发送指令的窗口实例"""
@@ -104,9 +133,13 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 显示弹出窗口（模态显示，阻止操作主窗口）,按下’生成快捷按钮‘按钮时调用accpted()，主窗口打印日志
         if s_cmd_dlg.exec_() == QtWidgets.QDialog.DialogCode.Accepted:
             if button_id:
-                self.update_run_info('<发送命令>快捷按钮编辑成功')
+                button_type = self.sc_buttons[button_id]["config"]["指令类型"]
+                button_text = self.sc_buttons[button_id]["config"]["指令名称"]
+                self.update_run_info(f'{button_type} {button_text}快捷按钮编辑成功')
             else:
-                self.update_run_info('<发送命令>快捷按钮创建成功')
+                button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
+                button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
+                self.update_run_info(f'<{button_type}>|<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
                 self.update_run_info('取消编辑快捷按钮')
@@ -122,9 +155,13 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 显示弹出窗口（模态显示，阻止操作主窗口）
         if s_cmd_dlg.exec_() == QtWidgets.QDialog.DialogCode.Accepted:
             if button_id:
-                self.update_run_info('<发送指令并接收回显>快捷按钮编辑成功')
+                button_type = self.sc_buttons[button_id]["config"]["指令类型"]
+                button_text = self.sc_buttons[button_id]["config"]["指令名称"]
+                self.update_run_info(f'{button_type} {button_text}快捷按钮编辑成功')
             else:
-                self.update_run_info('<发送指令并接收回显>快捷按钮创建成功')
+                button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
+                button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
+                self.update_run_info(f'<{button_type}>|<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
                 self.update_run_info('取消编辑快捷按钮')
@@ -139,9 +176,13 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 显示弹出窗口（模态显示，阻止操作主窗口）
         if s_file_dlg.exec_() == QtWidgets.QDialog.DialogCode.Accepted:
             if button_id:
-                self.update_run_info('<发送文件>快捷按钮编辑成功')
+                button_type = self.sc_buttons[button_id]["config"]["指令类型"]
+                button_text = self.sc_buttons[button_id]["config"]["指令名称"]
+                self.update_run_info(f'{button_type} {button_text}快捷按钮编辑成功')
             else:
-                self.update_run_info('<发送文件>快捷按钮创建成功')
+                button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
+                button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
+                self.update_run_info(f'<{button_type}>|<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
                 self.update_run_info('取消编辑快捷按钮')
@@ -157,9 +198,13 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 显示弹出窗口（模态显示，阻止操作主窗口）
         if g_file_dlg.exec_() == QtWidgets.QDialog.DialogCode.Accepted:
             if button_id:
-                self.update_run_info('<获取文件>快捷按钮编辑成功')
+                button_type = self.sc_buttons[button_id]["config"]["指令类型"]
+                button_text = self.sc_buttons[button_id]["config"]["指令名称"]
+                self.update_run_info(f'{button_type} {button_text}快捷按钮编辑成功')
             else:
-                self.update_run_info('<获取文件>快捷按钮创建成功')
+                button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
+                button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
+                self.update_run_info(f'<{button_type}>|<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
                 self.update_run_info('取消编辑快捷按钮')
@@ -174,9 +219,13 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 显示弹出窗口（模态显示，阻止操作主窗口）
         if copy_file_dlg.exec_() == QtWidgets.QDialog.DialogCode.Accepted:
             if button_id:
-                self.update_run_info('<复制本地文件>快捷按钮编辑成功')
+                button_type = self.sc_buttons[button_id]["config"]["指令类型"]
+                button_text = self.sc_buttons[button_id]["config"]["指令名称"]
+                self.update_run_info(f'{button_type} {button_text}快捷按钮编辑成功')
             else:
-                self.update_run_info('<复制本地文件>快捷按钮创建成功')
+                button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
+                button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
+                self.update_run_info(f'<{button_type}>|<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
                 self.update_run_info('取消编辑快捷按钮')
@@ -192,15 +241,18 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 显示弹出窗口（模态显示，阻止操作主窗口）,按下'生成快捷按钮'按钮时调用accpted()，主窗口打印日志
         if r_monitor_dlg.exec_() == QtWidgets.QDialog.DialogCode.Accepted:
             if button_id:
-                self.update_run_info('<资源监控>快捷按钮编辑成功')
+                button_type = self.sc_buttons[button_id]["config"]["指令类型"]
+                button_text = self.sc_buttons[button_id]["config"]["指令名称"]
+                self.update_run_info(f'{button_type} {button_text}快捷按钮编辑成功')
             else:
-                self.update_run_info('<资源监控>快捷按钮创建成功')
+                button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
+                button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
+                self.update_run_info(f'<{button_type}>|<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
                 self.update_run_info('取消编辑快捷按钮')
             else:
                 self.update_run_info('取消创建快捷按钮')
-        pass
 
     def weak_net_dialog(self, button_id=None):
         """创建弱网的窗口实例"""
@@ -210,9 +262,13 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             w_net_dlg.edit_sc(button_id)
         if w_net_dlg.exec_() == QtWidgets.QDialog.DialogCode.Accepted:
             if button_id:
-                self.update_run_info('<弱网>快捷按钮编辑成功')
+                button_type = self.sc_buttons[button_id]["config"]["指令类型"]
+                button_text = self.sc_buttons[button_id]["config"]["指令名称"]
+                self.update_run_info(f'{button_type} {button_text}快捷按钮编辑成功')
             else:
-                self.update_run_info('<弱网>快捷按钮创建成功')
+                button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
+                button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
+                self.update_run_info(f'<{button_type}>|<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
                 self.update_run_info('取消编辑弱网快捷按钮')
@@ -236,6 +292,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             button_text = f'新按钮{self.btn_count}'
 
         # 创建新按钮
+        self.btn_count += 1
         button_id = f"button_{self.btn_count}"  # 唯一ID
         new_button = QPushButton(button_text)
         new_button.setObjectName(button_id)
@@ -280,7 +337,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         elif config_data['指令类型'] == '弱网':
             new_button.clicked.connect(lambda _, para=button_id: self.weak_net(para))
         else:
-            self.update_run_info(f'添加快捷按钮{button_text}失败:错误的指令类型')
+            self.update_run_info(f'添加快捷按钮{button_text}失败:错误的指令类型', 'ERROR')
             return
         # 在按钮上添加右键菜单，pos参数为鼠标坐标，系统自动获取
         new_button.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
@@ -292,8 +349,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         # 将新建的快捷按钮添加到快捷按钮字典
         self.sc_buttons[button_id] = {'button': new_button, 'config': config_data}
-        self.btn_count += 1
-        self.update_run_info(f'添加快捷按钮{button_text}成功')
 
     def edit_button(self, config_data, button_id):
         self.sc_buttons[button_id]['config'].update(config_data)  # 更新按钮字典内容
@@ -305,7 +360,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if button_id not in self.sc_buttons:
             return
         button_name = self.sc_buttons[button_id]['config']['指令名称']
-        self.update_run_info(f'<<{button_name}>>开始执行')
+        self.update_run_info(f'<{button_name}>开始执行')
         self.sc_buttons[button_id]['button'].setEnabled(False)
 
         # 初始化SSHTools
@@ -316,7 +371,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             ssh_tool.username = self.sc_buttons[button_id]['config']['用户名']
             ssh_tool.password = self.sc_buttons[button_id]['config']['密码']
         except Exception as e:
-            self.update_run_info(f'<<{button_name}>>执行失败:{e}')
+            self.update_run_info(f'<{button_name}>执行失败:{e}', 'ERROR')
             self.sc_buttons[button_id]['button'].setEnabled(True)
             return
 
@@ -342,9 +397,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         def on_worker_finished(result):
             """worker结束处理界面"""
             if result:
-                self.update_run_info(f'<<{button_name}>>执行成功')
+                self.update_run_info(f'<{button_name}>执行成功')
             else:
-                self.update_run_info(f'<<{button_name}>>执行失败')
+                self.update_run_info(f'<{button_name}>执行失败', 'ERROR')
             self.sc_buttons[button_id]['button'].setEnabled(True)
             thread.quit()
 
@@ -390,7 +445,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if button_id not in self.sc_buttons:
             return
         button_name = self.sc_buttons[button_id]['config']['指令名称']
-        self.update_run_info(f'<<{button_name}>>开始执行')
+        self.update_run_info(f'<{button_name}>开始执行')
         self.sc_buttons[button_id]['button'].setEnabled(False)
 
         # 初始化SSHTools
@@ -401,7 +456,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             ssh_tool.username = self.sc_buttons[button_id]['config']['用户名']
             ssh_tool.password = self.sc_buttons[button_id]['config']['密码']
         except Exception as e:
-            self.update_run_info(f'<<{button_name}>>执行失败:{e}')
+            self.update_run_info(f'<<{button_name}>>执行失败:{e}', 'ERROR')
             self.sc_buttons[button_id]['button'].setEnabled(True)
             return
 
@@ -419,7 +474,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if result:
                 self.update_run_info(f'<<{button_name}>>执行成功')
             else:
-                self.update_run_info(f'<<{button_name}>>执行失败')
+                self.update_run_info(f'<<{button_name}>>执行失败', 'ERROR')
             self.sc_buttons[button_id]['button'].setEnabled(True)
             # 不要在worker里deleteLater自己，会被放到worker的线程中执行
             thread.quit()
@@ -478,7 +533,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             ssh_tool.username = self.sc_buttons[button_id]['config']['用户名']
             ssh_tool.password = self.sc_buttons[button_id]['config']['密码']
         except Exception as e:
-            self.update_run_info(f'<<{button_name}>>执行失败:{e}')
+            self.update_run_info(f'<<{button_name}>>执行失败:{e}', 'ERROR')
             self.sc_buttons[button_id]['button'].setEnabled(True)
             return
 
@@ -509,7 +564,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if result:
                 self.update_run_info(f'<<{button_name}>>执行成功')
             else:
-                self.update_run_info(f'<<{button_name}>>执行失败')
+                self.update_run_info(f'<<{button_name}>>执行失败', 'ERROR')
             self.sc_buttons[button_id]['button'].setEnabled(True)
             thread.quit()
 
@@ -562,7 +617,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             ssh_tool.username = self.sc_buttons[button_id]['config']['用户名']
             ssh_tool.password = self.sc_buttons[button_id]['config']['密码']
         except Exception as e:
-            self.update_run_info(f'<<{button_name}>>执行失败:{e}')
+            self.update_run_info(f'<<{button_name}>>执行失败:{e}', 'ERROR')
             self.sc_buttons[button_id]['button'].setEnabled(True)
             return
 
@@ -601,7 +656,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if result:
                 self.update_run_info(f'<<{button_name}>>执行成功')
             else:
-                self.update_run_info(f'<<{button_name}>>执行失败')
+                self.update_run_info(f'<<{button_name}>>执行失败', 'ERROR')
             self.sc_buttons[button_id]['button'].setEnabled(True)
             thread.quit()
 
@@ -676,7 +731,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if result:
                 self.update_run_info(f'<<{button_name}>>执行成功')
             else:
-                self.update_run_info(f'<<{button_name}>>执行失败')
+                self.update_run_info(f'<<{button_name}>>执行失败', 'ERROR')
             self.sc_buttons[button_id]['button'].setEnabled(True)
             thread.quit()
 
@@ -743,24 +798,79 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if result != QtWidgets.QDialog.DialogCode.Accepted:
                 self.sc_buttons[button_id]['button'].setEnabled(True)
 
-    def update_run_info(self, text):
-        # 将输出添加到run_info_browser, 并打印时间戳
+    def _on_log_file_checkbox_changed(self, state):
+        """日志勾选框状态变化：控制文件日志开关"""
+        import logging.handlers
+        enable = (state == QtCore.Qt.Checked)
+        root_logger = logging.getLogger()
+
+        # 先移除所有已存在的文件 handler
+        for handler in root_logger.handlers[:]:
+            if isinstance(handler, logging.handlers.RotatingFileHandler):
+                handler.close()
+                root_logger.removeHandler(handler)
+
+        if enable:
+            # 添加文件 handler
+            log_dir = self.get_default_path()
+            os.makedirs(log_dir, exist_ok=True)
+            file_handler = logging.handlers.RotatingFileHandler(
+                filename=os.path.join(log_dir, "OneClick.log"),
+                maxBytes=10 * 1024 * 1024,
+                backupCount=5,
+                encoding="utf-8",
+            )
+            file_handler.setLevel(logging.DEBUG)
+            fmt = logging.Formatter(
+                '[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S',
+            )
+            file_handler.setFormatter(fmt)
+            root_logger.addHandler(file_handler)
+            self.update_run_info("文件日志已开启")
+        else:
+            self.update_run_info("文件日志已关闭")
+
+    def update_run_info(self, text, level='INFO'):
+        """同步显示到UI（带颜色），同时发给logger写文件
+
+        Args:
+            text: 要显示的文本
+            level: 日志级别，可选值 INFO / WARNING / ERROR
+        """
+        # 根据级别设置颜色
+        color_map = {
+            'INFO': '#000000',
+            'WARNING': '#FF8C00',
+            'ERROR': '#FF0000',
+        }
+        color = color_map.get(level.upper(), '#000000')
+
+        # HTML 转义：防止 < > & 等特殊字符被解析成标签
+        html_text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+        # 1. 加时间戳后显示到UI（带颜色）
         formatted_datetime = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        self.run_info_browser.append(formatted_datetime + ' ' + text)
+        html = f'<span style="color: {color}">{formatted_datetime} {html_text}</span>'
+        self.run_info_browser.append(html)
 
-        # 延迟执行滚动条操作（等待UI初始化完成）
-        def scroll_to_target():
-            # 垂直滚动条到底部
-            self.run_info_browser.verticalScrollBar().setValue(
-                self.run_info_browser.verticalScrollBar().maximum()
-            )
-            # 水平滚动条到头部
-            self.run_info_browser.horizontalScrollBar().setValue(
-                self.run_info_browser.horizontalScrollBar().minimum()
-            )
+        # 2. 滚动条置底
+        self.run_info_browser.verticalScrollBar().setValue(
+            self.run_info_browser.verticalScrollBar().maximum()
+        )
+        self.run_info_browser.horizontalScrollBar().setValue(
+            self.run_info_browser.horizontalScrollBar().minimum()
+        )
 
-        # 0毫秒延迟 = 等待当前事件循环结束后执行
-        QtCore.QTimer.singleShot(0, scroll_to_target)
+        # 3. 发给logger（如果开启了文件日志，会写入文件）
+        if hasattr(self, 'logger'):
+            level_upper = level.upper()
+            if level_upper == 'WARNING':
+                self.logger.warning(text)
+            elif level_upper == 'ERROR':
+                self.logger.error(text)
+            else:
+                self.logger.info(text)
 
     def update_linux_print(self, text, insert=False):
         if insert:
@@ -807,7 +917,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if result == QMessageBox.StandardButton.Yes:
             if button_id in self.sc_buttons:
                 btn = self.sc_buttons[button_id]['button']
-                self.update_run_info(f"删除{btn.text()}成功")
+                sc_ty = self.sc_buttons[button_id]['config']['指令类型']
+                btn_text = self.sc_buttons[button_id]['config']['指令名称']
+                self.update_run_info(f"删除<{sc_ty}>|<{btn_text}>快捷按钮成功")
                 btn.deleteLater()
                 del self.sc_buttons[button_id]  # 只调用这个无法删除已经实例化并在界面显示的按钮，所以需要提前btn.deleteLater()
                 # button_id为唯一标识，删除button后也不要减少数量
@@ -830,7 +942,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if dialog_func:
                 dialog_func(button_id)  # 以编辑模式打开窗口，传入button_id
             else:
-                self.update_run_info('编辑按钮出错：未知指令类型')
+                self.update_run_info(f"编辑按钮出错：未知指令类型{sc_ty}", 'ERROR')
 
     def stop_sc(self):
         """耗时的指令手动中止方法"""
@@ -838,7 +950,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.stop_pushButton.setEnabled(False)  # 禁用停止按钮
         # 检查是否有正在执行的线程
         if len(self.sc_threads) == 0:
-            self.update_run_info('没有正在执行的指令')
+            self.update_run_info('没有正在执行的指令', 'WARNING')
             self.stop_pushButton.setEnabled(True)
             return
         # 如果有，检查线程字典self.sc_threads，将所有线程结束
@@ -861,7 +973,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
     def clean_linux_print(self):
         self.linux_print_browser.clear()
-        self.update_run_info('服务器回显区已清空')
+        self.update_run_info(f"服务器回显区已清空")
 
     def get_default_path(self):
         # 获取可执行文件（.exe）本身所在的路径，不包含自己的名称
@@ -902,7 +1014,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 if not file_path.endswith('.json'):
                     file_path += '.json'
             else:
-                self.update_run_info('另存为配置 取消')
+                self.update_run_info(f"另存为配置 取消")
                 return
         else:
             file_path = path
@@ -918,6 +1030,10 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             button_count += 1
         if len(self.commands) != 0:
             cfg_dic['指令'] = self.commands
+        # 保存日志配置
+        cfg_dic['日志配置'] = {
+            '文件日志': self.log_file_checkBox.isChecked()
+        }
 
         # 写入到json文件
         with open(file_path, 'w', encoding='utf-8') as f:
@@ -965,8 +1081,14 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                     self.cmd_comboBox.addItem(cmd, cmd)
                 self.update_run_info(f"批量添加指令 成功，来自{file_path}")
                 self.cmd_comboBox.setCurrentIndex(-1)
+            elif key == '日志配置':
+                log_cfg = data[key]
+                if log_cfg.get('文件日志', False):
+                    self.log_file_checkBox.setChecked(True)
+                else:
+                    self.log_file_checkBox.setChecked(False)
             else:
-                self.update_run_info(f'{key}无法识别的数据类型')
+                self.update_run_info(f'{key}无法识别的数据类型', 'WARNING')
         self.update_run_info(f"批量添加快捷按钮 成功，来自{file_path}")
 
     def load_server_config(self, path):
@@ -1002,12 +1124,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         for key in data:
             if '服务器' in key:
                 self.servers_cfg.append(data[key])
-            elif '快捷按钮' in key:
-                continue
-            elif '指令' in key:
-                continue
             else:
-                self.update_run_info(f'{key}无法识别的数据类型')
+                continue
         self.update_run_info(f"批量添加服务器 成功，来自{file_path}")
 
     def is_config_changed(self, path):
@@ -1033,6 +1151,10 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             button_count += 1
         if len(self.commands) != 0:
             current_cfg['指令'] = self.commands
+        # 加入日志配置状态
+        current_cfg['日志配置'] = {
+            '文件日志': self.log_file_checkBox.isChecked()
+        }
 
         # 直接比较两个字典是否完全相等
         return current_cfg != file_cfg
@@ -1046,7 +1168,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
     def connect_server(self):
         if self.connect_pushButton.text() == '连接':
             if self.server_comboBox.currentIndex() == -1:
-                self.update_run_info(f'请先选择服务器')
+                self.update_run_info(f'请先选择服务器', 'WARNING')
                 return
             self.connect_pushButton.setEnabled(False)
             self.server_comboBox.setEnabled(False)
@@ -1061,7 +1183,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 ssh_tool.username = self.current_ssh['config']['用户名']
                 ssh_tool.password = self.current_ssh['config']['密码']
             except Exception as e:
-                self.update_run_info(f'请检查服务器ssh连接配置{e}')
+                self.update_run_info(f'请检查服务器ssh连接配置{e}', 'ERROR')
                 self.connect_pushButton.setEnabled(True)
                 self.server_comboBox.setEnabled(True)
                 return
@@ -1180,13 +1302,13 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             )
             thread.start()
         else:
-            self.update_run_info('请先建立ssh连接')
+            self.update_run_info('请先建立ssh连接', 'WARNING')
         self.cmd_plainTextEdit.clear()
 
     def save_cmd(self):
         cmd = self.cmd_plainTextEdit.toPlainText()
         if cmd == '':
-            self.update_run_info('请输入指令内容')
+            self.update_run_info('请输入指令内容', 'WARNING')
         else:
             self.cmd_comboBox.addItem(cmd)
             self.commands.append(cmd)
@@ -1293,6 +1415,7 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
         self.setWindowFlags(QtCore.Qt.WindowType.Dialog | QtCore.Qt.WindowType.WindowCloseButtonHint)
 
         self.parent = parent
+        self.logger = get_logger("SendCMDDialog")
 
         # 保存对话框的所有配置项
         self.sc_cfg = {}
@@ -1323,9 +1446,11 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
         for t in text_list:
             if not t.text().strip():
                 t.setStyleSheet("QLineEdit { border: 2px solid red; }")
+                self.parent.update_run_info(f"{t.objectName()}不能为空", "WARNING")
                 return
         if not self.cmd_TextEdit.toPlainText().strip():
             self.cmd_TextEdit.setStyleSheet("QPlainTextEdit { border: 2px solid red; }")
+            self.parent.update_run_info("请输入指令内容", "WARNING")
             return
 
         # 将输入框内容保存到字典
@@ -1984,7 +2109,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         self.monitor_sh = MONITOR_SH
         self.monitor_ps1 = MONITOR_PS1
 
-        # （脚本内容已移到 monitor_scripts.py 中）
         # （脚本内容已移到 monitor_scripts.py 中）
 
         # 按钮逻辑和窗口默认值
@@ -2815,7 +2939,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         for i, w in enumerate(self.g_windows):
             if w is window:
                 self.g_windows.pop(i)
-                # print(f"移除了一个窗口引用，还剩 {len(self.g_windows)} 个")
                 break
 
     def on_close_event(self, event):
@@ -2971,9 +3094,11 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
                         )
                         nics = stdout.read().decode('utf-8').strip().split('\n')
                         nics = [n.strip() for n in nics if n.strip()]
-                        worker.log_signal.emit(f'网卡列表: {nics}')
-                        if nics:
-                            worker.info_signal.emit(('已连接', None, nics))
+                        worker.log_signal.emit(f'网卡列表: {nics}', 'INFO')
+                        # 无论是否获取到网卡，都更新状态
+                        worker.info_signal.emit(
+                            ('已连接', '无可用网卡' if not nics else None, nics if nics else None)
+                        )
                     else:
                         # 仅检查脚本状态
                         cmd = "ps -ef | grep OneClickWeakNet.sh | grep -v grep | wc -l"
@@ -2982,30 +3107,8 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
                         is_running = count and count[-1] != '0'
                         worker.info_signal.emit(('已连接', '运行中' if is_running else '已停止', None))
                 except Exception as e:
-                    worker.log_signal.emit(f'状态检查失败: {e}')
+                    worker.log_signal.emit(f'状态检查失败: {e}', 'ERROR')
                     continue
-
-        def on_info(data):
-            ssh_status = data[0]
-            script_status = data[1] if len(data) > 1 else None
-            nics = data[2] if len(data) > 2 else None
-            self.ssh_stutas_label.setText(ssh_status)
-            if script_status:
-                self.script_stutas_label.setText(script_status)
-            if nics:
-                current = self.nic_comboBox.currentText()
-                self.nic_comboBox.clear()
-                for nic in nics:
-                    self.nic_comboBox.addItem(nic)
-                if current:
-                    idx = self.nic_comboBox.findText(current)
-                    if idx >= 0:
-                        self.nic_comboBox.setCurrentIndex(idx)
-            # 同步脚本运行状态标记
-            if script_status == '运行中' and not self.script_running:
-                self.script_running = True
-            elif script_status == '已停止' and self.script_running:
-                self.script_running = False
 
         def on_thread_finished():
             thread.deleteLater()
@@ -3021,7 +3124,7 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
 
         worker.moveToThread(thread)
         worker.log_signal.connect(self.parent.update_run_info)
-        worker.info_signal.connect(on_info)
+        worker.info_signal.connect(self.update_status)
         worker.finished.connect(worker.deleteLater)
         thread.started.connect(worker.run_task)
         thread.finished.connect(on_thread_finished)
@@ -3425,8 +3528,23 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
 
     def update_status(self, data):
         self.ssh_stutas_label.setText(data[0])
-        if len(data) > 1:
+        if len(data) > 1 and data[1]:
             self.script_stutas_label.setText(data[1])
+        if len(data) > 2 and data[2]:
+            # 更新网卡列表
+            current = self.nic_comboBox.currentText()
+            self.nic_comboBox.clear()
+            for nic in data[2]:
+                self.nic_comboBox.addItem(nic)
+            if current:
+                idx = self.nic_comboBox.findText(current)
+                if idx >= 0:
+                    self.nic_comboBox.setCurrentIndex(idx)
+            # 同步脚本运行状态标记
+            if data[1] == '运行中' and not self.script_running:
+                self.script_running = True
+            elif data[1] == '已停止' and self.script_running:
+                self.script_running = False
 
     def message_info_box(self, data):
         QMessageBox.information(self, data[0], data[1], QMessageBox.StandardButton.Ok)
