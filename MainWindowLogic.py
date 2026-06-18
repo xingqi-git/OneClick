@@ -1,4 +1,4 @@
-﻿import os.path
+import os.path
 import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import QThread
@@ -99,6 +99,13 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         # 从配置文件读取初始状态（如果有）
         initial_log_enabled = False
+        # 日志级别配置：字典，键为级别名，值为bool
+        self._log_level_config = {
+            'DEBUG': False,
+            'INFO': True,
+            'WARNING': True,
+            'ERROR': True,
+        }
         if os.path.exists(self.default_config_path):
             try:
                 with open(self.default_config_path, 'r', encoding='utf-8') as f:
@@ -106,6 +113,10 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                     cfg_data = json.load(f)
                     if '日志配置' in cfg_data:
                         initial_log_enabled = cfg_data['日志配置'].get('文件日志', False)
+                        # 读取日志级别配置（如果有）
+                        for level in self._log_level_config:
+                            if level in cfg_data['日志配置']:
+                                self._log_level_config[level] = cfg_data['日志配置'][level]
             except Exception:
                 pass
 
@@ -826,6 +837,23 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 datefmt='%Y-%m-%d %H:%M:%S',
             )
             file_handler.setFormatter(fmt)
+            
+            # 添加过滤器：只写入配置中开启的日志级别
+            def log_filter(record):
+                level_name = record.levelname
+                # 映射日志级别名称
+                level_map = {
+                    'DEBUG': 'DEBUG',
+                    'INFO': 'INFO',
+                    'WARNING': 'WARNING',
+                    'ERROR': 'ERROR',
+                    'CRITICAL': 'ERROR',
+                }
+                config_key = level_map.get(level_name, level_name)
+                # 检查该级别是否开启（默认不输出，避免配置丢失导致日志错乱）
+                return self._log_level_config.get(config_key, False)
+            
+            file_handler.addFilter(log_filter)
             root_logger.addHandler(file_handler)
             self.update_run_info("文件日志已开启")
         else:
@@ -1031,9 +1059,34 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if len(self.commands) != 0:
             cfg_dic['指令'] = self.commands
         # 保存日志配置
-        cfg_dic['日志配置'] = {
+        # 如果配置文件已存在，读取原有的日志级别配置并保留
+        existing_log_cfg = {}
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    old_cfg = json.load(f)
+                    if '日志配置' in old_cfg:
+                        existing_log_cfg = old_cfg['日志配置']
+            except Exception:
+                pass
+        
+        # 构建新的日志配置
+        new_log_cfg = {
             '文件日志': self.log_file_checkBox.isChecked()
         }
+        # 如果已有级别配置，保留；否则设置默认值（DEBUG=False，其他=True）
+        if 'DEBUG' in existing_log_cfg:
+            new_log_cfg['DEBUG'] = existing_log_cfg['DEBUG']
+            new_log_cfg['INFO'] = existing_log_cfg.get('INFO', True)
+            new_log_cfg['WARNING'] = existing_log_cfg.get('WARNING', True)
+            new_log_cfg['ERROR'] = existing_log_cfg.get('ERROR', True)
+        else:
+            new_log_cfg['DEBUG'] = False
+            new_log_cfg['INFO'] = True
+            new_log_cfg['WARNING'] = True
+            new_log_cfg['ERROR'] = True
+        
+        cfg_dic['日志配置'] = new_log_cfg
 
         # 写入到json文件
         with open(file_path, 'w', encoding='utf-8') as f:
@@ -1087,6 +1140,10 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                     self.log_file_checkBox.setChecked(True)
                 else:
                     self.log_file_checkBox.setChecked(False)
+                # 读取日志级别配置（如果有）
+                for level in self._log_level_config:
+                    if level in log_cfg:
+                        self._log_level_config[level] = log_cfg[level]
             else:
                 self.update_run_info(f'{key}无法识别的数据类型', 'WARNING')
         self.update_run_info(f"批量添加快捷按钮 成功，来自{file_path}")
@@ -1152,9 +1209,23 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if len(self.commands) != 0:
             current_cfg['指令'] = self.commands
         # 加入日志配置状态
-        current_cfg['日志配置'] = {
+        # 如果文件中已有日志级别配置，保留；否则用内存中的配置
+        current_log_cfg = {
             '文件日志': self.log_file_checkBox.isChecked()
         }
+        if '日志配置' in file_cfg and 'DEBUG' in file_cfg['日志配置']:
+            # 保留文件中的日志级别配置
+            current_log_cfg['DEBUG'] = file_cfg['日志配置']['DEBUG']
+            current_log_cfg['INFO'] = file_cfg['日志配置'].get('INFO', True)
+            current_log_cfg['WARNING'] = file_cfg['日志配置'].get('WARNING', True)
+            current_log_cfg['ERROR'] = file_cfg['日志配置'].get('ERROR', True)
+        else:
+            # 用内存中的配置（首次保存）
+            current_log_cfg['DEBUG'] = self._log_level_config['DEBUG']
+            current_log_cfg['INFO'] = self._log_level_config['INFO']
+            current_log_cfg['WARNING'] = self._log_level_config['WARNING']
+            current_log_cfg['ERROR'] = self._log_level_config['ERROR']
+        current_cfg['日志配置'] = current_log_cfg
 
         # 直接比较两个字典是否完全相等
         return current_cfg != file_cfg
