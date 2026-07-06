@@ -1,4 +1,4 @@
-import os.path
+﻿import os.path
 import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import QThread
@@ -559,13 +559,14 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         remote_path = self.sc_buttons[button_id]['config']['服务器路径']
         mtime = mtime_dic.get(self.sc_buttons[button_id]['config']['修改时间'])
         filename = self.sc_buttons[button_id]['config']['文件名包含']
+        work_dir = self.sc_buttons[button_id]['config']['文件暂存路径']
 
         def execute_send_files():
             c_result = ssh_tool.connect()
             if not c_result:
                 return False
 
-            s_result = ssh_tool.send_files(local_path, remote_path, mtime, filename)
+            s_result = ssh_tool.send_files(local_path, remote_path, mtime, filename, work_dir)
 
             ssh_tool.disconnect()
 
@@ -651,13 +652,14 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         remote_path = self.sc_buttons[button_id]['config']['服务器路径']
         mtime = mtime_dic.get(self.sc_buttons[button_id]['config']['修改时间'])
         filename = self.sc_buttons[button_id]['config']['文件名包含']
+        work_dir = self.sc_buttons[button_id]['config']['文件暂存路径']
 
         def execute_get_files():
             c_result = ssh_tool.connect()
             if not c_result:
                 return False
 
-            g_result = ssh_tool.get_files(remote_path, local_path, mtime, filename)
+            g_result = ssh_tool.get_files(remote_path, local_path, mtime, filename, work_dir)
 
             ssh_tool.disconnect()
 
@@ -1500,6 +1502,18 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
         self.server_comboBox.setCurrentIndex(-1)
         self.server_comboBox.activated.connect(self.select_server)
 
+        # 文件暂存路径：用户名变化时自动联动更新
+        if hasattr(self, 'username_lineEdit') and hasattr(self, 'work_dir_lineEdit'):
+            self.username_lineEdit.textChanged.connect(self._on_username_changed)
+            # 初始化时设置默认值（如果已有用户名则自动填入）
+            if self.username_lineEdit.text():
+                self.work_dir_lineEdit.setText(f"/home/{self.username_lineEdit.text()}")
+
+    def _on_username_changed(self, username):
+        """用户名变化时自动更新文件暂存路径"""
+        if username:
+            self.work_dir_lineEdit.setText(f"/home/{username}")
+
     def create_sc(self):
         text_list = [
             self.linux_ip_lineEdit,
@@ -1532,6 +1546,11 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
         self.sc_cfg['端口'] = self.sshport_lineEdit.text()
         self.sc_cfg['指令'] = self.cmd_TextEdit.toPlainText()
         self.sc_cfg['指令名称'] = self.sc_name_lineEdit.text()
+        # 保存文件暂存路径
+        if hasattr(self, 'work_dir_lineEdit'):
+            self.sc_cfg['文件暂存路径'] = self.work_dir_lineEdit.text().strip()
+        else:
+            self.sc_cfg['文件暂存路径'] = f"/home/{self.username_lineEdit.text()}"
 
         # 将快捷方式的配置内容传递给主窗口，区分编辑模式还是添加模式
         if self.parent:
@@ -1551,6 +1570,9 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
         self.passwd_lineEdit.setText(sc_data['密码'])
         self.cmd_TextEdit.setPlainText(sc_data['指令'])
         self.sc_name_lineEdit.setText(sc_data['指令名称'])
+        # 回显文件暂存路径
+        if '文件暂存路径' in sc_data and hasattr(self, 'work_dir_lineEdit'):
+            self.work_dir_lineEdit.setText(sc_data['文件暂存路径'])
 
     def reset(self):
         self.server_comboBox.setCurrentIndex(-1)
@@ -1560,6 +1582,8 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
         self.sshport_lineEdit.clear()
         self.cmd_TextEdit.clear()
         self.sc_name_lineEdit.clear()
+        if hasattr(self, 'work_dir_lineEdit'):
+            self.work_dir_lineEdit.clear()
 
     def select_server(self, index):
         self.linux_ip_lineEdit.setText(self.server_comboBox.currentData()['IP'])
@@ -1567,6 +1591,9 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
         self.username_lineEdit.setText(self.server_comboBox.currentData()['用户名'])
         self.passwd_lineEdit.setText(self.server_comboBox.currentData()['密码'])
         self.sc_name_lineEdit.setText(f'{sc_class2str[self.__class__.__name__]}：' + self.server_comboBox.currentText())
+        # 选择服务器时，同步更新文件暂存路径
+        if hasattr(self, 'work_dir_lineEdit'):
+            self.work_dir_lineEdit.setText(f"/home/{self.server_comboBox.currentData()['用户名']}")
 
 
 class SendCMD2Dialog(SendCMDDialog):
@@ -1606,6 +1633,16 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
             text = self.time_comboBox.itemText(index)
             self.time_dic[text] = index
 
+        # 文件暂存路径：用户名变化时自动联动更新
+        self.username_lineEdit.textChanged.connect(self._on_username_changed)
+        if self.username_lineEdit.text():
+            self.work_dir_lineEdit.setText(f"/home/{self.username_lineEdit.text()}")
+
+    def _on_username_changed(self, username):
+        """用户名变化时自动更新文件暂存路径"""
+        if username:
+            self.work_dir_lineEdit.setText(f"/home/{username}")
+
     def create_sc(self):
         text_list = [
             self.linux_ip_lineEdit,
@@ -1640,6 +1677,7 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         self.sc_cfg['文件名包含'] = self.filename_lineEdit.text()
         self.sc_cfg['服务器路径'] = self.server_path_lineEdit.text()
         self.sc_cfg['指令名称'] = self.sc_name_lineEdit.text()
+        self.sc_cfg['文件暂存路径'] = self.work_dir_lineEdit.text().strip()
 
         # 将快捷方式的配置内容传递给主窗口
         if self.parent:
@@ -1664,6 +1702,9 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         self.filename_lineEdit.setText(sc_data['文件名包含'])
         self.server_path_lineEdit.setText(sc_data['服务器路径'])
         self.sc_name_lineEdit.setText(sc_data['指令名称'])
+        # 回显文件暂存路径
+        if '文件暂存路径' in sc_data:
+            self.work_dir_lineEdit.setText(sc_data['文件暂存路径'])
 
     def reset(self):
         self.server_comboBox.clear()
@@ -1671,6 +1712,7 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         self.username_lineEdit.clear()
         self.passwd_lineEdit.clear()
         self.sshport_lineEdit.clear()
+        self.work_dir_lineEdit.clear()
         self.local_path_pushButton.setText('请选择')
         self.time_comboBox.setCurrentIndex(0)
         self.filename_lineEdit.clear()
@@ -1715,6 +1757,8 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         self.username_lineEdit.setText(self.server_comboBox.currentData()['用户名'])
         self.passwd_lineEdit.setText(self.server_comboBox.currentData()['密码'])
         self.sc_name_lineEdit.setText(f'{sc_class2str[self.__class__.__name__]}：' + self.server_comboBox.currentText())
+        # 选择服务器时，同步更新文件暂存路径
+        self.work_dir_lineEdit.setText(f"/home/{self.server_comboBox.currentData()['用户名']}")
 
 
 class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
@@ -1743,6 +1787,16 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
         for index in range(self.time_comboBox.count()):
             text = self.time_comboBox.itemText(index)
             self.time_dic[text] = index
+
+        # 文件暂存路径：用户名变化时自动联动更新
+        self.username_lineEdit.textChanged.connect(self._on_username_changed)
+        if self.username_lineEdit.text():
+            self.work_dir_lineEdit.setText(f"/home/{self.username_lineEdit.text()}")
+
+    def _on_username_changed(self, username):
+        """用户名变化时自动更新文件暂存路径"""
+        if username:
+            self.work_dir_lineEdit.setText(f"/home/{username}")
 
     def create_sc(self):
         text_list = [
@@ -1778,6 +1832,7 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
         self.sc_cfg['文件名包含'] = self.filename_lineEdit.text()
         self.sc_cfg['服务器路径'] = self.server_path_lineEdit.text()
         self.sc_cfg['指令名称'] = self.sc_name_lineEdit.text()
+        self.sc_cfg['文件暂存路径'] = self.work_dir_lineEdit.text().strip()
 
         # 将快捷方式的配置内容传递给主窗口
         if self.parent:
@@ -1802,6 +1857,9 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
         self.filename_lineEdit.setText(sc_data['文件名包含'])
         self.server_path_lineEdit.setText(sc_data['服务器路径'])
         self.sc_name_lineEdit.setText(sc_data['指令名称'])
+        # 回显文件暂存路径
+        if '文件暂存路径' in sc_data:
+            self.work_dir_lineEdit.setText(sc_data['文件暂存路径'])
 
     def reset(self):
         self.server_comboBox.clear()
@@ -1809,6 +1867,7 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
         self.username_lineEdit.clear()
         self.passwd_lineEdit.clear()
         self.sshport_lineEdit.clear()
+        self.work_dir_lineEdit.clear()
         self.local_path_pushButton.setText("当前路径/时间IP(例:20251024031415-1.1.1.1)/")
         self.time_comboBox.setCurrentIndex(0)
         self.filename_lineEdit.clear()
@@ -1839,6 +1898,8 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
         self.username_lineEdit.setText(self.server_comboBox.currentData()['用户名'])
         self.passwd_lineEdit.setText(self.server_comboBox.currentData()['密码'])
         self.sc_name_lineEdit.setText(f'{sc_class2str[self.__class__.__name__]}：' + self.server_comboBox.currentText())
+        # 选择服务器时，同步更新文件暂存路径
+        self.work_dir_lineEdit.setText(f"/home/{self.server_comboBox.currentData()['用户名']}")
 
 
 class CopyFilesDialog(QDialog, copy_local_files_dlg.Ui_Dialog):
@@ -2106,6 +2167,11 @@ class ResourceMonitorDialog1(SendCMDDialog):
         self.sc_cfg['进程'] = ""
         self.sc_cfg['采样频率'] = ""
         self.sc_cfg['指令名称'] = self.sc_name_lineEdit.text()
+        # 保存文件暂存路径，本机情况下为空
+        if self.server_comboBox.currentData() == '本机':
+            self.sc_cfg['文件暂存路径'] = ""
+        else:
+            self.sc_cfg['文件暂存路径'] = self.work_dir_lineEdit.text().strip()
 
         # 将快捷方式的配置内容传递给主窗口，区分编辑模式还是添加模式
         if self.parent:
@@ -2123,15 +2189,25 @@ class ResourceMonitorDialog1(SendCMDDialog):
             item_count = self.server_comboBox.count()
             self.server_comboBox.setCurrentIndex(item_count - 1)
             self.sshport_lineEdit.clear()
+            self.work_dir_lineEdit.clear()
             self.linux_ip_lineEdit.setEnabled(False)
             self.username_lineEdit.setEnabled(False)
             self.passwd_lineEdit.setEnabled(False)
             self.sshport_lineEdit.setEnabled(False)
+            self.work_dir_lineEdit.setEnabled(False)
         else:
             self.linux_ip_lineEdit.setText(sc_data['IP'])
             self.sshport_lineEdit.setText(sc_data['端口'])
             self.username_lineEdit.setText(sc_data['用户名'])
             self.passwd_lineEdit.setText(sc_data['密码'])
+            # 回显文件暂存路径
+            if '文件暂存路径' in sc_data:
+                self.work_dir_lineEdit.setText(sc_data['文件暂存路径'])
+            self.linux_ip_lineEdit.setEnabled(True)
+            self.username_lineEdit.setEnabled(True)
+            self.passwd_lineEdit.setEnabled(True)
+            self.sshport_lineEdit.setEnabled(True)
+            self.work_dir_lineEdit.setEnabled(True)
         self.sc_name_lineEdit.setText(sc_data['指令名称'])
 
     def reset(self):
@@ -2140,11 +2216,13 @@ class ResourceMonitorDialog1(SendCMDDialog):
         self.username_lineEdit.clear()
         self.passwd_lineEdit.clear()
         self.sshport_lineEdit.clear()
+        self.work_dir_lineEdit.clear()
         self.sc_name_lineEdit.clear()
         self.linux_ip_lineEdit.setEnabled(True)
         self.username_lineEdit.setEnabled(True)
         self.passwd_lineEdit.setEnabled(True)
         self.sshport_lineEdit.setEnabled(True)
+        self.work_dir_lineEdit.setEnabled(True)
 
     def select_server(self, index):
         if self.server_comboBox.currentData() == '本机':
@@ -2152,17 +2230,20 @@ class ResourceMonitorDialog1(SendCMDDialog):
             self.username_lineEdit.clear()
             self.passwd_lineEdit.clear()
             self.sshport_lineEdit.clear()
+            self.work_dir_lineEdit.clear()
             self.sc_name_lineEdit.setText(f'{sc_class2str[self.__class__.__name__]}：' + self.server_comboBox.currentText())
             self.linux_ip_lineEdit.setEnabled(False)
             self.username_lineEdit.setEnabled(False)
             self.passwd_lineEdit.setEnabled(False)
             self.sshport_lineEdit.setEnabled(False)
+            self.work_dir_lineEdit.setEnabled(False)
         else:
             super().select_server(index)
             self.linux_ip_lineEdit.setEnabled(True)
             self.username_lineEdit.setEnabled(True)
             self.passwd_lineEdit.setEnabled(True)
             self.sshport_lineEdit.setEnabled(True)
+            self.work_dir_lineEdit.setEnabled(True)
 
 
 class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
@@ -2474,7 +2555,9 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
             # 构建并检查指令的内容
             try:
-                user_path = f"/home/{username}/OneClick/Monitor"
+                # 从配置中获取文件暂存路径
+                work_dir = self.parent.sc_buttons[self.button_id]['config']['文件暂存路径']
+                user_path = f"{work_dir}/OneClick/Monitor"
                 script_path = f"{user_path}/OneClickMonitor.sh"
                 monitor_cmd = f"{script_path} -o {user_path}"
 
@@ -2821,7 +2904,9 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     self.set_all_buttons_enable()
                     return
 
-                user_path = f"/home/{username}/OneClick/Monitor"
+                # 从配置中获取文件暂存路径
+                work_dir = self.parent.sc_buttons[self.button_id]['config']['文件暂存路径']
+                user_path = f"{work_dir}/OneClick/Monitor"
 
                 clean_cmd = f"rm -rf {user_path}"
 
@@ -2908,8 +2993,9 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             return
 
         self.set_all_buttons_enable(False)
-        # 服务器监控数据的位置
-        user_path = f"/home/{username}/OneClick/Monitor"
+        # 从配置中获取文件暂存路径
+        work_dir = self.parent.sc_buttons[self.button_id]['config']['文件暂存路径']
+        user_path = f"{work_dir}/OneClick/Monitor"
 
         # 本地保存路径
         def do_download_data():
@@ -2920,7 +3006,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             try:
                 # 如果本地没有ip文件夹，则创建
                 os.makedirs(self.monitor_data_path, mode=0o777, exist_ok=True)
-                get_result = ssh_client.get_files(user_path, self.monitor_data_path)
+                get_result = ssh_client.get_files(user_path, self.monitor_data_path, float('inf'), '', work_dir)
                 ssh_client.disconnect()
                 if not get_result:
                     worker.info_signal.emit(("提示", f"下载数据失败，原因：获取数据失败"))
@@ -3228,14 +3314,16 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
             self.message_info_box(("提示", "SSH未连接"))
             return
         cfg = self.parent.sc_buttons[self.button_id]['config']
+        # 从配置中获取文件暂存路径
+        work_dir = cfg['文件暂存路径']
         ip_name = cfg['IP'] if cfg['IP'] else 'local'
         local_dir = os.path.join(self.parent.get_default_path(), ip_name, "WeakNet").replace('\\', '/')
         local_log = local_dir + "/OneClickWeakNet.log"
-        remote_log = f"/home/{self.ssh_client.username}/OneClick/WeakNet/OneClickWeakNet.log"
+        remote_log = f"{work_dir}/OneClick/WeakNet/OneClickWeakNet.log"
 
         try:
             os.makedirs(local_dir, mode=0o777, exist_ok=True)
-            self.ssh_client.get_files(remote_log, local_dir)
+            self.ssh_client.get_files(remote_log, local_dir, float('inf'), '', work_dir)
         except Exception as e:
             self.parent.update_run_info(f"下载日志失败: {e}")
 
@@ -3363,8 +3451,8 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
             return f"tc qdisc add dev {nic} root netem {' '.join(netem_parts)}"
         return None
 
-    def generate_script(self, nic, loop_count):
-        log_file = f"/home/{self.ssh_client.username}/OneClick/WeakNet/OneClickWeakNet.log"
+    def generate_script(self, nic, loop_count, work_dir):
+        log_file = f"{work_dir}/OneClick/WeakNet/OneClickWeakNet.log"
         lines = [
             '#!/bin/bash',
             'set -euo pipefail',
@@ -3468,12 +3556,15 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
             self.message_info_box(("提示", "循环次数必须是整数"))
             return
 
-        script_content = self.generate_script(nic, loop_count)
         cfg = self.parent.sc_buttons[self.button_id]['config']
+        # 从配置中获取文件暂存路径
+        work_dir = cfg['文件暂存路径']
         username = cfg['用户名']
         ip_name = cfg['IP'] if cfg['IP'] else 'local'
         local_dir = os.path.join(self.parent.get_default_path(), ip_name, "WeakNet").replace('\\', '/')
-        user_path = f"/home/{username}/OneClick/WeakNet"
+
+        script_content = self.generate_script(nic, loop_count, work_dir)
+        user_path = f"{work_dir}/OneClick/WeakNet"
         script_path = f"{user_path}/OneClickWeakNet.sh"
         monitor_cmd = f"nohup bash {script_path} >/dev/null 2>&1 & echo $!"
 
@@ -3490,7 +3581,7 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
                 mkdir_cmd = f"mkdir -p \"{user_path}\""
                 stdin, stdout, stderr = self.ssh_client.ssh.exec_command(mkdir_cmd)
                 stdout.read(); stderr.read()
-                send_result = self.ssh_client.send_files(local_path, f"{user_path}/")
+                send_result = self.ssh_client.send_files(local_path, f"{user_path}/", float('inf'), '', work_dir)
                 if not send_result:
                     worker.info_signal.emit(("提示", "上传脚本失败"))
                     return False

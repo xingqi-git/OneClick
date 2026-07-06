@@ -1,4 +1,4 @@
-﻿import paramiko
+import paramiko
 import time
 import os
 import re
@@ -393,12 +393,13 @@ class SSHTools(object):
 
         return tree_list
 
-    def send_files(self, local_path, remote_path, mtime=float('inf'), filename=''):
+    def send_files(self, local_path, remote_path, mtime=float('inf'), filename='', work_dir=None):
         """
         SSH上传文件
         流程：本地筛选 -> 复制到临时目录 -> 打包 -> SCP上传 -> 服务器端解包 -> 移动到目标目录 -> 清理临时文件
         参数：
             local_path: 本地源路径，可以是文件或文件夹
+            work_dir: 服务器端临时目录所在路径，默认为 /home/{username}
             remote_path: 远程目标路径，只能是文件夹
             mtime: 筛选修改时间（秒），只上传在此时间内修改的文件，默认无限大即不限制
             filename: 筛选文件名包含该字符串，默认空字符串即不限制
@@ -473,7 +474,8 @@ class SSHTools(object):
         # 提取源路径的基础名，用于保持原目录结构
         local_base = os.path.basename(local_path)
         # 构造服务器临时目录
-        temp_remote_dir = f"/home/{self.username}/OneClick_temp{time_now}"
+        base_dir = work_dir if work_dir else f"/home/{self.username}"
+        temp_remote_dir = f"{base_dir}/OneClick_temp{time_now}"
 
         # 收集所有需要创建的目录：dir_list + file_list中所有文件的父目录，保证空目录也能被创建
         all_dirs = set()
@@ -612,13 +614,14 @@ class SSHTools(object):
         self.transfer_stat = 0
         return True
 
-    def get_files(self, remote_path, local_path, mtime=float('inf'), filename=''):
+    def get_files(self, remote_path, local_path, mtime=float('inf'), filename='', work_dir=None):
         """
         SSH下载文件
         流程：服务器端find筛选 -> 复制到临时目录 -> SCP下载 -> 清理临时文件
         性能优化：使用find命令直接在服务器端完成筛选和信息获取，仅需1次exec_command调用
         参数：
             remote_path: 远程源路径，可以是文件或文件夹
+            work_dir: 服务器端临时目录所在路径，默认为 /home/{username}
             local_path: 本地目标路径，只能是文件夹
             mtime: 筛选修改时间（秒），只下载在此时间内修改的文件，默认无限大即不限制
             filename: 筛选文件名包含该字符串，默认空字符串即不限制
@@ -660,7 +663,9 @@ class SSHTools(object):
         stderr.read()
 
         # 构造远程临时目录路径，放在当前用户home下避免权限问题
-        temp_remote_path = f"/home/{self.username}/OneClick_temp{server_now}"
+        # 构造服务器临时目录
+        base_dir = work_dir if work_dir else f"/home/{self.username}"
+        temp_remote_path = f"{base_dir}/OneClick_temp{server_now}"
         # 提取远程源路径的基础名
         remote_base = os.path.basename(remote_path)
 

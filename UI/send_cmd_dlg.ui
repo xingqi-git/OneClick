@@ -88,6 +88,17 @@
        </property>
       </widget>
      </item>
+     <item row="5" column="0">
+      <widget class="QLabel" name="label_workdir">
+       <property name="text">
+        <string>文件暂存路径</string>
+       </property>
+      </widget>
+     </item>
+     <item row="5" column="1">
+      <widget class="QLineEdit" name="work_dir_lineEdit">
+      </widget>
+     </item>
     </layout>
    </item>
    <item>
@@ -158,6 +169,7 @@
   <tabstop>sshport_lineEdit</tabstop>
   <tabstop>username_lineEdit</tabstop>
   <tabstop>passwd_lineEdit</tabstop>
+  <tabstop>work_dir_lineEdit</tabstop>
   <tabstop>cmd_TextEdit</tabstop>
   <tabstop>sc_name_lineEdit</tabstop>
   <tabstop>save_pushButton</tabstop>

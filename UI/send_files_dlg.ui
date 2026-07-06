@@ -89,13 +89,24 @@
       </widget>
      </item>
      <item row="5" column="0">
+      <widget class="QLabel" name="label_workdir">
+       <property name="text">
+        <string>文件暂存路径</string>
+       </property>
+      </widget>
+     </item>
+     <item row="5" column="1">
+      <widget class="QLineEdit" name="work_dir_lineEdit">
+      </widget>
+     </item>
+     <item row="6" column="0">
       <widget class="QLabel" name="label_7">
        <property name="text">
         <string>待发送文件(夹)</string>
        </property>
       </widget>
      </item>
-     <item row="5" column="1">
+     <item row="6" column="1">
       <widget class="QPushButton" name="local_path_pushButton">
        <property name="toolTipDuration">
         <number>-1</number>
@@ -105,14 +116,14 @@
        </property>
       </widget>
      </item>
-     <item row="6" column="0">
+     <item row="7" column="0">
       <widget class="QLabel" name="label_10">
        <property name="text">
         <string>目标路径</string>
        </property>
       </widget>
      </item>
-     <item row="6" column="1">
+     <item row="7" column="1">
       <widget class="QLineEdit" name="server_path_lineEdit">
        <property name="text">
         <string/>
@@ -263,6 +274,7 @@
   <tabstop>sshport_lineEdit</tabstop>
   <tabstop>username_lineEdit</tabstop>
   <tabstop>passwd_lineEdit</tabstop>
+  <tabstop>work_dir_lineEdit</tabstop>
   <tabstop>local_path_pushButton</tabstop>
   <tabstop>server_path_lineEdit</tabstop>
   <tabstop>time_comboBox</tabstop>
