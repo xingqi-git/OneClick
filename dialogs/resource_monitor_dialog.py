@@ -6,7 +6,7 @@ import psutil
 import shutil
 import GraphWindowLogic
 from PyQt5 import QtCore
-from PyQt5.QtCore import QThread
+from PyQt5.QtCore import QThread, QTimer
 from PyQt5.QtWidgets import QDialog, QMessageBox
 from UI import resource_monitor_dlg
 from utils import ssh_tools, qthread_worker
@@ -337,8 +337,15 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         self.set_all_buttons_enable(False)
         # 如果是本机监控，需要创建本地监控脚本并执行
         if self.data_dir_name == 'local':
-            if self.monitor_stutas_label.text() == '监控中':
-                self.message_info_box(("提示", "请先结束正在运行的监控！"))
+            monitor_status = self.monitor_stutas_label.text()
+            # 未知：提示请等待获取监控状态，自动关闭
+            if monitor_status == '未知':
+                AutoCloseMessageBox("提示", "请等待获取监控状态", 2000, self).exec_()
+                self.set_all_buttons_enable()
+                return
+            # 监控中：提示存在运行中的监控，请先结束，自动关闭
+            if monitor_status == '监控中':
+                AutoCloseMessageBox("提示", "存在运行中的监控，请先结束", 2000, self).exec_()
                 self.set_all_buttons_enable()
                 return
 
@@ -399,7 +406,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 if result:
                     try:
                         if result.poll() is None:
-                            self.message_info_box(("提示", "监控已经开始，关闭软件不会停止监控"))
+                            AutoCloseMessageBox("提示", "监控已经开始，关闭软件不会停止监控", 2000, self).exec_()
                             self.parent.update_run_info("本机监控已经开始")
                         else:
                             self.message_info_box(("提示", f"监控脚本启动失败{result.returncode}"))
@@ -441,12 +448,25 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
         # 如果是服务器监控，需要创建本地监控脚本，上传到服务器执行，并删除本地脚本
         else:
-            if self.ssh_stutas_label.text() != '已连接':
-                self.message_info_box(("提示", "服务器尚未连接"))
+            ssh_status = self.ssh_stutas_label.text()
+            monitor_status = self.monitor_stutas_label.text()
+            
+            # 连接中，未知：提示请等待服务器连接，自动关闭
+            if ssh_status == '连接中...' and monitor_status == '未知':
+                AutoCloseMessageBox("提示", "请等待服务器连接", 2000, self).exec_()
+                self.set_all_buttons_enable()
+                return
+            # 已连接，未知：提示请等待获取监控状态，自动关闭
+            if ssh_status == '已连接' and monitor_status == '未知':
+                AutoCloseMessageBox("提示", "请等待获取监控状态", 2000, self).exec_()
+                self.set_all_buttons_enable()
+                return
+            if ssh_status != '已连接':
+                AutoCloseMessageBox("提示", "服务器尚未连接", 2000, self).exec_()
                 self.set_all_buttons_enable()
                 return
             if self.monitor_stutas_label.text() == '监控中':
-                self.message_info_box(("提示", "请先结束正在运行的监控！"))
+                AutoCloseMessageBox("提示", "存在运行中的监控，请先结束", 2000, self).exec_()
                 self.set_all_buttons_enable()
                 return
 
@@ -547,7 +567,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
             def on_ssh_worker_finished(result):
                 if result:
-                    self.message_info_box(("提示", "监控已经开始，关闭软件不会停止监控"))
+                    AutoCloseMessageBox("提示", "监控已经开始，关闭软件不会停止监控", 2000, self).exec_()
                     self.parent.update_run_info(f"{ip}监控开始")
                 self.set_all_buttons_enable()
                 thread.quit()
@@ -1038,3 +1058,32 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             thread_data['thread'].quit()
 
         event.accept()
+
+
+class AutoCloseMessageBox(QMessageBox):
+    """自动关闭的消息框，带读秒倒计时"""
+    def __init__(self, title, text, timeout=2000, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setText(text)
+        self.setStandardButtons(QMessageBox.Ok)
+        self.setDefaultButton(QMessageBox.Ok)
+        
+        self.timeout = timeout
+        self.remaining = timeout // 1000
+        
+        # 初始就设置为2秒
+        self.button(QMessageBox.Ok).setText(f"确认({self.remaining}秒)")
+        
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_countdown)
+        self.timer.start(1000)
+        
+        QTimer.singleShot(timeout, self.accept)
+    
+    def update_countdown(self):
+        self.remaining -= 1
+        if self.remaining > 0:
+            self.button(QMessageBox.Ok).setText(f"确认({self.remaining}秒)")
+        else:
+            self.timer.stop()
