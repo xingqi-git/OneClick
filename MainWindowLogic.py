@@ -1,4 +1,4 @@
-﻿import os.path
+import os.path
 import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import QThread
@@ -1492,6 +1492,7 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
 
         # 保存对话框的所有配置项
         self.sc_cfg = {}
+        self._loading = False  # 编辑模式加载标志，防止 textChanged 覆盖名称
 
         self.save_pushButton.clicked.connect(self.create_sc)
         self.reset_pushButton.clicked.connect(self.reset)
@@ -1502,12 +1503,28 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
         self.server_comboBox.setCurrentIndex(-1)
         self.server_comboBox.activated.connect(self.select_server)
 
+        # IP输入框变化时，自动生成快捷按钮名称
+        self.linux_ip_lineEdit.textChanged.connect(self._on_ip_changed)
+
         # 文件暂存路径：用户名变化时自动联动更新
         if hasattr(self, 'username_lineEdit') and hasattr(self, 'work_dir_lineEdit'):
             self.username_lineEdit.textChanged.connect(self._on_username_changed)
             # 初始化时设置默认值（如果已有用户名则自动填入）
             if self.username_lineEdit.text():
                 self.work_dir_lineEdit.setText(f"/home/{self.username_lineEdit.text()}")
+
+    def _on_ip_changed(self, ip):
+        """手动填写IP时，自动生成快捷按钮名称"""
+        if getattr(self, '_loading', False):
+            return
+        # 如果是通过下拉框选择的服务器，不自动填
+        if self.server_comboBox.currentIndex() != -1:
+            return
+        # 手动填写IP，用 IP 替代服务器名称
+        if ip.strip():
+            self.sc_name_lineEdit.setText(f'{sc_class2str[self.__class__.__name__]}：{ip}')
+        else:
+            self.sc_name_lineEdit.clear()
 
     def _on_username_changed(self, username):
         """用户名变化时自动更新文件暂存路径"""
@@ -1563,6 +1580,7 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
 
     def edit_sc(self, button_id):
         self.button_id = button_id  # 变为自己的属性，用于按下保存按钮时父窗口调用编辑按钮函数
+        self._loading = True  # 加载中，防止 textChanged 覆盖名称
         sc_data = self.parent.sc_buttons[button_id]['config']
         self.linux_ip_lineEdit.setText(sc_data['IP'])
         self.sshport_lineEdit.setText(sc_data['端口'])
@@ -1573,6 +1591,7 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
         # 回显文件暂存路径
         if '文件暂存路径' in sc_data and hasattr(self, 'work_dir_lineEdit'):
             self.work_dir_lineEdit.setText(sc_data['文件暂存路径'])
+        self._loading = False  # 加载完成
 
     def reset(self):
         self.server_comboBox.setCurrentIndex(-1)
@@ -1618,6 +1637,7 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
 
         # 保存对话框的所有配置项
         self.sc_cfg = {}
+        self._loading = False  # 编辑模式加载标志，防止 textChanged 覆盖名称
 
         self.local_path_pushButton.clicked.connect(self.select_path)
         self.save_pushButton.clicked.connect(self.create_sc)
@@ -1627,6 +1647,10 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
             self.server_comboBox.addItem(server['服务器名称'], server)
         self.server_comboBox.setCurrentIndex(-1)
         self.server_comboBox.activated.connect(self.select_server)
+
+        # IP输入框变化时，自动生成快捷按钮名称
+        self.linux_ip_lineEdit.textChanged.connect(self._on_ip_changed)
+
         # 创建时间下拉菜单的选项字典，因为编辑按钮时传入的是str，需要将str对应为下拉的索引
         self.time_dic = {}
         for index in range(self.time_comboBox.count()):
@@ -1637,6 +1661,17 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         self.username_lineEdit.textChanged.connect(self._on_username_changed)
         if self.username_lineEdit.text():
             self.work_dir_lineEdit.setText(f"/home/{self.username_lineEdit.text()}")
+
+    def _on_ip_changed(self, ip):
+        """手动填写IP时，自动生成快捷按钮名称"""
+        if getattr(self, '_loading', False):
+            return
+        if self.server_comboBox.currentIndex() != -1:
+            return
+        if ip.strip():
+            self.sc_name_lineEdit.setText(f'{sc_class2str[self.__class__.__name__]}：{ip}')
+        else:
+            self.sc_name_lineEdit.clear()
 
     def _on_username_changed(self, username):
         """用户名变化时自动更新文件暂存路径"""
@@ -1690,6 +1725,7 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
 
     def edit_sc(self, button_id):
         self.button_id = button_id  # 变为自己的属性，用于按下保存按钮时父窗口调用编辑按钮函数
+        self._loading = True  # 加载中，防止 textChanged 覆盖名称
         sc_data = self.parent.sc_buttons[button_id]['config']
         self.linux_ip_lineEdit.setText(sc_data['IP'])
         self.sshport_lineEdit.setText(sc_data['端口'])
@@ -1705,6 +1741,7 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         # 回显文件暂存路径
         if '文件暂存路径' in sc_data:
             self.work_dir_lineEdit.setText(sc_data['文件暂存路径'])
+        self._loading = False  # 加载完成
 
     def reset(self):
         self.server_comboBox.clear()
@@ -1773,6 +1810,7 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
 
         # 保存对话框的所有配置项
         self.sc_cfg = {}
+        self._loading = False  # 编辑模式加载标志，防止 textChanged 覆盖名称
 
         self.local_path_pushButton.clicked.connect(self.select_path)
         self.save_pushButton.clicked.connect(self.create_sc)
@@ -1782,6 +1820,10 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
             self.server_comboBox.addItem(server['服务器名称'], server)
         self.server_comboBox.setCurrentIndex(-1)
         self.server_comboBox.activated.connect(self.select_server)
+
+        # IP输入框变化时，自动生成快捷按钮名称
+        self.linux_ip_lineEdit.textChanged.connect(self._on_ip_changed)
+
         # 创建时间下拉菜单的选项字典，因为编辑按钮时传入的是str，需要将str对应为下拉的索引
         self.time_dic = {}
         for index in range(self.time_comboBox.count()):
@@ -1792,6 +1834,17 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
         self.username_lineEdit.textChanged.connect(self._on_username_changed)
         if self.username_lineEdit.text():
             self.work_dir_lineEdit.setText(f"/home/{self.username_lineEdit.text()}")
+
+    def _on_ip_changed(self, ip):
+        """手动填写IP时，自动生成快捷按钮名称"""
+        if getattr(self, '_loading', False):
+            return
+        if self.server_comboBox.currentIndex() != -1:
+            return
+        if ip.strip():
+            self.sc_name_lineEdit.setText(f'{sc_class2str[self.__class__.__name__]}：{ip}')
+        else:
+            self.sc_name_lineEdit.clear()
 
     def _on_username_changed(self, username):
         """用户名变化时自动更新文件暂存路径"""
@@ -1845,6 +1898,7 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
 
     def edit_sc(self, button_id):
         self.button_id = button_id  # 变为自己的属性，用于按下保存按钮时父窗口调用编辑按钮函数
+        self._loading = True  # 加载中，防止 textChanged 覆盖名称
         sc_data = self.parent.sc_buttons[button_id]['config']
         self.linux_ip_lineEdit.setText(sc_data['IP'])
         self.sshport_lineEdit.setText(sc_data['端口'])
@@ -1860,6 +1914,7 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
         # 回显文件暂存路径
         if '文件暂存路径' in sc_data:
             self.work_dir_lineEdit.setText(sc_data['文件暂存路径'])
+        self._loading = False  # 加载完成
 
     def reset(self):
         self.server_comboBox.clear()
@@ -2184,6 +2239,7 @@ class ResourceMonitorDialog1(SendCMDDialog):
 
     def edit_sc(self, button_id):
         self.button_id = button_id  # 变为自己的属性，用于按下保存按钮时父窗口调用编辑按钮函数
+        self._loading = True  # 加载中，防止 textChanged 覆盖名称
         sc_data = self.parent.sc_buttons[button_id]['config']
         if sc_data['IP'] == '':
             item_count = self.server_comboBox.count()
@@ -2209,6 +2265,7 @@ class ResourceMonitorDialog1(SendCMDDialog):
             self.sshport_lineEdit.setEnabled(True)
             self.work_dir_lineEdit.setEnabled(True)
         self.sc_name_lineEdit.setText(sc_data['指令名称'])
+        self._loading = False  # 加载完成
 
     def reset(self):
         self.server_comboBox.setCurrentIndex(-1)
@@ -3171,12 +3228,14 @@ class WeakNetDialog1(SendCMDDialog):
 
     def edit_sc(self, button_id):
         self.button_id = button_id
+        self._loading = True  # 加载中，防止 textChanged 覆盖名称
         sc_data = self.parent.sc_buttons[button_id]['config']
         self.linux_ip_lineEdit.setText(sc_data['IP'])
         self.sshport_lineEdit.setText(sc_data['端口'])
         self.username_lineEdit.setText(sc_data['用户名'])
         self.passwd_lineEdit.setText(sc_data['密码'])
         self.sc_name_lineEdit.setText(sc_data['指令名称'])
+        self._loading = False  # 加载完成
 
 
 class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):

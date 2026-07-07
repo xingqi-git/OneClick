@@ -29,3 +29,4 @@ var/
 .env
 .venv
 .envrc
+config.json
