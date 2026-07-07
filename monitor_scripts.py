@@ -93,7 +93,7 @@ get_proc_current_pids() {
 
 # ---------------------- 生成单个PID的进程日志表头 ----------------------
 generate_single_pid_header() {
-    echo "系统时间,已用内存(MB),CPU使用率(%),文件描述符,Socket描述符"
+    echo "系统时间,进程RSS(MB),堆内存VmData(MB),进程CPU(%),进程FD数,进程Socket数"
 }
 
 # ---------------------- 采集单个PID的进程指标 ----------------------
@@ -108,10 +108,14 @@ collect_single_pid_metrics() {
         return
     fi
 
-    # 进程内存（VmRSS，转换为MB保留2位小数）
+    # 进程内存（VmRSS和VmData，转换为MB保留2位小数）
     local proc_mem=$(cat /proc/$pid/status 2>/dev/null | awk '/VmRSS/ {print $2}')
     proc_mem=$(awk -v mem="$proc_mem" 'BEGIN{printf "%.2f", mem / 1024}')
     proc_mem=${proc_mem:-0.00}
+
+    local proc_data=$(cat /proc/$pid/status 2>/dev/null | awk '/VmData/ {print $2}')
+    proc_data=$(awk -v mem="$proc_data" 'BEGIN{printf "%.2f", mem / 1024}')
+    proc_data=${proc_data:-0.00}
 
     # 进程CPU使用率（%，保留2位小数）
     local proc_stat1=$(cat /proc/$pid/stat 2>/dev/null | awk '{print $14 "," $15}')
@@ -145,7 +149,7 @@ collect_single_pid_metrics() {
     proc_socks=${proc_socks:-0}
 
     # 拼接指标行
-    echo "$sys_time,$proc_mem,$proc_cpu,$proc_fds,$proc_socks"
+    echo "$sys_time,$proc_mem,$proc_data,$proc_cpu,$proc_fds,$proc_socks"
 }
 
 # ---------------------- 更新日志表头（仅处理系统日志） ----------------------
@@ -520,4 +524,241 @@ catch {
     Write-Host "监控异常：$($_.Exception.Message)"
     exit 1
 }
+'''
+
+
+
+# Linux Shell 监控脚本-原生linux监控脚本，不依赖任何外部工具
+MONITOR_SH_2 = r'''#!/bin/sh
+# ---------------------- 脚本使用方式 ----------------------
+# ./OneClickMonitor.sh                                              # 默认运行（5 秒采样，无指定进程，保存到当前路径下，仅包含系统日志system.log）
+# ./OneClickMonitor.sh -f 10 -o /home                               # 10秒采样，日志保存到/home路径下
+# ./OneClickMonitor.sh -p nginx java -o /home                  # 监控nginx和java，3秒采样，日志保存到/home路径下
+# ./OneClickMonitor.sh -h                                           # 查看帮助
+# nohup ./OneClickMonitor.sh &                                      # 后台执行
+
+# 嵌入式ash：仅开启未定义变量检查，ash不支持set -u严格容错，注释规避报错
+# set -u
+
+# ---------------------- 配置参数 ----------------------
+SAMPLE_FREQ=5
+OUTPUT_DIR="./"
+SYS_LOG_NAME="system.log"
+SYS_LOG_FILE=""
+# ash不支持数组，改用空格分隔字符串存储进程列表
+TARGET_PROCS=""
+
+# ---------------------- 帮助文档 ----------------------
+usage() {
+    echo "用法：$0 [选项]"
+    echo "选项："
+    echo "  -f, --freq <秒数>        采样频率，默认5秒"
+    echo "  -o, --output <文件夹>    输出目录，默认当前目录"
+    echo "  -p, --proc <进程名>      多进程空格分隔，如 -p nginx java"
+    echo "  -h, --help               显示帮助"
+    exit 1
+}
+
+# ---------------------- 参数解析（ash兼容，移除[[ ]]，改用[ ]） ----------------------
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -f|--freq)
+            SAMPLE_FREQ="$2"
+            shift 2
+            ;;
+        -o|--output)
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        -p|--proc)
+            shift
+            # 拼接进程字符串替代数组
+            while [ $# -gt 0 ] && ! echo "$1" | grep '^-' >/dev/null; do
+                TARGET_PROCS="$TARGET_PROCS $1"
+                shift
+            done
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo "错误：无效参数 $1"
+            usage
+            ;;
+    esac
+done
+
+# 创建输出目录
+mkdir -p "$OUTPUT_DIR"
+echo "日志输出目录：$OUTPUT_DIR"
+SYS_LOG_FILE="$OUTPUT_DIR/$SYS_LOG_NAME"
+
+# ---------------------- 表头 ----------------------
+generate_sys_header() {
+    echo "系统时间,内存使用MB,整机CPU%,磁盘读KB/s,磁盘写KB/s,全局FD,全局Socket,运行进程总数"
+}
+generate_single_pid_header() {
+    echo "系统时间,进程RSS(MB),堆内存VmData(MB),进程CPU(%),进程FD数,进程Socket数"
+}
+
+# ---------------------- 获取PID ----------------------
+get_proc_current_pids() {
+    local proc_name="$1"
+    # 先尝试pgrep快速获取
+    local pids=$(pgrep "$proc_name" 2>/dev/null)
+    if [ -n "$pids" ]; then
+        for pid in $pids; do
+            if [ -d "/proc/$pid" ]; then
+                echo "$pid"
+            fi
+        done
+        return
+    fi
+    # pgrep失效时降级遍历/proc
+    for pid in /proc/[0-9]*; do
+        local p="${pid#/proc/}"
+        local comm="/proc/$p/comm"
+        [ -f "$comm" ] || continue
+        local real_name
+        read -r real_name < "$comm" 2>/dev/null
+        if [ "$real_name" = "$proc_name" ]; then
+            echo "$p"
+        fi
+    done
+}
+
+# ---------------------- 单进程指标采集 ----------------------
+collect_single_pid_metrics() {
+    local proc_name="$1"
+    local pid="$2"
+    local sys_time="$3"
+    [ ! -d "/proc/$pid" ] && return
+
+    local mem_kb=0
+    local data_kb=0
+    if [ -f "/proc/$pid/status" ]; then
+        # 同时读取RSS和VmData
+        mem_kb=$(awk '/VmRSS/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo 0)
+        data_kb=$(awk '/VmData/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo 0)
+    fi
+    local mem_mb=$(awk -v k="$mem_kb" 'BEGIN{printf "%.2f", k/1024}')
+    local data_mb=$(awk -v k="$data_kb" 'BEGIN{printf "%.2f", k/1024}')
+
+    # CPU采集逻辑不变
+    local stat1=""
+    [ -f "/proc/$pid/stat" ] && stat1=$(cat "/proc/$pid/stat" 2>/dev/null)
+    local cpu_total=0
+    [ -f "/proc/stat" ] && cpu_total=$(awk '/^cpu /{print $2+$3+$4+$5+$6+$7+$8}' /proc/stat)
+
+    # ash不支持数组下标拆分stat，改用awk提取第15、16字段
+    local p_t=$(echo "$stat1" | awk '{print $14 + $15}')
+    local cpu_pct="0.00"
+    if [ $cpu_total -gt 0 ]; then
+        cpu_pct=$(awk -v pd="$p_t" -v sd="$cpu_total" 'BEGIN{printf "%.2f", pd*100/sd}')
+    fi
+
+    local fd_num=0
+    [ -d "/proc/$pid/fd" ] && fd_num=$(ls /proc/$pid/fd 2>/dev/null | wc -l || echo 0)
+    local sock_num=0
+    [ -d "/proc/$pid/fd" ] && sock_num=$(ls -l /proc/$pid/fd 2>/dev/null | grep -c 'socket:' || echo 0)
+
+    # 输出新增 data_mb
+    echo "$sys_time,$mem_mb,$data_mb,$cpu_pct,$fd_num,$sock_num"
+}
+
+# ---------------------- 系统指标采集 ----------------------
+collect_sys_metrics() {
+    local now=$(date "+%Y-%m-%d %H:%M:%S")
+
+    # 内存
+    local mem_used=0
+    if command -v free >/dev/null 2>&1; then
+        mem_used=$(free -m 2>/dev/null | awk '/^Mem/ {print $3}' || echo 0)
+    fi
+
+    # CPU瞬时值
+    local cpu_total=0
+    local idle_total=0
+    if [ -f "/proc/stat" ]; then
+        cpu_total=$(awk '/^cpu /{print $1+$2+$3+$4+$5+$6+$7+$8}' /proc/stat)
+        idle_total=$(awk '/^cpu /{print $4}' /proc/stat)
+    fi
+    local cpu_used=0.0
+    if [ $cpu_total -gt 0 ]; then
+        cpu_used=$(awk -v t="$cpu_total" -v i="$idle_total" 'BEGIN{printf "%.1f", (t-i)*100/t}')
+    fi
+
+    # 磁盘IO瞬时值
+    local rd=0 wr=0
+    if [ -f "/proc/diskstats" ]; then
+        io_sum=$(awk '{r+=$6;w+=$10}END{print r,w}' /proc/diskstats 2>/dev/null)
+        rd=$(echo $io_sum | cut -d' ' -f1)
+        wr=$(echo $io_sum | cut -d' ' -f2)
+    fi
+
+    # 全局FD
+    local total_fd=0
+    [ -f "/proc/sys/fs/file-nr" ] && total_fd=$(cut -d' ' -f1 /proc/sys/fs/file-nr 2>/dev/null || echo 0)
+
+    # Socket总数
+    local total_sock=0
+    if [ -f "/proc/net/sockstat" ]; then
+        total_sock=$(awk '/sockets total/ {print $3}' /proc/net/sockstat 2>/dev/null || echo 0)
+    fi
+
+    # 进程数
+    local proc_cnt=0
+    proc_cnt=$(ls /proc/ 2>/dev/null | grep -E '^[0-9]+$' | wc -l || echo 0)
+
+    echo "$now,$mem_used,$cpu_used,$rd,$wr,$total_fd,$total_sock,$proc_cnt"
+}
+
+# 初始化系统日志表头
+update_log_header() {
+    [ ! -f "$SYS_LOG_FILE" ] && generate_sys_header > "$SYS_LOG_FILE"
+}
+
+# ---------------------- 主循环 ----------------------
+main_monitor() {
+    echo "===== 系统监控启动 ====="
+    echo "采样间隔：${SAMPLE_FREQ}s"
+    echo "系统日志：$SYS_LOG_FILE"
+    if [ -n "$TARGET_PROCS" ]; then
+        echo "监控进程：$TARGET_PROCS"
+    fi
+    echo "Ctrl+C 终止监控"
+    echo "========================"
+
+    while true; do
+        update_log_header
+        # 采集系统指标，失败不中断循环
+        local sys_line
+        sys_line=$(collect_sys_metrics 2>/dev/null)
+        if [ -n "$sys_line" ]; then
+            echo "$sys_line" >> "$SYS_LOG_FILE"
+            local cur_time=$(echo "$sys_line" | cut -d',' -f1)
+            echo "[$cur_time] 写入系统指标"
+
+            # ash无数组，直接遍历空格分隔的进程字符串
+            for proc in $TARGET_PROCS; do
+                pids=$(get_proc_current_pids "$proc")
+                if [ -z "$pids" ]; then
+                    echo "[$cur_time] $proc 无运行PID"
+                    continue
+                fi
+                for pid in $pids; do
+                    log_path="${OUTPUT_DIR}/${proc}_${pid}.log"
+                    [ ! -f "$log_path" ] && generate_single_pid_header > "$log_path"
+                    data=$(collect_single_pid_metrics "$proc" "$pid" "$cur_time" 2>/dev/null)
+                    [ -n "$data" ] && echo "$data" >> "$log_path"
+                done
+            done
+        fi
+        sleep "${SAMPLE_FREQ}"
+    done
+}
+
+# 优雅退出捕获
+trap 'echo -e "\n\n监控程序正常退出，日志存放目录：$OUTPUT_DIR"; exit 0' SIGINT SIGTERM
+main_monitor
 '''

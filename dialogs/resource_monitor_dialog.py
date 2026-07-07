@@ -156,8 +156,9 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         self.button_id = button_id
         self.parent = parent
         self.g_windows = []  # 保存所有图表窗口的引用
-        from monitor_scripts import MONITOR_SH, MONITOR_PS1
-        self.monitor_sh = MONITOR_SH
+        from monitor_scripts import MONITOR_SH, MONITOR_SH_2, MONITOR_PS1
+        self.monitor_sh_normal = MONITOR_SH
+        self.monitor_sh_embedded = MONITOR_SH_2
         self.monitor_ps1 = MONITOR_PS1
 
         # （脚本内容已移到 monitor_scripts.py 中）
@@ -165,6 +166,11 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         # 按钮逻辑和窗口默认值
         self.process_input_plainTextEdit.setPlainText(self.parent.sc_buttons[button_id]['config']['进程'])
         self.freq_lineEdit.setText(self.parent.sc_buttons[button_id]['config']['采样频率'])
+        # 回显嵌入式勾选状态
+        self.embedded_checkBox.setChecked(self.parent.sc_buttons[button_id]['config'].get('嵌入式', False))
+        # 本机监控时禁用嵌入式勾选框
+        if self.parent.sc_buttons[button_id]['config']['IP'] == '':
+            self.embedded_checkBox.setEnabled(False)
         self.start_pushButton.clicked.connect(self.start_monitor)
         self.stop_pushButton.clicked.connect(self.stop_monitor)
         self.clean_pushButton.clicked.connect(self.clean_data)
@@ -187,6 +193,13 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             self.on_ssh_button_click()
 
         self.monitor_data_path = os.path.join(self.parent.get_default_path(), f"{self.data_dir_name}").replace('\\','/')
+
+    @property
+    def monitor_sh(self):
+        """根据嵌入式勾选状态返回对应的监控脚本"""
+        if self.embedded_checkBox.isChecked():
+            return self.monitor_sh_embedded
+        return self.monitor_sh_normal
 
     def on_local_button_click(self):
         self.update_status(('本机', '未知'))
@@ -289,6 +302,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                         worker.info_signal.emit(("已连接", "监控中"))
                 except Exception as e:
                     worker.log_signal.emit(f'检查监控状态失败: {e}')
+                    worker.info_signal.emit(("连接中...", "未知"))
                     continue
 
         def on_thread_finished():
@@ -1006,6 +1020,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         # 保存数据，下次打开自动填入
         self.parent.sc_buttons[self.button_id]['config']['进程'] = self.process_input_plainTextEdit.toPlainText()
         self.parent.sc_buttons[self.button_id]['config']['采样频率'] = self.freq_lineEdit.text()
+        self.parent.sc_buttons[self.button_id]['config']['嵌入式'] = self.embedded_checkBox.isChecked()
 
         # 安全结束监控线程
         if self.work_thread_id is not None and self.work_thread_id in self.parent.sc_threads:
