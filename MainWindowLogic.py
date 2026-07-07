@@ -979,7 +979,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                     # 检查是否有连接，如果有连接，发送中止信号，设置传输位=0
                     if self.sc_threads[thread]['tool'].is_connected():
                         self.sc_threads[thread]['tool'].send_command_interactive(chr(3))
-                        self.sc_threads[thread]['tool'].transfer_status = 0
+                        self.sc_threads[thread]['tool'].transfer_stat = 0
                         self.sc_threads[thread]['tool'].win_tool.transfer_stat = 0
                 elif type(self.sc_threads[thread]['tool']) == windows_tools.WindowsTools:
                     self.sc_threads[thread]['tool'].transfer_stat = 0

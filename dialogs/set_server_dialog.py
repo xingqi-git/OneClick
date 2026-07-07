@@ -44,6 +44,7 @@ class SetServerDialog(QDialog, edit_servers_dlg.Ui_Dialog):
 
         # 关联按钮逻辑
         self.add_pushButton.clicked.connect(self.add_item)
+        self.copy_pushButton.clicked.connect(self.copy_item)
         self.del_pushButton.clicked.connect(self.del_item)
         self.clear_pushButton.clicked.connect(self.clear_table)
         self.save_pushButton.clicked.connect(self.save_table)
@@ -52,6 +53,29 @@ class SetServerDialog(QDialog, edit_servers_dlg.Ui_Dialog):
     def add_item(self):
         row_count = self.tableWidget.rowCount()
         self.tableWidget.insertRow(row_count)
+
+    def copy_item(self):
+        """复制选中的行到表最下面"""
+        row_count = self.tableWidget.rowCount()
+        # 表内没有内容，等同于添加
+        if row_count == 0:
+            self.add_item()
+            return
+
+        # 获取选中的行索引（去重并排序）
+        selected_rows = sorted(set(index.row() for index in self.tableWidget.selectedIndexes()))
+        # 没有选中任何行，复制最下面一行
+        if not selected_rows:
+            selected_rows = [row_count - 1]
+
+        # 复制每一行到表最下面
+        for src_row in selected_rows:
+            new_row = self.tableWidget.rowCount()
+            self.tableWidget.insertRow(new_row)
+            for col in range(self.tableWidget.columnCount()):
+                src_item = self.tableWidget.item(src_row, col)
+                if src_item:
+                    self.tableWidget.setItem(new_row, col, QTableWidgetItem(src_item.text()))
 
     def del_item(self):
         # 获取所有选中的行索引（去重并倒序，避免删除时索引错乱）
