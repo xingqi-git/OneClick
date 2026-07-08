@@ -2,7 +2,9 @@ import os.path
 import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import QThread, QTimer
-from PyQt5.QtWidgets import QDialog, QPushButton, QWidget, QVBoxLayout, QMenu, QFileDialog, QMessageBox, QMainWindow
+from PyQt5.QtWidgets import (QDialog, QPushButton, QWidget, QVBoxLayout, QHBoxLayout,
+                             QMenu, QFileDialog, QMessageBox, QMainWindow,
+                             QTabWidget, QCheckBox, QScrollArea, QInputDialog, QLineEdit)
 
 from UI import MainWindow
 from utils import ssh_tools, windows_tools, qthread_worker
@@ -87,26 +89,57 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.stop_pushButton.clicked.connect(self.stop_sc)
         self.clean_pushButton.clicked.connect(self.clean_linux_print)
 
-        # 创建一个容器用于放置动态生成的快捷方式
-        self.button_container = QWidget()
-        self.button_layout = QVBoxLayout(self.button_container)
-        self.button_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)  # 顶部对齐
-        self.button_layout.setSpacing(0)  # 按钮之间间距
-        self.button_layout.setContentsMargins(0, 0, 0, 0)  # 边距
-        self.scrollArea_2.setWidget(self.button_container)  # 快捷方式多时支持滚动条
+        # ---- 替换 scrollArea_2 为 QTabWidget（分组标签页） ----
+        self.group_tabWidget = QTabWidget(self.centralwidget)
+        self.group_tabWidget.setTabsClosable(True)
+        self.group_tabWidget.tabCloseRequested.connect(self.on_tab_close_requested)
+        self.group_tabWidget.tabBarDoubleClicked.connect(self.on_tab_bar_double_clicked)
+        # 标签栏右键菜单
+        self.group_tabWidget.tabBar().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.group_tabWidget.tabBar().customContextMenuRequested.connect(self.on_tab_bar_context_menu)
+        # 左上角"+"新建分组按钮（标签页最前面），紧贴标签无间隙
+        self.add_group_btn = QPushButton("+", self.centralwidget)
+        self.add_group_btn.setFixedSize(24, 24)
+        self.add_group_btn.setToolTip("新建分组")
+        self.add_group_btn.clicked.connect(self.add_new_group)
+        self.group_tabWidget.setCornerWidget(self.add_group_btn, QtCore.Qt.Corner.TopLeftCorner)
+        # 消除corner widget与tab之间的间隙
+        self.group_tabWidget.tabBar().setStyleSheet("QTabBar { qproperty-usesScrollButtons: 1; }")
+        # 替换布局中的 scrollArea_2
+        idx_scroll = self.verticalLayout.indexOf(self.scrollArea_2)
+        self.verticalLayout.removeWidget(self.scrollArea_2)
+        self.scrollArea_2.deleteLater()
+        self.verticalLayout.insertWidget(idx_scroll, self.group_tabWidget)
+
+        # ---- 在"结束所有"按钮旁边添加"开始所有"按钮，大小保持一致 ----
+        self.execute_all_btn = QPushButton("开始所有", self.centralwidget)
+        self.execute_all_btn.clicked.connect(self.execute_all_buttons)
+        # 统一两个按钮的大小：取两个按钮sizeHint的最大值作为固定宽度
+        from PyQt5.QtWidgets import QSizePolicy
+        w1 = self.stop_pushButton.fontMetrics().boundingRect("结束所有").width() + 20
+        w2 = self.execute_all_btn.fontMetrics().boundingRect("开始所有").width() + 20
+        fixed_w = max(w1, w2, 80)
+        self.stop_pushButton.setFixedWidth(fixed_w)
+        self.execute_all_btn.setFixedWidth(fixed_w)
+        self.stop_pushButton.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.execute_all_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        # horizontalLayout 中 stop_pushButton 在 index 2，在它前面插入
+        self.horizontalLayout.insertWidget(2, self.execute_all_btn)
+
+        # ---- 分组管理 ----
+        # _groups: {'分组名': {'tab_index':, 'buttons': [button_id,...], 'scroll_area':, 'button_container':, 'button_layout':, 'select_all_btn':, 'execute_selected_btn':, 'stop_group_btn':}}
+        self._groups = {}
+        self._group_order = []  # 分组顺序
 
         # 拖动相关的变量
-        self._drag_button = None  # 当前正在拖动的按钮
-        self._drag_indicator = None  # 拖动位置指示线
-        self._button_order = []  # 存储按钮顺序的列表 [button_id, ...]
-
-        # 拉伸占位，让按钮只占用固定高度空间
-        self._button_layout_stretch = self.button_layout.addStretch()
-
+        self._drag_button = None        # 当前正在拖动的按钮(DraggableButton)
+        self._drag_container = None     # 拖动按钮的容器(QWidget)
+        self._drag_indicator = None     # 拖动位置指示线
+        self._drag_group_name = None    # 拖动所在的分组名
 
         # 将所有快捷方式存储到字典里,由于button_id唯一，因此用字典
-        self.sc_buttons = {}  # 存储发送命令按钮对象{'button_id1': {'button': new_button(按钮对象),'config': config_data},...}
-        self.btn_count = 0  # 用于快捷方式唯一ID
+        self.sc_buttons = {}  # {'button_id': {'widget':容器, 'button':DraggableButton, 'checkbox':QCheckBox, 'config':config, 'group':分组名}}
+        self.btn_count = 0
 
         # 将运行中的指令线程存入字典
         self.sc_threads = {}
@@ -170,7 +203,10 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.log_file_checkBox.setChecked(initial_log_enabled)
 
         self.showMaximized()
-        
+
+        # 创建默认分组
+        self.add_group_tab("默认分组")
+
         # 如果有默认配置文件，则获取
         if os.path.exists(self.default_config_path):
             self.update_run_info('存在默认配置文件，开始添加服务器和快捷按钮')
@@ -340,164 +376,378 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         else:
             self.update_run_info('服务器列表编辑 取消')
 
+    # ---- 按钮类型颜色映射（不含红色） ----
+    BUTTON_COLOR_MAP = {
+        '发送命令':         ('#4CAF50', '#45a049'),   # 绿色
+        '发送命令并接收回显': ('#2196F3', '#1976D2'),   # 蓝色
+        '发送文件':         ('#FF9800', '#F57C00'),   # 橙色
+        '获取文件':         ('#9C27B0', '#7B1FA2'),   # 紫色
+        '复制本地文件':     ('#607D8B', '#455A64'),   # 蓝灰色
+        '资源监控':         ('#009688', '#00796B'),   # 青色
+        '弱网':             ('#795548', '#5D4037'),   # 棕色
+    }
+
+    def get_button_style(self, cmd_type):
+        """根据指令类型获取按钮样式"""
+        bg, hover = self.BUTTON_COLOR_MAP.get(cmd_type, ('#4CAF50', '#45a049'))
+        return f"""
+            QPushButton {{
+                padding: 10px;
+                font-size: 14px;
+                margin: 2px;
+                border-radius: 5px;
+                background-color: {bg};
+                color: white;
+            }}
+            QPushButton:hover {{
+                background-color: {hover};
+            }}
+            QPushButton:pressed {{
+                background-color: {hover};
+            }}
+            QPushButton[executing="true"] {{
+                background-color: #cccccc;
+                color: #666666;
+                border: 1px solid #999999;
+            }}
+            QPushButton[executing="true"]:hover {{
+                background-color: #cccccc;
+            }}
+        """
+
     def set_button_executing(self, button_id, is_executing):
         """设置按钮执行状态，不真正禁用按钮，只通过样式模拟"""
         if button_id in self.sc_buttons:
             button = self.sc_buttons[button_id]['button']
             button.setProperty('executing', is_executing)
-            # 刷新样式
             button.style().unpolish(button)
             button.style().polish(button)
 
+    # ==================== 分组（标签页）管理 ====================
+
+    def add_group_tab(self, group_name):
+        """创建一个分组标签页，包含工具栏和按钮滚动区"""
+        if group_name in self._groups:
+            self.update_run_info(f'分组<{group_name}>已存在', 'WARNING')
+            return
+        # 创建标签页内容
+        tab_page = QWidget()
+        tab_layout = QVBoxLayout(tab_page)
+        tab_layout.setContentsMargins(2, 2, 2, 2)
+        tab_layout.setSpacing(2)
+
+        # 工具栏：全选 / 执行选中 / 停止选中 / 删除选中
+        toolbar = QHBoxLayout()
+        select_all_btn = QPushButton("全选")
+        select_all_btn.setFixedHeight(28)
+        execute_selected_btn = QPushButton("执行选中")
+        execute_selected_btn.setFixedHeight(28)
+        stop_group_btn = QPushButton("停止选中")
+        stop_group_btn.setFixedHeight(28)
+        delete_selected_btn = QPushButton("删除选中")
+        delete_selected_btn.setFixedHeight(28)
+        toolbar.addWidget(select_all_btn)
+        toolbar.addWidget(execute_selected_btn)
+        toolbar.addWidget(stop_group_btn)
+        toolbar.addWidget(delete_selected_btn)
+        toolbar.addStretch()
+        toolbar_widget = QWidget()
+        toolbar_widget.setLayout(toolbar)
+        tab_layout.addWidget(toolbar_widget)
+
+        # 滚动区 + 按钮容器
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        button_container = QWidget()
+        button_layout = QVBoxLayout(button_container)
+        button_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
+        button_layout.setSpacing(0)
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.addStretch()  # 底部拉伸
+        scroll_area.setWidget(button_container)
+        tab_layout.addWidget(scroll_area)
+
+        # 添加到 TabWidget
+        tab_index = self.group_tabWidget.addTab(tab_page, group_name)
+        self.group_tabWidget.setCurrentIndex(tab_index)
+
+        # 绑定工具栏按钮
+        select_all_btn.clicked.connect(lambda _, g=group_name: self.select_all_in_group(g))
+        execute_selected_btn.clicked.connect(lambda _, g=group_name: self.execute_selected_in_group(g))
+        stop_group_btn.clicked.connect(lambda _, g=group_name: self.stop_all_in_group(g))
+        delete_selected_btn.clicked.connect(lambda _, g=group_name: self.delete_selected_in_group(g))
+
+        # 保存分组信息
+        self._groups[group_name] = {
+            'tab_index': tab_index,
+            'buttons': [],
+            'scroll_area': scroll_area,
+            'button_container': button_container,
+            'button_layout': button_layout,
+            'select_all_btn': select_all_btn,
+            'execute_selected_btn': execute_selected_btn,
+            'stop_group_btn': stop_group_btn,
+            'delete_selected_btn': delete_selected_btn,
+            'tab_page': tab_page,
+        }
+        self._group_order.append(group_name)
+        return group_name
+
+    def add_new_group(self):
+        """点击"+"按钮，新建分组"""
+        name, ok = QInputDialog.getText(self, "新建分组", "请输入分组名称：", QLineEdit.Normal, f"分组{len(self._groups)+1}")
+        if ok and name.strip():
+            name = name.strip()
+            if name in self._groups:
+                self.update_run_info(f'分组<{name}>已存在', 'WARNING')
+                return
+            self.add_group_tab(name)
+            self.update_run_info(f'新建分组<{name}>成功')
+
+    def on_tab_bar_double_clicked(self, index):
+        """双击标签重命名"""
+        if index < 0:
+            return
+        old_name = self.group_tabWidget.tabText(index)
+        new_name, ok = QInputDialog.getText(self, "重命名分组", "请输入新的分组名称：", QLineEdit.Normal, old_name)
+        if ok and new_name.strip():
+            new_name = new_name.strip()
+            if new_name == old_name:
+                return
+            if new_name in self._groups:
+                self.update_run_info(f'分组<{new_name}>已存在', 'WARNING')
+                return
+            # 更新分组信息
+            group_info = self._groups.pop(old_name)
+            group_info['tab_index'] = index
+            self._groups[new_name] = group_info
+            self._group_order[self._group_order.index(old_name)] = new_name
+            self.group_tabWidget.setTabText(index, new_name)
+            # 更新该分组下所有按钮的 group 字段
+            for bid in group_info['buttons']:
+                self.sc_buttons[bid]['group'] = new_name
+            self.update_run_info(f'分组<{old_name}>重命名为<{new_name}>')
+
+    def on_tab_close_requested(self, index):
+        """关闭标签页（删除分组）"""
+        if index < 0:
+            return
+        group_name = self.group_tabWidget.tabText(index)
+        # 至少保留一个分组
+        if len(self._groups) <= 1:
+            self.update_run_info('至少保留一个分组', 'WARNING')
+            return
+        # 确认对话框
+        confirm = QMessageBox()
+        confirm.setIcon(QMessageBox.Icon.Question)
+        confirm.setWindowTitle("确认")
+        confirm.setText(f"删除分组<{group_name}>将同时删除该分组下所有按钮，是否继续？")
+        confirm.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        confirm.setDefaultButton(QMessageBox.StandardButton.No)
+        if confirm.exec_() != QMessageBox.StandardButton.Yes:
+            return
+        # 删除该分组下所有按钮
+        group_info = self._groups[group_name]
+        buttons_to_delete = list(group_info['buttons'])
+        for bid in buttons_to_delete:
+            self._delete_button_internal(bid)
+        # 删除标签页
+        self.group_tabWidget.removeTab(index)
+        # 更新 _groups 中的 tab_index
+        del self._groups[group_name]
+        self._group_order.remove(group_name)
+        for gname, ginfo in self._groups.items():
+            ginfo['tab_index'] = self.group_tabWidget.indexOf(ginfo['tab_page'])
+        self.update_run_info(f'删除分组<{group_name}>成功')
+
+    def on_tab_bar_context_menu(self, pos):
+        """标签栏右键菜单"""
+        index = self.group_tabWidget.tabBar().tabAt(pos)
+        menu = QMenu()
+        new_action = menu.addAction("新建分组")
+        rename_action = menu.addAction("重命名") if index >= 0 else None
+        delete_action = menu.addAction("删除分组") if index >= 0 else None
+        action = menu.exec_(self.group_tabWidget.tabBar().mapToGlobal(pos))
+        if action == new_action:
+            self.add_new_group()
+        elif rename_action and action == rename_action:
+            self.on_tab_bar_double_clicked(index)
+        elif delete_action and action == delete_action:
+            self.on_tab_close_requested(index)
+
+    def _ensure_group(self, group_name):
+        """确保分组存在，不存在则创建"""
+        if group_name not in self._groups:
+            self.add_group_tab(group_name)
+        return group_name
+
+    # ==================== 按钮创建 ====================
+
     def add_button(self, config_data):
-        """根据配置数据(dialog会将配置好的数据传递给主窗口)创建新按钮"""
-        # 获取脚本名称作为按钮文本
+        """根据配置数据创建新按钮（带复选框+按钮，添加到对应分组）"""
         if '指令名称' in config_data:
             button_text = config_data['指令名称']
         else:
             button_text = f'新按钮{self.btn_count}'
 
-        # 创建新按钮
-        self.btn_count += 1
-        button_id = f"button_{self.btn_count}"  # 唯一ID
-        new_button = DraggableButton(button_text, self.button_container)
-        new_button.setObjectName(button_id)
-
-        # 设置按钮样式
-        new_button.setStyleSheet("""
-            QPushButton {
-                padding: 10px;
-                font-size: 14px;
-                margin: 5px;
-                border-radius: 5px;
-                background-color: #4CAF50;
-                color: white;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            QPushButton:pressed {
-                color: #3a8ee6;
-                border-color: #3a8ee6;
-                background-color: #ecf5ff;
-            }
-            QPushButton[executing="true"] {
-                background-color: #cccccc;
-                color: #666666;
-                border: 1px solid #999999;
-            }
-            QPushButton[executing="true"]:hover {
-                background-color: #cccccc;
-            }
-        """)
-        # 标记按钮是否正在执行（不真正禁用按钮，只模拟禁用效果，以便右键菜单可用）
-        new_button.setProperty('executing', False)
-        # 根据传入的快捷类型选择按钮点击连接的事件，并传入button_id参数
-        if config_data['指令类型'] == '发送命令':
-            new_button.clicked.connect(lambda _, para=button_id: self.click_send_cmd(para))
-        elif config_data['指令类型'] == '发送命令并接收回显':
-            new_button.clicked.connect(lambda _, para=button_id: self.click_send_cmd_print(para))
-        elif config_data['指令类型'] == '发送文件':
-            new_button.clicked.connect(lambda _, para=button_id: self.click_send_files(para))
-        elif config_data['指令类型'] == '获取文件':
-            new_button.clicked.connect(lambda _, para=button_id: self.click_get_files(para))
-        elif config_data['指令类型'] == '复制本地文件':
-            new_button.clicked.connect(lambda _, para=button_id: self.click_copy_files(para))
-        elif config_data['指令类型'] == '资源监控':
-            new_button.clicked.connect(lambda _, para=button_id: self.resource_monitor(para))
-        elif config_data['指令类型'] == '弱网':
-            new_button.clicked.connect(lambda _, para=button_id: self.weak_net(para))
+        # 确定分组：优先用config中的分组，没有则用当前选中的标签页
+        if '分组' in config_data and config_data['分组']:
+            group_name = config_data['分组']
         else:
+            # 获取当前选中的标签页对应的分组名
+            current_idx = self.group_tabWidget.currentIndex()
+            if current_idx >= 0:
+                group_name = self.group_tabWidget.tabText(current_idx)
+            else:
+                group_name = '默认分组'
+        self._ensure_group(group_name)
+        group_info = self._groups[group_name]
+
+        # 创建唯一ID
+        self.btn_count += 1
+        button_id = f"button_{self.btn_count}"
+
+        # 创建容器（复选框 + 按钮）
+        container = QWidget(group_info['button_container'])
+        h_layout = QHBoxLayout(container)
+        h_layout.setContentsMargins(0, 0, 0, 0)
+        h_layout.setSpacing(2)
+
+        # 复选框
+        checkbox = QCheckBox(container)
+        checkbox.setFixedWidth(20)
+
+        # 按钮主体
+        new_button = DraggableButton(button_text, container)
+        new_button.setObjectName(button_id)
+        cmd_type = config_data['指令类型']
+        new_button.setStyleSheet(self.get_button_style(cmd_type))
+        new_button.setProperty('executing', False)
+
+        h_layout.addWidget(checkbox)
+        h_layout.addWidget(new_button)
+
+        # 连接按钮点击事件
+        click_map = {
+            '发送命令': self.click_send_cmd,
+            '发送命令并接收回显': self.click_send_cmd_print,
+            '发送文件': self.click_send_files,
+            '获取文件': self.click_get_files,
+            '复制本地文件': self.click_copy_files,
+            '资源监控': self.resource_monitor,
+            '弱网': self.weak_net,
+        }
+        handler = click_map.get(cmd_type)
+        if handler is None:
             self.update_run_info(f'添加快捷按钮{button_text}失败:错误的指令类型', 'ERROR')
             return
-        # 在按钮上添加右键菜单，pos参数为鼠标坐标，系统自动获取
+        new_button.clicked.connect(lambda _, para=button_id: handler(para))
+
+        # 右键菜单
         new_button.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         new_button.customContextMenuRequested.connect(
             lambda pos, btn_id=button_id: self.show_button_context_menu(pos, btn_id))
 
-        # 连接拖动信号
-        new_button.dragStarted.connect(lambda: self._on_drag_started(new_button, button_id))
+        # 拖动信号
+        new_button.dragStarted.connect(lambda: self._on_drag_started(new_button, button_id, container))
         new_button.dragMoved.connect(self._on_drag_moved)
         new_button.dragEnded.connect(self._on_drag_ended)
 
-        # 添加到主窗口（新按钮添加到最下面，在 stretch 之前）
-        insert_index = self.button_layout.count() - 1 if self.button_layout.count() > 0 else 0
-        self.button_layout.insertWidget(insert_index, new_button)
+        # 添加到分组的按钮布局（在 stretch 之前）
+        btn_layout = group_info['button_layout']
+        insert_index = btn_layout.count() - 1 if btn_layout.count() > 0 else 0
+        btn_layout.insertWidget(insert_index, container)
 
-        # 将新建的快捷按钮添加到快捷按钮字典和顺序列表
-        self.sc_buttons[button_id] = {'button': new_button, 'config': config_data}
-        self._button_order.append(button_id)
-        # 设置新按钮的位置（在最后）
-        config_data['位置'] = len(self._button_order)
+        # 保存按钮信息
+        self.sc_buttons[button_id] = {
+            'widget': container,
+            'button': new_button,
+            'checkbox': checkbox,
+            'config': config_data,
+            'group': group_name,
+        }
+        group_info['buttons'].append(button_id)
+        config_data['位置'] = len(group_info['buttons'])
 
     def edit_button(self, config_data, button_id):
         self.sc_buttons[button_id]['config'].update(config_data)  # 更新按钮字典内容
         btn = self.sc_buttons[button_id]['button']  # 按钮对象
         btn.setText(config_data['指令名称'])  # 修改按钮名称
+        # 更新按钮样式（类型可能变了）
+        cmd_type = config_data.get('指令类型', '')
+        if cmd_type:
+            btn.setStyleSheet(self.get_button_style(cmd_type))
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
 
-    def _on_drag_started(self, button, button_id):
+    def _on_drag_started(self, button, button_id, container):
         """拖动开始"""
         self._drag_button = button
-        # 创建拖动指示线
+        self._drag_container = container
+        self._drag_group_name = self.sc_buttons[button_id]['group']
+        group_info = self._groups[self._drag_group_name]
+        # 创建拖动指示线（在当前分组的容器中）
         if self._drag_indicator is None:
-            self._drag_indicator = QWidget(self.button_container)
+            self._drag_indicator = QWidget(group_info['button_container'])
             self._drag_indicator.setFixedHeight(3)
             self._drag_indicator.setStyleSheet("background-color: #2196F3;")
+        else:
+            self._drag_indicator.setParent(group_info['button_container'])
         # 改变按钮样式表示正在拖动
-        button.setStyleSheet("""
-            QPushButton {
+        cmd_type = self.sc_buttons[button_id]['config']['指令类型']
+        bg, _ = self.BUTTON_COLOR_MAP.get(cmd_type, ('#4CAF50', '#45a049'))
+        button.setStyleSheet(f"""
+            QPushButton {{
                 padding: 10px;
                 font-size: 14px;
-                margin: 5px;
+                margin: 2px;
                 border-radius: 5px;
-                background-color: rgba(76, 175, 80, 0.5);
+                background-color: rgba({int(bg[1:3], 16)}, {int(bg[3:5], 16)}, {int(bg[5:7], 16)}, 0.5);
                 color: rgba(255, 255, 255, 0.7);
                 border: 2px solid #2196F3;
-            }
+            }}
         """)
 
     def _on_drag_moved(self, global_pos):
         """拖动过程中更新位置"""
-        if self._drag_button is None:
+        if self._drag_button is None or self._drag_group_name is None:
             return
-        # 将全局坐标转为按钮容器的本地坐标
-        local_pos = self.button_container.mapFromGlobal(global_pos)
-        # 找到应该插入的位置
+        group_info = self._groups[self._drag_group_name]
+        local_pos = group_info['button_container'].mapFromGlobal(global_pos)
         insert_index = self._get_insert_index(local_pos)
-        # 更新指示线位置
         self._update_drag_indicator(insert_index)
 
     def _get_insert_index(self, pos):
         """根据鼠标位置获取应该插入的索引"""
-        button_count = len(self._button_order)  # 实际按钮数量（不包含 stretch）
+        group_info = self._groups[self._drag_group_name]
+        button_count = len(group_info['buttons'])
         for i in range(button_count):
-            item = self.button_layout.itemAt(i)
+            item = group_info['button_layout'].itemAt(i)
             if item.widget():
                 btn_rect = item.widget().geometry()
-                # 如果鼠标位置在当前按钮上半部分，插入到该按钮之前
                 if pos.y() < btn_rect.center().y():
                     return i
-        # 如果在所有按钮下方，插入到最后（在 stretch 之前）
         return button_count
 
     def _update_drag_indicator(self, index):
         """更新拖动指示线的位置"""
-        if self._drag_indicator is None:
+        if self._drag_indicator is None or self._drag_group_name is None:
             return
-        if index >= self.button_layout.count():
-            # 放在最后一个按钮之后
-            last_item = self.button_layout.itemAt(self.button_layout.count() - 1)
+        group_info = self._groups[self._drag_group_name]
+        layout = group_info['button_layout']
+        container = group_info['button_container']
+        if index >= layout.count():
+            last_item = layout.itemAt(layout.count() - 1)
             if last_item and last_item.widget():
                 y = last_item.widget().y() + last_item.widget().height()
             else:
                 y = 0
-            self._drag_indicator.setGeometry(0, y, self.button_container.width(), 3)
+            self._drag_indicator.setGeometry(0, y, container.width(), 3)
         else:
-            # 放在第 index 个按钮之前
-            item = self.button_layout.itemAt(index)
+            item = layout.itemAt(index)
             if item and item.widget():
                 y = item.widget().y() - 2
-                self._drag_indicator.setGeometry(0, y, self.button_container.width(), 3)
+                self._drag_indicator.setGeometry(0, y, container.width(), 3)
         self._drag_indicator.show()
         self._drag_indicator.raise_()
 
@@ -506,72 +756,49 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if self._drag_button is None:
             return
         # 恢复按钮样式
-        self._restore_button_style(self._drag_button)
+        button_id = self._drag_button.objectName()
+        cmd_type = self.sc_buttons[button_id]['config']['指令类型']
+        self._drag_button.setStyleSheet(self.get_button_style(cmd_type))
+        self._drag_button.style().unpolish(self._drag_button)
+        self._drag_button.style().polish(self._drag_button)
         # 隐藏指示线
         if self._drag_indicator:
             self._drag_indicator.hide()
         # 获取最终插入位置
-        insert_index = self._get_insert_index(self.button_container.mapFromGlobal(QtGui.QCursor.pos()))
-        # 获取被拖动按钮的当前索引
-        current_index = self.button_layout.indexOf(self._drag_button)
+        group_info = self._groups[self._drag_group_name]
+        insert_index = self._get_insert_index(
+            group_info['button_container'].mapFromGlobal(QtGui.QCursor.pos()))
+        # 获取被拖动容器的当前索引
+        current_index = group_info['button_layout'].indexOf(self._drag_container)
         if current_index != -1 and current_index != insert_index:
-            # 重新排序按钮
             self._reorder_buttons(current_index, insert_index)
         self._drag_button = None
-
-    def _restore_button_style(self, button):
-        """恢复按钮原始样式"""
-        button.setStyleSheet("""
-            QPushButton {
-                padding: 10px;
-                font-size: 14px;
-                margin: 5px;
-                border-radius: 5px;
-                background-color: #4CAF50;
-                color: white;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            QPushButton:pressed {
-                color: #3a8ee6;
-                border-color: #3a8ee6;
-                background-color: #ecf5ff;
-            }
-            QPushButton[executing="true"] {
-                background-color: #cccccc;
-                color: #666666;
-                border: 1px solid #999999;
-            }
-            QPushButton[executing="true"]:hover {
-                background-color: #cccccc;
-            }
-        """)
-        # 刷新样式属性
-        button.style().unpolish(button)
-        button.style().polish(button)
+        self._drag_container = None
+        self._drag_group_name = None
 
     def _reorder_buttons(self, from_index, to_index):
-        """重新排列按钮"""
-        # 从布局中移除
-        button = self.button_layout.itemAt(from_index).widget()
-        self.button_layout.removeWidget(button)
-        # 插入到新位置（不能超过按钮数量，因为最后有 stretch）
-        max_index = self.button_layout.count() - 1  # 减去 stretch
+        """重新排列按钮（在分组内）"""
+        group_info = self._groups[self._drag_group_name]
+        layout = group_info['button_layout']
+        # 从布局中移除容器
+        container = layout.itemAt(from_index).widget()
+        layout.removeWidget(container)
+        # 插入到新位置
+        max_index = layout.count() - 1  # 减去 stretch
         if to_index > max_index:
             to_index = max_index
         if to_index > from_index:
-            to_index -= 1  # 因为移除了一个，所以如果往后移，索引要减1
-        self.button_layout.insertWidget(to_index, button)
-        # 更新 _button_order 列表
-        button_id = button.objectName()
-        if button_id in self._button_order:
-            self._button_order.remove(button_id)
-        self._button_order.insert(to_index, button_id)
-        # 更新所有按钮config中的"位置"字段
-        for idx, bid in enumerate(self._button_order):
+            to_index -= 1
+        layout.insertWidget(to_index, container)
+        # 更新分组的 buttons 列表
+        button_id = self._drag_button.objectName()
+        if button_id in group_info['buttons']:
+            group_info['buttons'].remove(button_id)
+        group_info['buttons'].insert(to_index, button_id)
+        # 更新位置字段
+        for idx, bid in enumerate(group_info['buttons']):
             self.sc_buttons[bid]['config']['位置'] = idx + 1
-        self.update_run_info(f'按钮<{button.text()}>已移动到第{to_index + 1}个位置')
+        self.update_run_info(f'按钮<{self._drag_button.text()}>已移动到第{to_index + 1}个位置')
 
     def click_send_cmd(self, button_id):
         """发送指令"""
@@ -1160,20 +1387,25 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         is_executing = self.sc_buttons[button_id]['button'].property('executing')
         edit_action = None
         delete_action = None
+        move_action = None
         if is_executing:
-            # 正在执行时，只显示复制和停止
             copy_action = menu.addAction("复制")
             stop_action = menu.addAction("停止")
         else:
-            # 未执行时，显示全部选项
             copy_action = menu.addAction("复制")
             edit_action = menu.addAction("编辑")
             delete_action = menu.addAction("删除")
             stop_action = menu.addAction("停止")
+            # 移动分组子菜单
+            move_menu = menu.addMenu("移动到分组")
+            current_group = self.sc_buttons[button_id]['group']
+            for gname in self._group_order:
+                if gname != current_group:
+                    move_menu.addAction(gname)
+            move_action = move_menu
 
         action = menu.exec(self.sc_buttons[button_id]['button'].mapToGlobal(pos))
 
-        # 处理菜单选择
         if action == copy_action:
             self.copy_button(button_id)
         elif edit_action is not None and action == edit_action:
@@ -1182,17 +1414,45 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self.delete_button(button_id)
         elif action == stop_action:
             self.stop_single_button(button_id)
+        elif move_action is not None and action is not None and action.text() in self._groups:
+            self.move_button_to_group(button_id, action.text())
+
+    def move_button_to_group(self, button_id, target_group):
+        """移动按钮到另一个分组"""
+        if button_id not in self.sc_buttons or target_group not in self._groups:
+            return
+        old_group = self.sc_buttons[button_id]['group']
+        if old_group == target_group:
+            return
+        # 从旧分组移除
+        old_group_info = self._groups[old_group]
+        if button_id in old_group_info['buttons']:
+            old_group_info['buttons'].remove(button_id)
+        old_group_info['button_layout'].removeWidget(self.sc_buttons[button_id]['widget'])
+        # 更新旧分组位置字段
+        for idx, bid in enumerate(old_group_info['buttons']):
+            self.sc_buttons[bid]['config']['位置'] = idx + 1
+        # 添加到新分组
+        new_group_info = self._groups[target_group]
+        btn_layout = new_group_info['button_layout']
+        insert_index = btn_layout.count() - 1 if btn_layout.count() > 0 else 0
+        btn_layout.insertWidget(insert_index, self.sc_buttons[button_id]['widget'])
+        new_group_info['buttons'].append(button_id)
+        self.sc_buttons[button_id]['group'] = target_group
+        self.sc_buttons[button_id]['config']['分组'] = target_group
+        self.sc_buttons[button_id]['config']['位置'] = len(new_group_info['buttons'])
+        self.sc_buttons[button_id]['widget'].setParent(new_group_info['button_container'])
+        btn_name = self.sc_buttons[button_id]['config']['指令名称']
+        self.update_run_info(f'按钮<{btn_name}>已移动到分组<{target_group}>')
 
     def copy_button(self, button_id):
         """复制按钮"""
         if button_id not in self.sc_buttons:
             return
         original_config = self.sc_buttons[button_id]['config'].copy()
-        # 在原名称后加"_副本"
         original_config['指令名称'] = original_config['指令名称'] + '_副本'
-        self.btn_count += 1
-        new_button_id = f'sc_btn_{self.btn_count}'
-        # 创建新按钮
+        # 保持同一分组
+        original_config['分组'] = self.sc_buttons[button_id]['group']
         self.add_button(original_config)
         btn_text = original_config['指令名称']
         self.update_run_info(f"复制<{btn_text}>快捷按钮成功")
@@ -1201,11 +1461,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         """停止单个按钮的线程"""
         button_name = self.sc_buttons[button_id]['config']['指令名称']
         stopped_count = 0
-        # 遍历所有线程，找到属于这个按钮的线程（通过存储的button_id判断）
-        # 首先需要修改线程创建逻辑，在创建时保存button_id
         thread_names_to_stop = []
         for thread_name, thread_info in self.sc_threads.items():
-            # 检查是否有button_id字段，且匹配
             if 'button_id' in thread_info and thread_info['button_id'] == button_id:
                 thread_names_to_stop.append(thread_name)
 
@@ -1213,7 +1470,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self.update_run_info(f'<{button_name}>没有正在执行的指令', 'WARNING')
             return
 
-        # 停止匹配的线程
         for thread_name in thread_names_to_stop:
             thread_info = self.sc_threads[thread_name]
             if 'tool' in thread_info:
@@ -1229,6 +1485,26 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if stopped_count > 0:
             self.update_run_info(f'<{button_name}>已发送中止请求，请等待')
 
+    def _delete_button_internal(self, button_id):
+        """内部删除按钮（不弹确认框），供删除分组调用"""
+        if button_id not in self.sc_buttons:
+            return
+        btn_info = self.sc_buttons[button_id]
+        group_name = btn_info['group']
+        sc_ty = btn_info['config']['指令类型']
+        btn_text = btn_info['config']['指令名称']
+        # 从分组移除
+        group_info = self._groups[group_name]
+        if button_id in group_info['buttons']:
+            group_info['buttons'].remove(button_id)
+        # 更新位置字段
+        for idx, bid in enumerate(group_info['buttons']):
+            self.sc_buttons[bid]['config']['位置'] = idx + 1
+        # 删除界面控件
+        btn_info['widget'].deleteLater()
+        del self.sc_buttons[button_id]
+        self.update_run_info(f"删除<{sc_ty}>|<{btn_text}>快捷按钮成功")
+
     def delete_button(self, button_id):
         confirm_dialog = QMessageBox()
         confirm_dialog.setIcon(QMessageBox.Icon.Question)
@@ -1238,20 +1514,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         confirm_dialog.setDefaultButton(QMessageBox.StandardButton.No)
         result = confirm_dialog.exec_()
         if result == QMessageBox.StandardButton.Yes:
-            if button_id in self.sc_buttons:
-                btn = self.sc_buttons[button_id]['button']
-                sc_ty = self.sc_buttons[button_id]['config']['指令类型']
-                btn_text = self.sc_buttons[button_id]['config']['指令名称']
-                self.update_run_info(f"删除<{sc_ty}>|<{btn_text}>快捷按钮成功")
-                btn.deleteLater()
-                del self.sc_buttons[button_id]  # 只调用这个无法删除已经实例化并在界面显示的按钮，所以需要提前btn.deleteLater()
-                # 从顺序列表中移除
-                if button_id in self._button_order:
-                    self._button_order.remove(button_id)
-                # 更新剩余按钮的位置字段
-                for idx, bid in enumerate(self._button_order):
-                    self.sc_buttons[bid]['config']['位置'] = idx + 1
-                # button_id为唯一标识，删除button后也不要减少数量
+            self._delete_button_internal(button_id)
         else:
             self.update_run_info(f"删除按钮操作取消")
 
@@ -1272,6 +1535,155 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 dialog_func(button_id)  # 以编辑模式打开窗口，传入button_id
             else:
                 self.update_run_info(f"编辑按钮出错：未知指令类型{sc_ty}", 'ERROR')
+
+    # ==================== 分组批量操作 ====================
+
+    # 批量执行时跳过的类型
+    SKIP_BATCH_TYPES = {'发送命令并接收回显', '资源监控', '弱网'}
+
+    def select_all_in_group(self, group_name):
+        """切换分组内所有按钮的勾选状态"""
+        if group_name not in self._groups:
+            return
+        group_info = self._groups[group_name]
+        buttons = group_info['buttons']
+        if not buttons:
+            return
+        # 检查当前是否全部勾选
+        all_checked = all(self.sc_buttons[bid]['checkbox'].isChecked() for bid in buttons)
+        # 切换状态
+        for bid in buttons:
+            self.sc_buttons[bid]['checkbox'].setChecked(not all_checked)
+
+    def execute_selected_in_group(self, group_name):
+        """执行分组内所有勾选的按钮"""
+        if group_name not in self._groups:
+            return
+        group_info = self._groups[group_name]
+        to_execute = [bid for bid in group_info['buttons']
+                      if self.sc_buttons[bid]['checkbox'].isChecked()]
+        if not to_execute:
+            self.update_run_info(f'分组<{group_name}>没有勾选的按钮', 'WARNING')
+            return
+        # 过滤掉不适合批量执行的类型
+        skipped = []
+        executable = []
+        for bid in to_execute:
+            cmd_type = self.sc_buttons[bid]['config']['指令类型']
+            if cmd_type in self.SKIP_BATCH_TYPES:
+                skipped.append(bid)
+            elif self.sc_buttons[bid]['button'].property('executing'):
+                skipped.append(bid)  # 正在执行的也跳过
+            else:
+                executable.append(bid)
+        if skipped:
+            for bid in skipped:
+                btn_name = self.sc_buttons[bid]['config']['指令名称']
+                self.update_run_info(f'跳过<{btn_name}>（不支持批量或正在执行）', 'WARNING')
+        if not executable:
+            self.update_run_info(f'分组<{group_name}>没有可批量执行的按钮', 'WARNING')
+            return
+        self.update_run_info(f'分组<{group_name}>开始批量执行{len(executable)}个按钮')
+        # 间隔1秒逐个启动
+        for i, bid in enumerate(executable):
+            if i > 0:
+                QTimer.singleShot(1000 * i, lambda b=bid: self._execute_button(b))
+            else:
+                self._execute_button(bid)
+
+    def _execute_button(self, button_id):
+        """执行单个按钮（根据类型调用对应的处理函数）"""
+        if button_id not in self.sc_buttons:
+            return
+        cmd_type = self.sc_buttons[button_id]['config']['指令类型']
+        handler_map = {
+            '发送命令': self.click_send_cmd,
+            '发送文件': self.click_send_files,
+            '获取文件': self.click_get_files,
+            '复制本地文件': self.click_copy_files,
+        }
+        handler = handler_map.get(cmd_type)
+        if handler:
+            handler(button_id)
+
+    def stop_all_in_group(self, group_name):
+        """停止分组内所有正在执行的按钮"""
+        if group_name not in self._groups:
+            return
+        group_info = self._groups[group_name]
+        button_ids = set(group_info['buttons'])
+        stopped_count = 0
+        for thread_name, thread_info in self.sc_threads.items():
+            if 'button_id' in thread_info and thread_info['button_id'] in button_ids:
+                if 'tool' in thread_info:
+                    if type(thread_info['tool']) == ssh_tools.SSHTools:
+                        if thread_info['tool'].is_connected():
+                            thread_info['tool'].send_command_interactive(chr(3))
+                            thread_info['tool'].transfer_stat = 0
+                            thread_info['tool'].win_tool.transfer_stat = 0
+                    elif type(thread_info['tool']) == windows_tools.WindowsTools:
+                        thread_info['tool'].transfer_stat = 0
+                stopped_count += 1
+        if stopped_count > 0:
+            self.update_run_info(f'分组<{group_name}>已发送{stopped_count}个中止请求，请等待')
+        else:
+            self.update_run_info(f'分组<{group_name}>没有正在执行的指令', 'WARNING')
+
+    def delete_selected_in_group(self, group_name):
+        """删除分组内所有勾选的按钮（跳过正在执行的）"""
+        if group_name not in self._groups:
+            return
+        group_info = self._groups[group_name]
+        to_delete = [bid for bid in group_info['buttons']
+                     if self.sc_buttons[bid]['checkbox'].isChecked()]
+        if not to_delete:
+            self.update_run_info(f'分组<{group_name}>没有勾选的按钮', 'WARNING')
+            return
+        # 确认对话框
+        confirm = QMessageBox()
+        confirm.setIcon(QMessageBox.Icon.Question)
+        confirm.setWindowTitle("确认")
+        confirm.setText(f"是否删除分组<{group_name}>中勾选的{len(to_delete)}个按钮？")
+        confirm.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        confirm.setDefaultButton(QMessageBox.StandardButton.No)
+        if confirm.exec_() != QMessageBox.StandardButton.Yes:
+            self.update_run_info('删除选中按钮操作取消')
+            return
+        # 分离可删除和需跳过的
+        skipped = []
+        deletable = []
+        for bid in to_delete:
+            if self.sc_buttons[bid]['button'].property('executing'):
+                skipped.append(bid)
+            else:
+                deletable.append(bid)
+        if skipped:
+            for bid in skipped:
+                btn_name = self.sc_buttons[bid]['config']['指令名称']
+                self.update_run_info(f'跳过<{btn_name}>（正在执行中）', 'WARNING')
+        for bid in deletable:
+            self._delete_button_internal(bid)
+        if deletable:
+            self.update_run_info(f'分组<{group_name}>已删除{len(deletable)}个按钮')
+
+    def execute_all_buttons(self):
+        """全部执行所有标签页的所有按钮（跳过不支持批量执行的类型）"""
+        all_executable = []
+        for gname in self._group_order:
+            for bid in self._groups[gname]['buttons']:
+                cmd_type = self.sc_buttons[bid]['config']['指令类型']
+                if cmd_type not in self.SKIP_BATCH_TYPES:
+                    if not self.sc_buttons[bid]['button'].property('executing'):
+                        all_executable.append(bid)
+        if not all_executable:
+            self.update_run_info('没有可批量执行的按钮', 'WARNING')
+            return
+        self.update_run_info(f'开始批量执行所有标签页的{len(all_executable)}个按钮')
+        for i, bid in enumerate(all_executable):
+            if i > 0:
+                QTimer.singleShot(1000 * i, lambda b=bid: self._execute_button(b))
+            else:
+                self._execute_button(bid)
 
     def stop_sc(self):
         """耗时的指令手动中止方法"""
@@ -1354,12 +1766,14 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         for server in self.servers_cfg:
             cfg_dic[f'服务器{server_count}'] = server
             server_count += 1
-        # 按顺序保存按钮配置，每个按钮配置中添加"位置"字段
-        for i, button_id in enumerate(self._button_order):
-            button_config = self.sc_buttons[button_id]['config'].copy()
-            button_config['位置'] = i + 1  # 从1开始编号
-            cfg_dic[f'快捷按钮{button_count}'] = button_config
-            button_count += 1
+        # 按分组顺序保存按钮配置，每个按钮配置中包含"位置"和"分组"字段
+        for gname in self._group_order:
+            for i, button_id in enumerate(self._groups[gname]['buttons']):
+                button_config = self.sc_buttons[button_id]['config'].copy()
+                button_config['位置'] = i + 1
+                button_config['分组'] = gname
+                cfg_dic[f'快捷按钮{button_count}'] = button_config
+                button_count += 1
         if len(self.commands) != 0:
             cfg_dic['指令'] = self.commands
         # 保存日志配置
@@ -1437,19 +1851,18 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         except (json.JSONDecodeError, IOError, ValueError) as e:
             self.update_run_info(f"配置文件解析失败: {str(e)}，使用空配置", 'WARNING')
             return
-        # 先收集所有快捷按钮配置，根据位置排序
+        # 先收集所有快捷按钮配置，按分组和位置排序
         sc_buttons_list = []
         for key in data:
             if '快捷按钮' in key:
                 button_config = data[key]
-                # 获取位置，没有的设为很大的数字（放最后）
+                group_name = button_config.get('分组', '默认分组')
                 position = button_config.get('位置', 99999)
-                sc_buttons_list.append((position, button_config))
-        
-        # 按位置从小到大排序，加载按钮
-        sc_buttons_list.sort(key=lambda x: x[0])
-        for position, button_config in sc_buttons_list:
-            # 加载时不保存"位置"字段，只用于排序
+                sc_buttons_list.append((group_name, position, button_config))
+
+        # 先按分组名排序（保证分组创建顺序），再按位置排序
+        sc_buttons_list.sort(key=lambda x: (x[0], x[1]))
+        for group_name, position, button_config in sc_buttons_list:
             button_config_clean = button_config.copy()
             if '位置' in button_config_clean:
                 del button_config_clean['位置']
@@ -1544,9 +1957,14 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         for server in self.servers_cfg:
             current_cfg[f'服务器{server_count}'] = server
             server_count += 1
-        for button in self.sc_buttons:
-            current_cfg[f'快捷按钮{button_count}'] = self.sc_buttons[button]['config']
-            button_count += 1
+        # 按分组顺序生成按钮配置
+        for gname in self._group_order:
+            for i, button_id in enumerate(self._groups[gname]['buttons']):
+                btn_cfg = self.sc_buttons[button_id]['config'].copy()
+                btn_cfg['位置'] = i + 1
+                btn_cfg['分组'] = gname
+                current_cfg[f'快捷按钮{button_count}'] = btn_cfg
+                button_count += 1
         if len(self.commands) != 0:
             current_cfg['指令'] = self.commands
         # 加入日志配置状态
