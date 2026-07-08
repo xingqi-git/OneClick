@@ -281,6 +281,15 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         else:
             self.update_run_info('服务器列表编辑 取消')
 
+    def set_button_executing(self, button_id, is_executing):
+        """设置按钮执行状态，不真正禁用按钮，只通过样式模拟"""
+        if button_id in self.sc_buttons:
+            button = self.sc_buttons[button_id]['button']
+            button.setProperty('executing', is_executing)
+            # 刷新样式
+            button.style().unpolish(button)
+            button.style().polish(button)
+
     def add_button(self, config_data):
         """根据配置数据(dialog会将配置好的数据传递给主窗口)创建新按钮"""
         # 获取脚本名称作为按钮文本
@@ -313,12 +322,17 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 border-color: #3a8ee6;
                 background-color: #ecf5ff;
             }
-            QPushButton:disabled {
+            QPushButton[executing="true"] {
                 background-color: #cccccc;
                 color: #666666;
                 border: 1px solid #999999;
             }
+            QPushButton[executing="true"]:hover {
+                background-color: #cccccc;
+            }
         """)
+        # 标记按钮是否正在执行（不真正禁用按钮，只模拟禁用效果，以便右键菜单可用）
+        new_button.setProperty('executing', False)
         # 根据传入的快捷类型选择按钮点击连接的事件，并传入button_id参数
         if config_data['指令类型'] == '发送命令':
             new_button.clicked.connect(lambda _, para=button_id: self.click_send_cmd(para))
@@ -358,8 +372,12 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if button_id not in self.sc_buttons:
             return
         button_name = self.sc_buttons[button_id]['config']['指令名称']
+        # 检查是否正在执行
+        if self.sc_buttons[button_id]['button'].property('executing'):
+            self.update_run_info(f'<{button_name}>正在执行中，请先停止', 'WARNING')
+            return
         self.update_run_info(f'<{button_name}>开始执行')
-        self.sc_buttons[button_id]['button'].setEnabled(False)
+        self.set_button_executing(button_id, True)
 
         # 初始化SSHTools
         ssh_tool = ssh_tools.SSHTools()
@@ -370,7 +388,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             ssh_tool.password = self.sc_buttons[button_id]['config']['密码']
         except Exception as e:
             self.update_run_info(f'<{button_name}>执行失败:{e}', 'ERROR')
-            self.sc_buttons[button_id]['button'].setEnabled(True)
+            self.set_button_executing(button_id, False)
             return
 
         def execute_send_cmd_flow(cmd):
@@ -398,7 +416,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 self.update_run_info(f'<{button_name}>执行成功')
             else:
                 self.update_run_info(f'<{button_name}>执行失败', 'ERROR')
-            self.sc_buttons[button_id]['button'].setEnabled(True)
+            self.set_button_executing(button_id, False)
             thread.quit()
 
         def on_thread_finished():
@@ -433,7 +451,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.sc_threads[thread_name] = {
             "tool": ssh_tool,
             "thread": thread,
-            "worker": worker
+            "worker": worker,
+            "button_id": button_id
         }
 
         thread.start()
@@ -443,8 +462,12 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if button_id not in self.sc_buttons:
             return
         button_name = self.sc_buttons[button_id]['config']['指令名称']
+        # 检查是否正在执行
+        if self.sc_buttons[button_id]['button'].property('executing'):
+            self.update_run_info(f'<{button_name}>正在执行中，请先停止', 'WARNING')
+            return
         self.update_run_info(f'<{button_name}>开始执行')
-        self.sc_buttons[button_id]['button'].setEnabled(False)
+        self.set_button_executing(button_id, True)
 
         # 初始化SSHTools
         ssh_tool = ssh_tools.SSHTools()
@@ -455,7 +478,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             ssh_tool.password = self.sc_buttons[button_id]['config']['密码']
         except Exception as e:
             self.update_run_info(f'<<{button_name}>>执行失败:{e}', 'ERROR')
-            self.sc_buttons[button_id]['button'].setEnabled(True)
+            self.set_button_executing(button_id, False)
             return
 
         # 封装指令发送和回显接收方法
@@ -473,7 +496,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 self.update_run_info(f'<<{button_name}>>执行成功')
             else:
                 self.update_run_info(f'<<{button_name}>>执行失败', 'ERROR')
-            self.sc_buttons[button_id]['button'].setEnabled(True)
+            self.set_button_executing(button_id, False)
             # 不要在worker里deleteLater自己，会被放到worker的线程中执行
             thread.quit()
 
@@ -510,7 +533,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.sc_threads[thread_name] = {
             "tool": ssh_tool,
             "thread": thread,
-            "worker": worker
+            "worker": worker,
+            "button_id": button_id
         }
 
         thread.start()
@@ -520,8 +544,12 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if button_id not in self.sc_buttons:
             return
         button_name = self.sc_buttons[button_id]['config']['指令名称']
+        # 检查是否正在执行
+        if self.sc_buttons[button_id]['button'].property('executing'):
+            self.update_run_info(f'<{button_name}>正在执行中，请先停止', 'WARNING')
+            return
         self.update_run_info(f'<<{button_name}>>开始执行')
-        self.sc_buttons[button_id]['button'].setEnabled(False)
+        self.set_button_executing(button_id, True)
 
         # 初始化SSHTools
         ssh_tool = ssh_tools.SSHTools()
@@ -532,7 +560,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             ssh_tool.password = self.sc_buttons[button_id]['config']['密码']
         except Exception as e:
             self.update_run_info(f'<<{button_name}>>执行失败:{e}', 'ERROR')
-            self.sc_buttons[button_id]['button'].setEnabled(True)
+            self.set_button_executing(button_id, False)
             return
 
         mtime_dic = {
@@ -564,7 +592,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 self.update_run_info(f'<<{button_name}>>执行成功')
             else:
                 self.update_run_info(f'<<{button_name}>>执行失败', 'ERROR')
-            self.sc_buttons[button_id]['button'].setEnabled(True)
+            self.set_button_executing(button_id, False)
             thread.quit()
 
         def on_thread_finished():
@@ -595,7 +623,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.sc_threads[thread_name] = {
             "tool": ssh_tool,
             "thread": thread,
-            "worker": worker
+            "worker": worker,
+            "button_id": button_id
         }
 
         thread.start()
@@ -605,8 +634,12 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if button_id not in self.sc_buttons:
             return
         button_name = self.sc_buttons[button_id]['config']['指令名称']
+        # 检查是否正在执行
+        if self.sc_buttons[button_id]['button'].property('executing'):
+            self.update_run_info(f'<{button_name}>正在执行中，请先停止', 'WARNING')
+            return
         self.update_run_info(f'<<{button_name}>>开始执行')
-        self.sc_buttons[button_id]['button'].setEnabled(False)
+        self.set_button_executing(button_id, True)
 
         # 初始化SSHTools
         ssh_tool = ssh_tools.SSHTools()
@@ -617,7 +650,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             ssh_tool.password = self.sc_buttons[button_id]['config']['密码']
         except Exception as e:
             self.update_run_info(f'<<{button_name}>>执行失败:{e}', 'ERROR')
-            self.sc_buttons[button_id]['button'].setEnabled(True)
+            self.set_button_executing(button_id, False)
             return
 
         mtime_dic = {
@@ -657,7 +690,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 self.update_run_info(f'<<{button_name}>>执行成功')
             else:
                 self.update_run_info(f'<<{button_name}>>执行失败', 'ERROR')
-            self.sc_buttons[button_id]['button'].setEnabled(True)
+            self.set_button_executing(button_id, False)
             thread.quit()
 
         def on_thread_finished():
@@ -688,7 +721,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.sc_threads[thread_name] = {
             "tool": ssh_tool,
             "thread": thread,
-            "worker": worker
+            "worker": worker,
+            "button_id": button_id
         }
 
         thread.start()
@@ -698,8 +732,12 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if button_id not in self.sc_buttons:
             return
         button_name = self.sc_buttons[button_id]['config']['指令名称']
+        # 检查是否正在执行
+        if self.sc_buttons[button_id]['button'].property('executing'):
+            self.update_run_info(f'<{button_name}>正在执行中，请先停止', 'WARNING')
+            return
         self.update_run_info(f'<<{button_name}>>开始执行')
-        self.sc_buttons[button_id]['button'].setEnabled(False)
+        self.set_button_executing(button_id, True)
 
         # 初始化WindowsTools
         win_tool = windows_tools.WindowsTools()
@@ -732,7 +770,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 self.update_run_info(f'<<{button_name}>>执行成功')
             else:
                 self.update_run_info(f'<<{button_name}>>执行失败', 'ERROR')
-            self.sc_buttons[button_id]['button'].setEnabled(True)
+            self.set_button_executing(button_id, False)
             thread.quit()
 
         def on_thread_finished():
@@ -763,7 +801,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.sc_threads[thread_name] = {
             "tool": win_tool,
             "thread": thread,
-            "worker": worker
+            "worker": worker,
+            "button_id": button_id
         }
 
         thread.start()
@@ -771,7 +810,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
     def resource_monitor(self, button_id):
         """按下快捷键时调用，打开资源监控配置的窗口，按传入的button_id参数来获取服务器IP等内容"""
         if button_id in self.sc_buttons:
-            self.sc_buttons[button_id]['button'].setEnabled(False)
+            self.set_button_executing(button_id, True)
             # 打开资源监控的子窗口，需要将buttonid传入
             monitor_set_dlg = ResourceMonitorDialog2(button_id, self)
             if self.sc_buttons[button_id]['config']['IP'] == '':
@@ -782,12 +821,12 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             result = monitor_set_dlg.exec_()
             # 关闭窗口时主界面按钮恢复
             if result != QtWidgets.QDialog.DialogCode.Accepted:
-                self.sc_buttons[button_id]['button'].setEnabled(True)
+                self.set_button_executing(button_id, False)
 
     def weak_net(self, button_id):
         """按下快捷键时调用，打开弱网控制面板"""
         if button_id in self.sc_buttons:
-            self.sc_buttons[button_id]['button'].setEnabled(False)
+            self.set_button_executing(button_id, True)
             weak_net_dlg = WeakNetControlDialog(button_id, self)
             ip = self.sc_buttons[button_id]['config']['IP']
             if ip == '':
@@ -796,7 +835,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 weak_net_dlg.setWindowTitle(f"{ip}<弱网>控制面板")
             result = weak_net_dlg.exec_()
             if result != QtWidgets.QDialog.DialogCode.Accepted:
-                self.sc_buttons[button_id]['button'].setEnabled(True)
+                self.set_button_executing(button_id, False)
 
     def _on_log_file_checkbox_changed(self, state):
         """日志勾选框状态变化：控制文件日志开关"""
@@ -912,16 +951,77 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
     def show_button_context_menu(self, pos, button_id):
         menu = QMenu()
-        edit_action = menu.addAction("编辑")
-        delete_action = menu.addAction("删除")
+        is_executing = self.sc_buttons[button_id]['button'].property('executing')
+        edit_action = None
+        delete_action = None
+        if is_executing:
+            # 正在执行时，只显示复制和停止
+            copy_action = menu.addAction("复制")
+            stop_action = menu.addAction("停止")
+        else:
+            # 未执行时，显示全部选项
+            copy_action = menu.addAction("复制")
+            edit_action = menu.addAction("编辑")
+            delete_action = menu.addAction("删除")
+            stop_action = menu.addAction("停止")
 
         action = menu.exec(self.sc_buttons[button_id]['button'].mapToGlobal(pos))
 
         # 处理菜单选择
-        if action == delete_action:
-            self.delete_button(button_id)
-        elif action == edit_action:
+        if action == copy_action:
+            self.copy_button(button_id)
+        elif edit_action is not None and action == edit_action:
             self.edit_button_dialog(button_id)
+        elif delete_action is not None and action == delete_action:
+            self.delete_button(button_id)
+        elif action == stop_action:
+            self.stop_single_button(button_id)
+
+    def copy_button(self, button_id):
+        """复制按钮"""
+        if button_id not in self.sc_buttons:
+            return
+        original_config = self.sc_buttons[button_id]['config'].copy()
+        # 在原名称后加"_副本"
+        original_config['指令名称'] = original_config['指令名称'] + '_副本'
+        self.btn_count += 1
+        new_button_id = f'sc_btn_{self.btn_count}'
+        # 创建新按钮
+        self.add_button(original_config)
+        btn_text = original_config['指令名称']
+        self.update_run_info(f"复制<{btn_text}>快捷按钮成功")
+
+    def stop_single_button(self, button_id):
+        """停止单个按钮的线程"""
+        button_name = self.sc_buttons[button_id]['config']['指令名称']
+        stopped_count = 0
+        # 遍历所有线程，找到属于这个按钮的线程（通过存储的button_id判断）
+        # 首先需要修改线程创建逻辑，在创建时保存button_id
+        thread_names_to_stop = []
+        for thread_name, thread_info in self.sc_threads.items():
+            # 检查是否有button_id字段，且匹配
+            if 'button_id' in thread_info and thread_info['button_id'] == button_id:
+                thread_names_to_stop.append(thread_name)
+
+        if not thread_names_to_stop:
+            self.update_run_info(f'<{button_name}>没有正在执行的指令', 'WARNING')
+            return
+
+        # 停止匹配的线程
+        for thread_name in thread_names_to_stop:
+            thread_info = self.sc_threads[thread_name]
+            if 'tool' in thread_info:
+                if type(thread_info['tool']) == ssh_tools.SSHTools:
+                    if thread_info['tool'].is_connected():
+                        thread_info['tool'].send_command_interactive(chr(3))
+                        thread_info['tool'].transfer_stat = 0
+                        thread_info['tool'].win_tool.transfer_stat = 0
+                elif type(thread_info['tool']) == windows_tools.WindowsTools:
+                    thread_info['tool'].transfer_stat = 0
+            stopped_count += 1
+
+        if stopped_count > 0:
+            self.update_run_info(f'<{button_name}>已发送中止请求，请等待')
 
     def delete_button(self, button_id):
         confirm_dialog = QMessageBox()

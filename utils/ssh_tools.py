@@ -497,6 +497,12 @@ class SSHTools(object):
         for dst_dir in sorted_dirs:
             if self.transfer_stat == 0:
                 print('上传被中止！')
+                # 清理已创建的临时目录
+                rm_cmd = f"rm -rf \"{temp_remote_dir}\""
+                stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
+                stdout.read()
+                stderr.read()
+                self.transfer_stat = 0
                 return False
 
             # 检查当前目录是否是某个已创建目录的父路径，如果是就跳过
@@ -538,7 +544,7 @@ class SSHTools(object):
             if self.transfer_stat == 0:
                 print('上传被中止！')
                 # 清理可能上传了一半的文件
-                rm_cmd = f"rm -f \"{temp_remote_dir}\""
+                rm_cmd = f"rm -rf \"{temp_remote_dir}\""
                 stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
                 stdout.read()
                 stderr.read()
@@ -561,7 +567,7 @@ class SSHTools(object):
                     with SCPClient(self.transport, progress=lambda name, size, sent: self._print_progress(sent, file_size)) as client:
                         if self.transfer_stat == 0:
                             print("上传被中止")
-                            rm_cmd = f"rm -f \"{temp_remote_dir}\""
+                            rm_cmd = f"rm -rf \"{temp_remote_dir}\""
                             stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
                             stdout.read()
                             stderr.read()
