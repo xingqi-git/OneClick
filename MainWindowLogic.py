@@ -1,7 +1,7 @@
 import os.path
 import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
-from PyQt5.QtCore import QThread
+from PyQt5.QtCore import QThread, QTimer
 from PyQt5.QtWidgets import QDialog, QPushButton, QWidget, QVBoxLayout, QMenu, QFileDialog, QMessageBox, QMainWindow
 
 from UI import MainWindow
@@ -12,6 +12,53 @@ from utils.logger import setup_logging, get_logger
 from dialogs import (SendCMDDialog, SendCMD2Dialog, SendFilesDialog, GetFilesDialog, CopyFilesDialog,
                      SetServerDialog, ResourceMonitorDialog1, ResourceMonitorDialog2,
                      WeakNetDialog1, WeakNetControlDialog, HelpDialog, sc_class2str)
+
+
+class DraggableButton(QPushButton):
+    """可拖动的按钮类，支持长按拖动改变位置"""
+    dragStarted = QtCore.pyqtSignal()  # 拖动开始信号
+    dragMoved = QtCore.pyqtSignal(QtCore.QPoint)  # 拖动中信号，传入全局位置
+    dragEnded = QtCore.pyqtSignal()  # 拖动结束信号
+
+    def __init__(self, text, parent=None):
+        super().__init__(text, parent)
+        self._isDragging = False
+        self._dragStartPos = QtCore.QPoint()
+        self._longPressTimer = QTimer(self)
+        self._longPressTimer.setInterval(300)  # 300ms长按触发
+        self._longPressTimer.setSingleShot(True)
+        self._longPressTimer.timeout.connect(self._startDrag)
+        self._dragIndicator = None  # 拖动时的指示器
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self._dragStartPos = event.pos()
+            self._longPressTimer.start()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._isDragging:
+            # 拖动中，发送位置信号
+            self.dragMoved.emit(self.mapToGlobal(event.pos()))
+        else:
+            # 如果移动超过一定距离，取消长按检测
+            if (event.pos() - self._dragStartPos).manhattanLength() > 10:
+                self._longPressTimer.stop()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._longPressTimer.stop()
+        if self._isDragging:
+            self._isDragging = False
+            self.dragEnded.emit()
+            self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
+        super().mouseReleaseEvent(event)
+
+    def _startDrag(self):
+        """开始拖动"""
+        self._isDragging = True
+        self.dragStarted.emit()
+        self.setCursor(QtCore.Qt.CursorShape.OpenHandCursor)
 
 
 class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
@@ -43,7 +90,19 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 创建一个容器用于放置动态生成的快捷方式
         self.button_container = QWidget()
         self.button_layout = QVBoxLayout(self.button_container)
+        self.button_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)  # 顶部对齐
+        self.button_layout.setSpacing(0)  # 按钮之间间距
+        self.button_layout.setContentsMargins(0, 0, 0, 0)  # 边距
         self.scrollArea_2.setWidget(self.button_container)  # 快捷方式多时支持滚动条
+
+        # 拖动相关的变量
+        self._drag_button = None  # 当前正在拖动的按钮
+        self._drag_indicator = None  # 拖动位置指示线
+        self._button_order = []  # 存储按钮顺序的列表 [button_id, ...]
+
+        # 拉伸占位，让按钮只占用固定高度空间
+        self._button_layout_stretch = self.button_layout.addStretch()
+
 
         # 将所有快捷方式存储到字典里,由于button_id唯一，因此用字典
         self.sc_buttons = {}  # 存储发送命令按钮对象{'button_id1': {'button': new_button(按钮对象),'config': config_data},...}
@@ -301,7 +360,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 创建新按钮
         self.btn_count += 1
         button_id = f"button_{self.btn_count}"  # 唯一ID
-        new_button = QPushButton(button_text)
+        new_button = DraggableButton(button_text, self.button_container)
         new_button.setObjectName(button_id)
 
         # 设置按钮样式
@@ -356,16 +415,163 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         new_button.customContextMenuRequested.connect(
             lambda pos, btn_id=button_id: self.show_button_context_menu(pos, btn_id))
 
-        # 添加到主窗口
-        self.button_layout.addWidget(new_button)
+        # 连接拖动信号
+        new_button.dragStarted.connect(lambda: self._on_drag_started(new_button, button_id))
+        new_button.dragMoved.connect(self._on_drag_moved)
+        new_button.dragEnded.connect(self._on_drag_ended)
 
-        # 将新建的快捷按钮添加到快捷按钮字典
+        # 添加到主窗口（新按钮添加到最下面，在 stretch 之前）
+        insert_index = self.button_layout.count() - 1 if self.button_layout.count() > 0 else 0
+        self.button_layout.insertWidget(insert_index, new_button)
+
+        # 将新建的快捷按钮添加到快捷按钮字典和顺序列表
         self.sc_buttons[button_id] = {'button': new_button, 'config': config_data}
+        self._button_order.append(button_id)
+        # 设置新按钮的位置（在最后）
+        config_data['位置'] = len(self._button_order)
 
     def edit_button(self, config_data, button_id):
         self.sc_buttons[button_id]['config'].update(config_data)  # 更新按钮字典内容
         btn = self.sc_buttons[button_id]['button']  # 按钮对象
         btn.setText(config_data['指令名称'])  # 修改按钮名称
+
+    def _on_drag_started(self, button, button_id):
+        """拖动开始"""
+        self._drag_button = button
+        # 创建拖动指示线
+        if self._drag_indicator is None:
+            self._drag_indicator = QWidget(self.button_container)
+            self._drag_indicator.setFixedHeight(3)
+            self._drag_indicator.setStyleSheet("background-color: #2196F3;")
+        # 改变按钮样式表示正在拖动
+        button.setStyleSheet("""
+            QPushButton {
+                padding: 10px;
+                font-size: 14px;
+                margin: 5px;
+                border-radius: 5px;
+                background-color: rgba(76, 175, 80, 0.5);
+                color: rgba(255, 255, 255, 0.7);
+                border: 2px solid #2196F3;
+            }
+        """)
+
+    def _on_drag_moved(self, global_pos):
+        """拖动过程中更新位置"""
+        if self._drag_button is None:
+            return
+        # 将全局坐标转为按钮容器的本地坐标
+        local_pos = self.button_container.mapFromGlobal(global_pos)
+        # 找到应该插入的位置
+        insert_index = self._get_insert_index(local_pos)
+        # 更新指示线位置
+        self._update_drag_indicator(insert_index)
+
+    def _get_insert_index(self, pos):
+        """根据鼠标位置获取应该插入的索引"""
+        button_count = len(self._button_order)  # 实际按钮数量（不包含 stretch）
+        for i in range(button_count):
+            item = self.button_layout.itemAt(i)
+            if item.widget():
+                btn_rect = item.widget().geometry()
+                # 如果鼠标位置在当前按钮上半部分，插入到该按钮之前
+                if pos.y() < btn_rect.center().y():
+                    return i
+        # 如果在所有按钮下方，插入到最后（在 stretch 之前）
+        return button_count
+
+    def _update_drag_indicator(self, index):
+        """更新拖动指示线的位置"""
+        if self._drag_indicator is None:
+            return
+        if index >= self.button_layout.count():
+            # 放在最后一个按钮之后
+            last_item = self.button_layout.itemAt(self.button_layout.count() - 1)
+            if last_item and last_item.widget():
+                y = last_item.widget().y() + last_item.widget().height()
+            else:
+                y = 0
+            self._drag_indicator.setGeometry(0, y, self.button_container.width(), 3)
+        else:
+            # 放在第 index 个按钮之前
+            item = self.button_layout.itemAt(index)
+            if item and item.widget():
+                y = item.widget().y() - 2
+                self._drag_indicator.setGeometry(0, y, self.button_container.width(), 3)
+        self._drag_indicator.show()
+        self._drag_indicator.raise_()
+
+    def _on_drag_ended(self):
+        """拖动结束"""
+        if self._drag_button is None:
+            return
+        # 恢复按钮样式
+        self._restore_button_style(self._drag_button)
+        # 隐藏指示线
+        if self._drag_indicator:
+            self._drag_indicator.hide()
+        # 获取最终插入位置
+        insert_index = self._get_insert_index(self.button_container.mapFromGlobal(QtGui.QCursor.pos()))
+        # 获取被拖动按钮的当前索引
+        current_index = self.button_layout.indexOf(self._drag_button)
+        if current_index != -1 and current_index != insert_index:
+            # 重新排序按钮
+            self._reorder_buttons(current_index, insert_index)
+        self._drag_button = None
+
+    def _restore_button_style(self, button):
+        """恢复按钮原始样式"""
+        button.setStyleSheet("""
+            QPushButton {
+                padding: 10px;
+                font-size: 14px;
+                margin: 5px;
+                border-radius: 5px;
+                background-color: #4CAF50;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:pressed {
+                color: #3a8ee6;
+                border-color: #3a8ee6;
+                background-color: #ecf5ff;
+            }
+            QPushButton[executing="true"] {
+                background-color: #cccccc;
+                color: #666666;
+                border: 1px solid #999999;
+            }
+            QPushButton[executing="true"]:hover {
+                background-color: #cccccc;
+            }
+        """)
+        # 刷新样式属性
+        button.style().unpolish(button)
+        button.style().polish(button)
+
+    def _reorder_buttons(self, from_index, to_index):
+        """重新排列按钮"""
+        # 从布局中移除
+        button = self.button_layout.itemAt(from_index).widget()
+        self.button_layout.removeWidget(button)
+        # 插入到新位置（不能超过按钮数量，因为最后有 stretch）
+        max_index = self.button_layout.count() - 1  # 减去 stretch
+        if to_index > max_index:
+            to_index = max_index
+        if to_index > from_index:
+            to_index -= 1  # 因为移除了一个，所以如果往后移，索引要减1
+        self.button_layout.insertWidget(to_index, button)
+        # 更新 _button_order 列表
+        button_id = button.objectName()
+        if button_id in self._button_order:
+            self._button_order.remove(button_id)
+        self._button_order.insert(to_index, button_id)
+        # 更新所有按钮config中的"位置"字段
+        for idx, bid in enumerate(self._button_order):
+            self.sc_buttons[bid]['config']['位置'] = idx + 1
+        self.update_run_info(f'按钮<{button.text()}>已移动到第{to_index + 1}个位置')
 
     def click_send_cmd(self, button_id):
         """发送指令"""
@@ -1039,6 +1245,12 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 self.update_run_info(f"删除<{sc_ty}>|<{btn_text}>快捷按钮成功")
                 btn.deleteLater()
                 del self.sc_buttons[button_id]  # 只调用这个无法删除已经实例化并在界面显示的按钮，所以需要提前btn.deleteLater()
+                # 从顺序列表中移除
+                if button_id in self._button_order:
+                    self._button_order.remove(button_id)
+                # 更新剩余按钮的位置字段
+                for idx, bid in enumerate(self._button_order):
+                    self.sc_buttons[bid]['config']['位置'] = idx + 1
                 # button_id为唯一标识，删除button后也不要减少数量
         else:
             self.update_run_info(f"删除按钮操作取消")
@@ -1142,8 +1354,11 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         for server in self.servers_cfg:
             cfg_dic[f'服务器{server_count}'] = server
             server_count += 1
-        for button in self.sc_buttons:
-            cfg_dic[f'快捷按钮{button_count}'] = self.sc_buttons[button]['config']
+        # 按顺序保存按钮配置，每个按钮配置中添加"位置"字段
+        for i, button_id in enumerate(self._button_order):
+            button_config = self.sc_buttons[button_id]['config'].copy()
+            button_config['位置'] = i + 1  # 从1开始编号
+            cfg_dic[f'快捷按钮{button_count}'] = button_config
             button_count += 1
         if len(self.commands) != 0:
             cfg_dic['指令'] = self.commands
@@ -1222,11 +1437,29 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         except (json.JSONDecodeError, IOError, ValueError) as e:
             self.update_run_info(f"配置文件解析失败: {str(e)}，使用空配置", 'WARNING')
             return
+        # 先收集所有快捷按钮配置，根据位置排序
+        sc_buttons_list = []
+        for key in data:
+            if '快捷按钮' in key:
+                button_config = data[key]
+                # 获取位置，没有的设为很大的数字（放最后）
+                position = button_config.get('位置', 99999)
+                sc_buttons_list.append((position, button_config))
+        
+        # 按位置从小到大排序，加载按钮
+        sc_buttons_list.sort(key=lambda x: x[0])
+        for position, button_config in sc_buttons_list:
+            # 加载时不保存"位置"字段，只用于排序
+            button_config_clean = button_config.copy()
+            if '位置' in button_config_clean:
+                del button_config_clean['位置']
+            self.add_button(button_config_clean)
+        
         for key in data:
             if '服务器' in key:
                 continue
             elif '快捷按钮' in key:
-                self.add_button(data[key])
+                pass  # 已经处理过了
             elif '指令' in key:
                 for cmd in data[key]:  # data[key]=['top','pwd']
                     self.commands.append(cmd)
@@ -1243,6 +1476,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 for level in self._log_level_config:
                     if level in log_cfg:
                         self._log_level_config[level] = log_cfg[level]
+            elif key == '按钮顺序':  # 旧版本的key，忽略
+                pass
             else:
                 self.update_run_info(f'{key}无法识别的数据类型', 'WARNING')
         self.update_run_info(f"批量添加快捷按钮 成功，来自{file_path}")
