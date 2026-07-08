@@ -183,6 +183,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         self.closeEvent = self.on_close_event
         self._can_close = True  # 用于阻止关闭窗口
         self.stop_flag = False  # 用于停止定时获取监控状态
+        self._operation_running = False  # 标记是否正在执行操作，有操作时不更新按钮状态
 
         # 用于保存数据的根目录名称 本机或IP
         if self.parent.sc_buttons[button_id]['config']['IP'] == '':
@@ -224,9 +225,9 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
                 if not pids:
-                    worker.info_signal.emit(f'无监控')
+                    worker.info_signal.emit(('本机', '无监控'))
                 else:
-                    worker.info_signal.emit('监控中')
+                    worker.info_signal.emit(('本机', '监控中'))
 
         def on_thread_finished():
             thread.deleteLater()
@@ -255,7 +256,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
         # 连接信号和槽
         worker.log_signal.connect(lambda :None)
-        worker.info_signal.connect(self.monitor_stutas_label.setText)
+        worker.info_signal.connect(self.update_status)
         worker.finished.connect(worker.deleteLater)
 
         thread.started.connect(worker.run_task)
@@ -334,6 +335,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         thread.start()
 
     def start_monitor(self):
+        self._operation_running = True  # 开始操作，禁止状态检查线程更新按钮
         self.set_all_buttons_enable(False)
         # 如果是本机监控，需要创建本地监控脚本并执行
         if self.data_dir_name == 'local':
@@ -600,13 +602,9 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             thread.start()
 
     def stop_monitor(self):
+        self._operation_running = True  # 开始操作，禁止状态检查线程更新按钮
         self.set_all_buttons_enable(False)
         if self.data_dir_name == 'local':
-            if self.monitor_stutas_label.text() != '监控中':
-                self.message_info_box(("提示", "没有正在运行的监控！"))
-                self.set_all_buttons_enable()
-                return
-
             def do_stop_monitor():
                 script_name = "OneClickMonitor.ps1"
                 pids = []
@@ -623,7 +621,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                         continue
 
                 if not pids:
-                    worker.info_signal.emit(("提示", "没有正在运行的监控！"))
                     return False
                     # 终止所有匹配的进程
                 for pid in pids:
@@ -647,7 +644,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
             def on_worker_finished(result):
                 if result:
-                    self.message_info_box(("提示", "本机监控已经停止"))
+                    AutoCloseMessageBox("提示", "本机监控已经停止", 2000, self).exec_()
                     self.parent.update_run_info("本机监控停止")
                 self.set_all_buttons_enable()
                 thread.quit()
@@ -682,10 +679,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         else:
             if self.ssh_stutas_label.text() != '已连接':
                 self.message_info_box(("提示", "服务器尚未连接"))
-                self.set_all_buttons_enable()
-                return
-            if self.monitor_stutas_label.text() != '监控中':
-                self.message_info_box(("提示", "没有正在运行的监控！"))
                 self.set_all_buttons_enable()
                 return
 
@@ -727,7 +720,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
             def on_stop_monitor_finished(result):
                 if result:
-                    self.message_info_box(("提示", f"{ip}监控已经停止"))
+                    AutoCloseMessageBox("提示", f"{ip}监控已经停止", 2000, self).exec_()
                     self.parent.update_run_info(f"{ip}监控已经停止")
                 self.set_all_buttons_enable()
                 thread.quit()
@@ -993,10 +986,14 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
     def set_all_buttons_enable(self, enable=True):
         self.start_pushButton.setEnabled(enable)
-        self.stop_pushButton.setEnabled(enable)
         self.clean_pushButton.setEnabled(enable)
         self.watch_pushButton.setEnabled(enable)
         self.download_pushButton.setEnabled(enable)
+        # 停止按钮不在这里统一设置，而是根据监控状态单独控制
+        # 如果 enable=False（禁用所有按钮），则停止按钮也禁用
+        # 如果 enable=True（启用所有按钮），停止按钮由 update_status 控制
+        if not enable:
+            self.stop_pushButton.setEnabled(False)
         self._can_close = enable
 
     def update_status(self, data):
@@ -1007,6 +1004,11 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         """
         self.ssh_stutas_label.setText(data[0])
         self.monitor_stutas_label.setText(data[1])
+        # 有操作运行时不更新按钮状态，等操作完成后再更新
+        if not getattr(self, '_operation_running', False):
+            # 停止按钮可用性控制：只有监控中时可用
+            is_monitoring = (data[1] == '监控中')
+            self.stop_pushButton.setEnabled(is_monitoring)
 
     def display_resource(self):
         if self.data_dir_name != 'local':
@@ -1064,6 +1066,7 @@ class AutoCloseMessageBox(QMessageBox):
     """自动关闭的消息框，带读秒倒计时"""
     def __init__(self, title, text, timeout=2000, parent=None):
         super().__init__(parent)
+        self._parent_dialog = parent
         self.setWindowTitle(title)
         self.setText(text)
         self.setStandardButtons(QMessageBox.Ok)
@@ -1075,11 +1078,26 @@ class AutoCloseMessageBox(QMessageBox):
         # 初始就设置为2秒
         self.button(QMessageBox.Ok).setText(f"确认({self.remaining}秒)")
         
+        # 显示前设置标志，阻止状态检查线程更新按钮
+        if self._parent_dialog and hasattr(self._parent_dialog, '_operation_running'):
+            self._parent_dialog._operation_running = True
+        
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_countdown)
         self.timer.start(1000)
         
         QTimer.singleShot(timeout, self.accept)
+    
+    def accept(self):
+        """关闭时清除标志并更新按钮状态"""
+        self.timer.stop()
+        if self._parent_dialog and hasattr(self._parent_dialog, '_operation_running'):
+            self._parent_dialog._operation_running = False
+            # 获取当前显示的状态，重新更新按钮
+            monitor_status = self._parent_dialog.monitor_stutas_label.text()
+            is_monitoring = (monitor_status == '监控中')
+            self._parent_dialog.stop_pushButton.setEnabled(is_monitoring)
+        super().accept()
     
     def update_countdown(self):
         self.remaining -= 1
