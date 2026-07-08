@@ -1,4 +1,4 @@
-﻿import os.path
+import os.path
 import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import QThread
@@ -1078,9 +1078,12 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         cfg_dic['日志配置'] = new_log_cfg
 
         # 写入到json文件
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(cfg_dic, f, ensure_ascii=False, indent=4)
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(cfg_dic, f, ensure_ascii=False, indent=4)
             self.update_run_info(f"已保存配置到{os.path.abspath(file_path)}")
+        except Exception as e:
+            self.update_run_info(f"保存配置失败: {str(e)}", 'WARNING')
 
     def load_sc_config(self, path):
         """启动时如果有默认配置会调用，传入默认配置路径，手动点的时候传入的是False，弹出对话框"""
@@ -1106,12 +1109,19 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 return
         else:
             file_path = path
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            # 将内容中的\替换为/
-            processed_content = content.replace("\\", "/")
-            # 解析处理后的内容
-            data = json.loads(processed_content)
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                # 将内容中的\替换为/
+                processed_content = content.replace("\\", "/")
+                # 解析处理后的内容
+                data = json.loads(processed_content)
+                # 确保是字典类型
+                if not isinstance(data, dict):
+                    raise ValueError("配置文件格式错误：不是字典类型")
+        except (json.JSONDecodeError, IOError, ValueError) as e:
+            self.update_run_info(f"配置文件解析失败: {str(e)}，使用空配置", 'WARNING')
+            return
         for key in data:
             if '服务器' in key:
                 continue
@@ -1161,12 +1171,19 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 return
         else:
             file_path = path
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            # 将内容中的\替换为/
-            processed_content = content.replace("\\", "/")
-            # 解析处理后的内容
-            data = json.loads(processed_content)
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                # 将内容中的\替换为/
+                processed_content = content.replace("\\", "/")
+                # 解析处理后的内容
+                data = json.loads(processed_content)
+                # 确保是字典类型
+                if not isinstance(data, dict):
+                    raise ValueError("配置文件格式错误：不是字典类型")
+        except (json.JSONDecodeError, IOError, ValueError) as e:
+            self.update_run_info(f"配置文件解析失败: {str(e)}，使用空配置", 'WARNING')
+            return
         for key in data:
             if '服务器' in key:
                 self.servers_cfg.append(data[key])

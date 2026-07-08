@@ -168,9 +168,9 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         self.freq_lineEdit.setText(self.parent.sc_buttons[button_id]['config']['采样频率'])
         # 回显嵌入式勾选状态
         self.embedded_checkBox.setChecked(self.parent.sc_buttons[button_id]['config'].get('嵌入式', False))
-        # 本机监控时禁用嵌入式勾选框
+        # 本机监控时隐藏嵌入式勾选框
         if self.parent.sc_buttons[button_id]['config']['IP'] == '':
-            self.embedded_checkBox.setEnabled(False)
+            self.embedded_checkBox.setVisible(False)
         self.start_pushButton.clicked.connect(self.start_monitor)
         self.stop_pushButton.clicked.connect(self.stop_monitor)
         self.clean_pushButton.clicked.connect(self.clean_data)
@@ -188,6 +188,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         # 用于保存数据的根目录名称 本机或IP
         if self.parent.sc_buttons[button_id]['config']['IP'] == '':
             self.data_dir_name = 'local'
+            self.download_pushButton.setVisible(False)  # 本机监控不显示下载按钮
             self.on_local_button_click()
         else:
             self.data_dir_name = self.parent.sc_buttons[button_id]['config']['IP']
@@ -343,12 +344,10 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             # 未知：提示请等待获取监控状态，自动关闭
             if monitor_status == '未知':
                 AutoCloseMessageBox("提示", "请等待获取监控状态", 2000, self).exec_()
-                self.set_all_buttons_enable()
                 return
             # 监控中：提示存在运行中的监控，请先结束，自动关闭
             if monitor_status == '监控中':
                 AutoCloseMessageBox("提示", "存在运行中的监控，请先结束", 2000, self).exec_()
-                self.set_all_buttons_enable()
                 return
 
             def do_local_worker():
@@ -408,13 +407,19 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 if result:
                     try:
                         if result.poll() is None:
-                            AutoCloseMessageBox("提示", "监控已经开始，关闭软件不会停止监控", 2000, self).exec_()
+                            AutoCloseMessageBox("提示", "监控已经开始，关闭软件不会停止监控", 2000, self, 'start_monitor').exec_()
                             self.parent.update_run_info("本机监控已经开始")
                         else:
+                            # 失败：普通提示框，需要手动启用按钮
                             self.message_info_box(("提示", f"监控脚本启动失败{result.returncode}"))
+                            self._operation_running = False
+                            self.set_all_buttons_enable()
                     except Exception as e:
+                        # 失败：普通提示框，需要手动启用按钮
                         self.message_info_box(("提示", f"监控脚本启动失败{result}-{e}"))
-                self.set_all_buttons_enable()
+                        self._operation_running = False
+                        self.set_all_buttons_enable()
+                # 成功的情况由 AutoCloseMessageBox.accept() 启用按钮
                 thread.quit()
             def on_local_thread_finished():
                 thread.deleteLater()
@@ -456,20 +461,16 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             # 连接中，未知：提示请等待服务器连接，自动关闭
             if ssh_status == '连接中...' and monitor_status == '未知':
                 AutoCloseMessageBox("提示", "请等待服务器连接", 2000, self).exec_()
-                self.set_all_buttons_enable()
                 return
             # 已连接，未知：提示请等待获取监控状态，自动关闭
             if ssh_status == '已连接' and monitor_status == '未知':
                 AutoCloseMessageBox("提示", "请等待获取监控状态", 2000, self).exec_()
-                self.set_all_buttons_enable()
                 return
             if ssh_status != '已连接':
                 AutoCloseMessageBox("提示", "服务器尚未连接", 2000, self).exec_()
-                self.set_all_buttons_enable()
                 return
             if self.monitor_stutas_label.text() == '监控中':
                 AutoCloseMessageBox("提示", "存在运行中的监控，请先结束", 2000, self).exec_()
-                self.set_all_buttons_enable()
                 return
 
             try:
@@ -569,9 +570,12 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
             def on_ssh_worker_finished(result):
                 if result:
-                    AutoCloseMessageBox("提示", "监控已经开始，关闭软件不会停止监控", 2000, self).exec_()
+                    AutoCloseMessageBox("提示", "监控已经开始，关闭软件不会停止监控", 2000, self, 'start_monitor').exec_()
                     self.parent.update_run_info(f"{ip}监控开始")
-                self.set_all_buttons_enable()
+                else:
+                    # 失败情况（普通提示框已由 worker.info_signal 弹出），手动启用按钮
+                    self._operation_running = False
+                    self.set_all_buttons_enable()
                 thread.quit()
 
             def on_ssh_thread_finished():
@@ -644,9 +648,12 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
             def on_worker_finished(result):
                 if result:
-                    AutoCloseMessageBox("提示", "本机监控已经停止", 2000, self).exec_()
+                    AutoCloseMessageBox("提示", "本机监控已经停止", 2000, self, 'stop_monitor').exec_()
                     self.parent.update_run_info("本机监控停止")
-                self.set_all_buttons_enable()
+                else:
+                    # 失败情况（普通提示框已由 worker.info_signal 弹出），手动启用按钮
+                    self._operation_running = False
+                    self.set_all_buttons_enable()
                 thread.quit()
             def on_thread_finished():
                 thread.deleteLater()
@@ -720,9 +727,12 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
             def on_stop_monitor_finished(result):
                 if result:
-                    AutoCloseMessageBox("提示", f"{ip}监控已经停止", 2000, self).exec_()
+                    AutoCloseMessageBox("提示", f"{ip}监控已经停止", 2000, self, 'stop_monitor').exec_()
                     self.parent.update_run_info(f"{ip}监控已经停止")
-                self.set_all_buttons_enable()
+                else:
+                    # 失败情况（普通提示框已由 worker.info_signal 弹出），手动启用按钮
+                    self._operation_running = False
+                    self.set_all_buttons_enable()
                 thread.quit()
 
             def on_thread_finished():
@@ -754,141 +764,178 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             thread.start()
 
     def clean_data(self):
+        self._operation_running = True  # 开始操作，禁止状态检查线程更新按钮
         self.set_all_buttons_enable(False)
-        # 存在监控时不允许删数据，否则删除后新的监控数据找不到存储路径
-        if self.monitor_stutas_label.text() == '监控中':
-            self.message_info_box(("提示", "请先结束正在运行的监控！"))
-            self.set_all_buttons_enable()
-            return
-
+        
+        # 本机监控直接清除本地数据
         if self.data_dir_name == 'local':
-            confirm_dialog = QMessageBox()
-            confirm_dialog.setIcon(QMessageBox.Icon.Question)
-            confirm_dialog.setWindowTitle("确认")
-            confirm_dialog.setText("是否要清空本机(local路径)所有历史监控数据，清空后无法恢复")
-            confirm_dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            confirm_dialog.setDefaultButton(QMessageBox.StandardButton.No)
-            result = confirm_dialog.exec_()
+            dialog = QMessageBox()
+            dialog.setIcon(QMessageBox.Icon.Question)
+            dialog.setWindowTitle("确认")
+            dialog.setText("是否要清空本机所有历史监控数据，清空后无法恢复？")
+            dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            dialog.setDefaultButton(QMessageBox.StandardButton.No)
+            result = dialog.exec_()
+            
             if result == QMessageBox.StandardButton.Yes:
                 try:
-                    # 尝试递归删除文件夹及所有内容
                     local_monitor_path = self.monitor_data_path + "/Monitor"
                     shutil.rmtree(local_monitor_path)
-                    self.message_info_box(("提示", f"本机监控数据已删除{local_monitor_path}"))
+                    self.parent.update_run_info(f"本机监控数据已删除{local_monitor_path}")
+                    AutoCloseMessageBox("提示", "本机监控数据已清除", 2000, self).exec_()
+                except FileNotFoundError:
+                    AutoCloseMessageBox("提示", "没有本机监控数据，无需删除", 2000, self).exec_()
+                except Exception as e:
+                    AutoCloseMessageBox("提示", f"删除本地数据出错：{str(e)}", 2000, self).exec_()
+            else:
+                # 用户取消，手动启用按钮
+                self._operation_running = False
+                self.set_all_buttons_enable()
+            return
+        
+        ssh_status = self.ssh_stutas_label.text()
+        monitor_status = self.monitor_stutas_label.text()
+        is_connected = (ssh_status == '已连接')
+        
+        if not is_connected or monitor_status in ('未知', '监控中'):
+            # 未连接、监控状态未知、监控中：仅清除本地
+            dialog = QMessageBox()
+            dialog.setIcon(QMessageBox.Icon.Question)
+            dialog.setWindowTitle("确认")
+            if is_connected and monitor_status == '监控中':
+                dialog.setText("监控中，仅可以清除本地数据，是否继续？")
+            elif is_connected:
+                dialog.setText("监控状态未知，仅可以清除本地数据，是否继续？")
+            else:
+                dialog.setText("未连接服务器，是否仅清除本地监控数据？")
+            dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            dialog.setDefaultButton(QMessageBox.StandardButton.No)
+            result = dialog.exec_()
+            
+            if result == QMessageBox.StandardButton.Yes:
+                try:
+                    local_monitor_path = self.monitor_data_path + "/Monitor"
+                    shutil.rmtree(local_monitor_path)
+                    self.parent.update_run_info(f"本机监控数据已删除{local_monitor_path}")
+                    AutoCloseMessageBox("提示", "本地监控数据已清除", 2000, self).exec_()
+                except FileNotFoundError:
+                    AutoCloseMessageBox("提示", "没有本机监控数据，无需删除", 2000, self).exec_()
+                except Exception as e:
+                    AutoCloseMessageBox("提示", f"删除本地数据出错：{str(e)}", 2000, self).exec_()
+            else:
+                # 用户取消，手动启用按钮
+                self._operation_running = False
+                self.set_all_buttons_enable()
+        else:
+            # 已连接且监控状态已知（无监控）：四选项对话框
+            dialog = QMessageBox()
+            dialog.setIcon(QMessageBox.Icon.Question)
+            dialog.setWindowTitle("选择清除范围")
+            dialog.setText("请选择要清除的监控数据范围")
+            btn_local = dialog.addButton("仅清除本地", QMessageBox.ButtonRole.ActionRole)
+            btn_server = dialog.addButton("仅清除服务器", QMessageBox.ButtonRole.ActionRole)
+            btn_all = dialog.addButton("全部清除", QMessageBox.ButtonRole.ActionRole)
+            btn_cancel = dialog.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+            dialog.setDefaultButton(btn_cancel)
+            result = dialog.exec_()
+            
+            clicked_btn = dialog.clickedButton()
+            if clicked_btn == btn_cancel or clicked_btn is None:
+                self._operation_running = False
+                self.set_all_buttons_enable()
+                return
+            
+            # 确定清除范围
+            clean_local = (clicked_btn == btn_local) or (clicked_btn == btn_all)
+            clean_server = (clicked_btn == btn_server) or (clicked_btn == btn_all)
+            
+            # 清除本地数据
+            if clean_local:
+                try:
+                    local_monitor_path = self.monitor_data_path + "/Monitor"
+                    shutil.rmtree(local_monitor_path)
                     self.parent.update_run_info(f"本机监控数据已删除{local_monitor_path}")
                 except FileNotFoundError:
-                    # 捕获"文件夹不存在"的异常，不做任何操作
-                    self.message_info_box(("提示", f"没有本机监控数据，无需删除{local_monitor_path}"))
+                    pass
                 except Exception as e:
-                    # 捕获其他未知异常
-                    self.message_info_box(("提示", f"出错：文件夹 {local_monitor_path} ：{str(e)}"))
-                finally:
-                    self.set_all_buttons_enable()
-            else:
-                self.set_all_buttons_enable()
-
-        else:
-            confirm_dialog = QMessageBox()
-            confirm_dialog.setIcon(QMessageBox.Icon.Question)
-            confirm_dialog.setWindowTitle("确认")
-            confirm_dialog.setText("是否要清空服务器和本地所有历史监控数据，清空后无法恢复")
-            confirm_dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            confirm_dialog.setDefaultButton(QMessageBox.StandardButton.No)
-            result = confirm_dialog.exec_()
-            if result == QMessageBox.StandardButton.Yes:
+                    AutoCloseMessageBox("提示", f"删除本地数据出错：{str(e)}", 2000, self).exec_()
+                    return
+            
+            # 清除服务器数据
+            if clean_server:
                 try:
                     ip = self.parent.sc_buttons[self.button_id]['config']['IP']
                     port = self.parent.sc_buttons[self.button_id]['config']['端口']
                     username = self.parent.sc_buttons[self.button_id]['config']['用户名']
                     password = self.parent.sc_buttons[self.button_id]['config']['密码']
-
                     ssh_client = ssh_tools.SSHTools()
                     ssh_client.ip = ip
                     ssh_client.port = port
                     ssh_client.username = username
                     ssh_client.password = password
                 except Exception as e:
-                    self.message_info_box(("提示", f"请检查服务器配置{e}"))
-                    self.set_all_buttons_enable()
+                    AutoCloseMessageBox("提示", f"请检查服务器配置{e}", 2000, self).exec_()
                     return
-                # 清除本地
-                try:
-                    # 尝试递归删除文件夹及所有内容
-                    local_monitor_path = self.monitor_data_path + "/Monitor"
-                    shutil.rmtree(local_monitor_path)
-                    self.message_info_box(("提示", f"本机监控数据已删除{local_monitor_path}"))
-                    self.parent.update_run_info(f"本机监控数据已删除{local_monitor_path}")
-                except FileNotFoundError:
-                    # 捕获"文件夹不存在"的异常，不做任何操作
-                    self.message_info_box(("提示", f"没有本机监控数据，无需删除{local_monitor_path}"))
-                except Exception as e:
-                    # 捕获其他未知异常
-                    self.message_info_box(("提示", f"删除出错：文件夹 {local_monitor_path} ：{str(e)}"))
-
-                if self.ssh_stutas_label.text() != '已连接':
-                    self.message_info_box(("提示", f"未连接服务器，服务器数据未删除"))
-                    self.set_all_buttons_enable()
-                    return
-
-                # 从配置中获取文件暂存路径
+                
                 work_dir = self.parent.sc_buttons[self.button_id]['config']['文件暂存路径']
                 user_path = f"{work_dir}/OneClick/Monitor"
-
                 clean_cmd = f"rm -rf {user_path}"
-
+                
                 def do_clean_cmd():
                     connect_result = ssh_client.connect()
                     if not connect_result:
-                        worker.info_signal.emit(("提示", f"清空服务器数据失败，原因：连接服务器失败"))
                         return False
                     try:
-                        stdin,stdout, stderr = ssh_client.ssh.exec_command(clean_cmd)
+                        stdin, stdout, stderr = ssh_client.ssh.exec_command(clean_cmd)
                         err = stderr.read().decode().strip()
                         ssh_client.disconnect()
                         if err:
-                            worker.info_signal.emit(("提示", f"清空服务器数据失败{err}"))
                             return False
                         return True
                     except Exception as e:
-                        worker.info_signal.emit(("提示", f"清空服务器数据失败{e}"))
                         ssh_client.disconnect()
                         return False
-
+                
                 def on_clean_cmd_finished(result):
-                    if result:
-                        self.message_info_box(("提示", f"{ip}监控数据已清空"))
-                        self.parent.update_run_info(f"{ip}监控数据已清空")
-                    self.set_all_buttons_enable()
+                    if clean_local and clean_server:
+                        AutoCloseMessageBox("提示", "本地和服务器监控数据已清除", 2000, self).exec_()
+                    elif clean_local:
+                        AutoCloseMessageBox("提示", "本地监控数据已清除", 2000, self).exec_()
+                    elif clean_server:
+                        if result:
+                            AutoCloseMessageBox("提示", f"{ip}服务器监控数据已清除", 2000, self).exec_()
+                            self.parent.update_run_info(f"{ip}监控数据已清空")
+                        else:
+                            AutoCloseMessageBox("提示", "清除服务器数据失败", 2000, self).exec_()
+                    # 所有情况都由 AutoCloseMessageBox.accept() 启用按钮
                     thread.quit()
-
+                
                 def on_thread_finished():
                     thread.deleteLater()
                     self.parent.sc_threads.pop(self.work_thread_id)
                     self.work_thread_id = None
-
+                
                 worker = qthread_worker.OneClickWorker(do_clean_cmd)
                 thread = QThread()
-
+                
                 self.parent.thread_count += 1
                 self.work_thread_id = f'sc_thread_{self.parent.thread_count}'
                 self.parent.sc_threads[self.work_thread_id] = {
                     'worker': worker,
                     'thread': thread
                 }
-
+                
                 worker.moveToThread(thread)
-
-                # worker.log_signal.connect(lambda : None) # 屏蔽日志输出
                 worker.log_signal.connect(self.parent.update_run_info)
-                worker.info_signal.connect(self.message_info_box)
                 worker.finished.connect(on_clean_cmd_finished)
                 worker.finished.connect(worker.deleteLater)
-
                 thread.started.connect(worker.run_task)
                 thread.finished.connect(on_thread_finished)
                 thread.start()
             else:
-                self.set_all_buttons_enable()
+                # 只清除了本地，直接提示完成
+                AutoCloseMessageBox("提示", "本地监控数据已清除", 2000, self).exec_()
+                # 由 AutoCloseMessageBox.accept() 启用按钮
 
     def download_data(self):
         """
@@ -896,11 +943,9 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         如果有，下载
         :return:
         """
-        if self.data_dir_name == 'local':
-            self.message_info_box(("提示", "本机监控无需下载，保存在当前路径local下，可直接查看"))
-            return
-        if self.ssh_stutas_label.text() != '已连接':
-            self.message_info_box(("提示", "服务器尚未连接"))
+        ssh_status = self.ssh_stutas_label.text()
+        if ssh_status != '已连接':
+            AutoCloseMessageBox("提示", "请等待服务器连接", 2000, self).exec_()
             return
 
         try:
@@ -918,6 +963,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             self.message_info_box(("提示", f"请检查服务器配置{e}"))
             return
 
+        self._operation_running = True
         self.set_all_buttons_enable(False)
         # 从配置中获取文件暂存路径
         work_dir = self.parent.sc_buttons[self.button_id]['config']['文件暂存路径']
@@ -927,27 +973,27 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         def do_download_data():
             connect_result = ssh_client.connect()
             if not connect_result:
-                worker.info_signal.emit(("提示", f"下载数据失败，原因：连接服务器失败"))
-                return False
+                return (False, "连接服务器失败")
             try:
                 # 如果本地没有ip文件夹，则创建
                 os.makedirs(self.monitor_data_path, mode=0o777, exist_ok=True)
                 get_result = ssh_client.get_files(user_path, self.monitor_data_path, float('inf'), '', work_dir)
                 ssh_client.disconnect()
                 if not get_result:
-                    worker.info_signal.emit(("提示", f"下载数据失败，原因：获取数据失败"))
-                    return False
+                    return (False, "获取数据失败")
             except Exception as e:
-                worker.info_signal.emit(("提示", f"下载数据失败，原因：{e}"))
                 ssh_client.disconnect()
-                return False
-            return True
+                return (False, f"{e}")
+            return (True, "")
 
         def on_download_data_finished(result):
-            if result:
-                self.message_info_box(("提示", f"监控数据已下载到{self.monitor_data_path}/Monitor"))
+            success, err_msg = result
+            if success:
+                AutoCloseMessageBox("提示", f"监控数据已下载到{self.monitor_data_path}/Monitor", 2000, self).exec_()
                 self.parent.update_run_info(f"监控数据已下载到{self.monitor_data_path}/Monitor")
-            self.set_all_buttons_enable()
+            else:
+                # 失败显示提示
+                AutoCloseMessageBox("提示", f"下载数据失败，原因：{err_msg}", 2000, self).exec_()
             thread.quit()
 
         def on_thread_finished():
@@ -968,7 +1014,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         worker.moveToThread(thread)
 
         worker.log_signal.connect(self.parent.update_run_info)
-        worker.info_signal.connect(self.message_info_box)
         worker.finished.connect(on_download_data_finished)
         worker.finished.connect(worker.deleteLater)
 
@@ -986,14 +1031,29 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
     def set_all_buttons_enable(self, enable=True):
         self.start_pushButton.setEnabled(enable)
-        self.clean_pushButton.setEnabled(enable)
         self.watch_pushButton.setEnabled(enable)
-        self.download_pushButton.setEnabled(enable)
-        # 停止按钮不在这里统一设置，而是根据监控状态单独控制
-        # 如果 enable=False（禁用所有按钮），则停止按钮也禁用
-        # 如果 enable=True（启用所有按钮），停止按钮由 update_status 控制
-        if not enable:
+        # 下载按钮只在服务器监控时显示，本机时隐藏
+        if self.data_dir_name != 'local':
+            self.download_pushButton.setEnabled(enable)
+        if enable:
+            # 启用按钮时，根据当前显示的状态设置按钮
+            ssh_status = self.ssh_stutas_label.text()
+            monitor_status = self.monitor_stutas_label.text()
+            is_monitoring = (monitor_status == '监控中')
+            is_local = (ssh_status == '本机')
+            monitor_unknown = (monitor_status == '未知')
+            
+            self.stop_pushButton.setEnabled(is_monitoring)
+            # 清除按钮：本机+未知 或 本机+监控中 时禁用，其他情况都可用
+            # 本机监控中不能删（正在写入），服务器监控中可以删本地
+            if is_local and (monitor_unknown or is_monitoring):
+                self.clean_pushButton.setEnabled(False)
+            else:
+                self.clean_pushButton.setEnabled(True)
+        else:
+            # 禁用所有按钮时都禁用
             self.stop_pushButton.setEnabled(False)
+            self.clean_pushButton.setEnabled(False)
         self._can_close = enable
 
     def update_status(self, data):
@@ -1009,20 +1069,133 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             # 停止按钮可用性控制：只有监控中时可用
             is_monitoring = (data[1] == '监控中')
             self.stop_pushButton.setEnabled(is_monitoring)
+            # 清除按钮：本机+未知 或 本机+监控中 时禁用，其他情况都可用
+            # 本机监控中不能删（正在写入），服务器监控中可以删本地
+            is_local = (data[0] == '本机')
+            monitor_unknown = (data[1] == '未知')
+            if is_local and (monitor_unknown or is_monitoring):
+                self.clean_pushButton.setEnabled(False)
+            else:
+                self.clean_pushButton.setEnabled(True)
 
-    def display_resource(self):
-        if self.data_dir_name != 'local':
-            self.message_info_box(("提示", "仅处理已下载的监控数据"))
+    def _has_monitor_data(self):
+        """检查是否有监控数据（.log文件）"""
+        data_path = self.monitor_data_path + '/Monitor'
+        if not os.path.exists(data_path):
+            return False
+        # 检查是否有 .log 文件
+        try:
+            files = os.listdir(data_path)
+            return any(f.lower().endswith('.log') for f in files)
+        except:
+            return False
+
+    def _show_graph_window(self):
+        """显示绘图窗口"""
         data_path = self.monitor_data_path + '/Monitor'
         g_window = GraphWindowLogic.GraphWindow(data_path, self)
-
         g_window.destroyed.connect(
             lambda obj: self.remove_window_from_list(obj)
         )
-        # 关键：保持对窗口的引用，防止被垃圾回收
         self.g_windows.append(g_window)
-
         g_window.show()
+
+    def _show_local_data_graph(self):
+        """展示本地数据（检查是否有数据，无数据则提示，有数据直接打开）"""
+        if not self._has_monitor_data():
+            AutoCloseMessageBox("提示", "没有检测到监控数据", 2000, self).exec_()
+            return
+        self._show_graph_window()
+
+    def display_resource(self):
+        if self.data_dir_name == 'local':
+            # 本机监控
+            self._show_local_data_graph()
+        else:
+            ssh_status = self.ssh_stutas_label.text()
+            if ssh_status != '已连接':
+                # 连接中，未知：直接展示本地数据
+                self._show_local_data_graph()
+            else:
+                # 已连接：二选一对话框
+                dialog = QMessageBox()
+                dialog.setIcon(QMessageBox.Icon.Question)
+                dialog.setWindowTitle("选择展示方式")
+                dialog.setText("请选择展示方式")
+                btn_local = dialog.addButton("本地数据绘图", QMessageBox.ButtonRole.ActionRole)
+                btn_download = dialog.addButton("下载最新数据绘图", QMessageBox.ButtonRole.ActionRole)
+                btn_cancel = dialog.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+                dialog.exec_()
+
+                clicked_btn = dialog.clickedButton()
+                if clicked_btn == btn_local:
+                    self._show_local_data_graph()
+                elif clicked_btn == btn_download:
+                    # 先下载最新数据再展示
+                    try:
+                        ip = self.parent.sc_buttons[self.button_id]['config']['IP']
+                        port = self.parent.sc_buttons[self.button_id]['config']['端口']
+                        username = self.parent.sc_buttons[self.button_id]['config']['用户名']
+                        password = self.parent.sc_buttons[self.button_id]['config']['密码']
+
+                        ssh_client = ssh_tools.SSHTools()
+                        ssh_client.ip = ip
+                        ssh_client.port = port
+                        ssh_client.username = username
+                        ssh_client.password = password
+                    except Exception as e:
+                        self.message_info_box(("提示", f"请检查服务器配置{e}"))
+                        return
+
+                    self._operation_running = True
+                    self.set_all_buttons_enable(False)
+                    work_dir = self.parent.sc_buttons[self.button_id]['config']['文件暂存路径']
+                    user_path = f"{work_dir}/OneClick/Monitor"
+
+                    def do_download():
+                        connect_result = ssh_client.connect()
+                        if not connect_result:
+                            return False
+                        try:
+                            os.makedirs(self.monitor_data_path, mode=0o777, exist_ok=True)
+                            get_result = ssh_client.get_files(user_path, self.monitor_data_path, float('inf'), '', work_dir)
+                            ssh_client.disconnect()
+                            if not get_result:
+                                return False
+                        except Exception as e:
+                            ssh_client.disconnect()
+                            return False
+                        return True
+
+                    def on_download_finished(success):
+                        # 下载完成后直接调用展示本地数据逻辑（不提示成功/失败）
+                        self._operation_running = False
+                        self.set_all_buttons_enable()
+                        self._show_local_data_graph()
+                        thread.quit()
+
+                    def on_thread_finished():
+                        thread.deleteLater()
+                        self.parent.sc_threads.pop(self.work_thread_id)
+                        self.work_thread_id = None
+
+                    worker = qthread_worker.OneClickWorker(do_download)
+                    thread = QThread()
+
+                    self.parent.thread_count += 1
+                    self.work_thread_id = f'sc_thread_{self.parent.thread_count}'
+                    self.parent.sc_threads[self.work_thread_id] = {
+                        'worker': worker,
+                        'thread': thread
+                    }
+
+                    worker.moveToThread(thread)
+                    worker.log_signal.connect(self.parent.update_run_info)
+                    worker.finished.connect(on_download_finished)
+                    worker.finished.connect(worker.deleteLater)
+                    thread.started.connect(worker.run_task)
+                    thread.finished.connect(on_thread_finished)
+                    thread.start()
 
     def remove_window_from_list(self, window):
         """从列表中移除已关闭的窗口"""
@@ -1064,9 +1237,15 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
 class AutoCloseMessageBox(QMessageBox):
     """自动关闭的消息框，带读秒倒计时"""
-    def __init__(self, title, text, timeout=2000, parent=None):
+    def __init__(self, title, text, timeout=2000, parent=None, after_close_action=None):
+        """
+        :param after_close_action: 关闭后的动作，None=默认调用set_all_buttons_enable()
+                                  'start_monitor'=开始监控完成（清除按钮禁用，停止按钮可用）
+                                  'stop_monitor'=停止监控完成
+        """
         super().__init__(parent)
         self._parent_dialog = parent
+        self._after_close_action = after_close_action
         self.setWindowTitle(title)
         self.setText(text)
         self.setStandardButtons(QMessageBox.Ok)
@@ -1074,6 +1253,7 @@ class AutoCloseMessageBox(QMessageBox):
         
         self.timeout = timeout
         self.remaining = timeout // 1000
+        self._closed = False
         
         # 初始就设置为2秒
         self.button(QMessageBox.Ok).setText(f"确认({self.remaining}秒)")
@@ -1082,22 +1262,53 @@ class AutoCloseMessageBox(QMessageBox):
         if self._parent_dialog and hasattr(self._parent_dialog, '_operation_running'):
             self._parent_dialog._operation_running = True
         
+        # 绑定确定按钮点击事件（这是最可靠的方式）
+        self.button(QMessageBox.Ok).clicked.connect(self._on_close)
+        
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_countdown)
         self.timer.start(1000)
         
-        QTimer.singleShot(timeout, self.accept)
+        QTimer.singleShot(timeout, self._on_close)
     
-    def accept(self):
-        """关闭时清除标志并更新按钮状态"""
+    def _on_close(self):
+        """无论手动点击还是超时，都走这个逻辑"""
+        if self._closed:
+            return
+        self._closed = True
+        
         self.timer.stop()
         if self._parent_dialog and hasattr(self._parent_dialog, '_operation_running'):
             self._parent_dialog._operation_running = False
-            # 获取当前显示的状态，重新更新按钮
-            monitor_status = self._parent_dialog.monitor_stutas_label.text()
-            is_monitoring = (monitor_status == '监控中')
-            self._parent_dialog.stop_pushButton.setEnabled(is_monitoring)
-        super().accept()
+            
+            # 根据操作类型直接设置按钮状态，不读取标签（标签可能还没被状态线程更新）
+            if self._after_close_action == 'start_monitor':
+                # 开始监控完成
+                is_local = (self._parent_dialog.data_dir_name == 'local')
+                self._parent_dialog.start_pushButton.setEnabled(True)
+                self._parent_dialog.stop_pushButton.setEnabled(True)
+                self._parent_dialog.watch_pushButton.setEnabled(True)
+                # 本机监控不显示下载按钮
+                if not is_local:
+                    self._parent_dialog.download_pushButton.setEnabled(True)
+                # 本机监控中禁用清除按钮，服务器监控中可以清除本地
+                self._parent_dialog.clean_pushButton.setEnabled(not is_local)
+                self._parent_dialog._can_close = True  # 关键：允许关闭窗口
+            elif self._after_close_action == 'stop_monitor':
+                # 停止监控完成：清除按钮可用，停止按钮禁用
+                is_local = (self._parent_dialog.data_dir_name == 'local')
+                self._parent_dialog.start_pushButton.setEnabled(True)
+                self._parent_dialog.stop_pushButton.setEnabled(False)
+                self._parent_dialog.clean_pushButton.setEnabled(True)
+                self._parent_dialog.watch_pushButton.setEnabled(True)
+                # 本机监控不显示下载按钮
+                if not is_local:
+                    self._parent_dialog.download_pushButton.setEnabled(True)
+                self._parent_dialog._can_close = True  # 关键：允许关闭窗口
+            else:
+                # 默认情况，根据当前状态自动设置
+                self._parent_dialog.set_all_buttons_enable()
+        self.accept()
     
     def update_countdown(self):
         self.remaining -= 1

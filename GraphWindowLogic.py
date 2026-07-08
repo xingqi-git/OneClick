@@ -1,4 +1,4 @@
-﻿from UI import GraphMainWindow
+from UI import GraphMainWindow
 import os
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtWidgets import QMessageBox, QMainWindow
@@ -25,6 +25,8 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         # 创建标签页控件（用于显示多个绘图窗口）
         self.tab_widget = QtWidgets.QTabWidget(self.centralwidget)
         self.tab_widget.setObjectName("tab_widget")
+        self.tab_widget.setTabsClosable(True)  # 启用标签页关闭按钮
+        self.tab_widget.tabCloseRequested.connect(self.on_tab_close_requested)  # 连接关闭信号
         # 设置中心窗口的布局，将标签页放入
         central_layout = QtWidgets.QVBoxLayout(self.centralwidget)
         central_layout.addWidget(self.tab_widget)
@@ -176,7 +178,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             """数据加载完毕后"""
             self.menu.setEnabled(True)
             progress_dialog.setLabelText("读取完成，请在菜单栏选择数据绘图")
-            progress_dialog.setCancelButtonText("确定")
+            progress_dialog.setCancelButtonText("确定(2秒)")
             # 完成后断开取消信号，点按钮也不会触发取消逻辑，只会关闭对话框
             progress_dialog.canceled.disconnect()
             progress_dialog.canceled.connect(progress_dialog.close)
@@ -186,6 +188,13 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             thread.quit()
             self.threads.pop('数据读取')
             self.workers.pop('数据读取')
+
+            # 2秒后自动关闭
+            def update_button(remaining):
+                progress_dialog.setCancelButtonText(f"确定({remaining}秒)")
+
+            QtCore.QTimer.singleShot(1000, lambda: update_button(1))
+            QtCore.QTimer.singleShot(2000, progress_dialog.close)
 
         # 设置信号连接
         worker.progress.connect(progress_dialog.setValue)
@@ -238,9 +247,10 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             def on_fig_finished(data):
                 """绘图完成后"""
                 if isinstance(data, tuple):
-                    QMessageBox.information(self, data[0], data[1])
+                    # 出错提示也自动关闭
+                    QtWidgets.QMessageBox.information(self, data[0], data[1])
                     progress_dialog.setLabelText(f"{action_name}绘图出错！")
-                    progress_dialog.setCancelButtonText("确定")
+                    progress_dialog.setCancelButtonText("确定(2秒)")
                     # 完成后断开取消信号，点按钮也不会触发取消逻辑，只会关闭对话框
                     progress_dialog.canceled.disconnect()
                     progress_dialog.canceled.connect(progress_dialog.close)
@@ -250,6 +260,13 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                     thread.quit()
                     self.threads.pop(action_name)
                     self.workers.pop(action_name)
+
+                    # 2秒后自动关闭
+                    def update_button_err(remaining):
+                        progress_dialog.setCancelButtonText(f"确定({remaining}秒)")
+
+                    QtCore.QTimer.singleShot(1000, lambda: update_button_err(1))
+                    QtCore.QTimer.singleShot(2000, progress_dialog.close)
                     return
                 progress_dialog.setLabelText(f"{action_name}正在渲染图表...")
                 # 封装matplotlib画布到PyQt控件
@@ -269,9 +286,11 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                 # 添加标签页到主标签控件，并记录映射关系
                 tab_index = self.tab_widget.addTab(tab_content, action_name)
                 self.action_tab_map[action_name] = tab_index
+                # 自动切换到新绘制的标签页
+                self.tab_widget.setCurrentIndex(tab_index)
 
                 progress_dialog.setLabelText(f"{action_name}绘图完成！")
-                progress_dialog.setCancelButtonText("确定")
+                progress_dialog.setCancelButtonText("确定(2秒)")
                 # 完成后断开取消信号，点按钮也不会触发取消逻辑，只会关闭对话框
                 progress_dialog.canceled.disconnect()
                 progress_dialog.canceled.connect(progress_dialog.close)
@@ -280,6 +299,13 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                 thread.quit()
                 self.threads.pop(action_name)
                 self.workers.pop(action_name)
+
+                # 2秒后自动关闭
+                def update_button_ok(remaining):
+                    progress_dialog.setCancelButtonText(f"确定({remaining}秒)")
+
+                QtCore.QTimer.singleShot(1000, lambda: update_button_ok(1))
+                QtCore.QTimer.singleShot(2000, progress_dialog.close)
 
             # 设置信号连接
             worker.progress.connect(progress_dialog.setValue)
@@ -298,6 +324,36 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         else:
             # 取消勾选：删除对应的绘图标签页
             self.remove_plot_tab(action_name)
+
+    def on_tab_close_requested(self, tab_index):
+        """
+        标签页关闭按钮点击事件处理
+        :param tab_index: 被点击的标签页索引
+        """
+        # 找到对应的菜单项名称
+        action_name = None
+        for name, idx in self.action_tab_map.items():
+            if idx == tab_index:
+                action_name = name
+                break
+        
+        if action_name is not None:
+            # 通过菜单项名称关闭标签页（复用已有的 remove_plot_tab 逻辑）
+            self.remove_plot_tab(action_name)
+            
+            # 同时取消菜单项的勾选状态 - 遍历所有菜单的 action
+            for menu_action in self.menu.actions():
+                # 获取子菜单
+                sub_menu = menu_action.menu()
+                if sub_menu:
+                    for action in sub_menu.actions():
+                        # 比较 action 的完整名称（如"系统-内存"）
+                        menu_title = sub_menu.title()
+                        action_text = action.text()
+                        full_name = f"{menu_title}-{action_text}"
+                        if full_name == action_name:
+                            action.setChecked(False)
+                            return
 
     def remove_plot_tab(self, action_name):
         """
