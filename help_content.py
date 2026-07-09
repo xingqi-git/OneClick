@@ -377,18 +377,51 @@ HELP_HTML = '''<!DOCTYPE html>
         <li>点击 <code>删除</code> 按钮可移除不需要的历史命令</li>
     </ol>
 
+    <h4>4. 其他主界面功能</h4>
+    <ul>
+        <li><strong>停止按钮：</strong>立即结束所有正在执行的后台任务和线程</li>
+        <li><strong>清空按钮：</strong>清空 Linux 回显区域的内容</li>
+        <li><strong>开始所有：</strong>批量执行所有分组标签页中可批量执行的按钮</li>
+        <li><strong>文件日志：</strong>勾选后运行信息会同时写入 <code>OneClick.log</code> 文件</li>
+    </ul>
+
     <h3>模块二：快捷按钮功能（自动化操作）</h3>
     <p>将常用操作配置为快捷按钮，实现一键执行，大幅提升运维效率：</p>
 
-    <h4>1. 创建快捷按钮</h4>
+    <h4>1. 分组管理</h4>
+    <p>快捷按钮按分组标签页组织，支持以下操作：</p>
+    <ul>
+        <li><strong>新建分组：</strong>点击 <code>+</code> 按钮或右键菜单新建分组</li>
+        <li><strong>重命名分组：</strong>双击分组标签页名称进行修改</li>
+        <li><strong>删除分组：</strong>右键点击分组标签页选择删除（至少保留一个分组）</li>
+        <li><strong>移动按钮到分组：</strong>右键点击按钮选择目标分组</li>
+    </ul>
+
+    <h4>2. 创建快捷按钮</h4>
     <ol class="step-list">
         <li>点击菜单栏 <code>添加快捷按钮</code>，选择需要的按钮类型</li>
         <li>在弹出的配置对话框中填写相关参数</li>
-        <li>点击 <code>生成快捷按钮</code>，按钮将出现在左侧快捷按钮面板</li>
+        <li>点击 <code>生成快捷按钮</code>，按钮将出现在当前分组标签页中</li>
         <li>点击按钮即可一键执行预配置的操作</li>
     </ol>
 
-    <h4>2. 快捷按钮类型说明</h4>
+    <h4>3. 按钮操作</h4>
+    <ul>
+        <li><strong>左键单击：</strong>执行按钮对应的操作</li>
+        <li><strong>长按拖动：</strong>在同分组内调整按钮排列顺序</li>
+        <li><strong>右键菜单：</strong>复制、编辑、删除、停止、移动到分组</li>
+        <li><strong>复选框：</strong>勾选后可通过分组工具栏进行批量操作</li>
+    </ul>
+
+    <h4>4. 批量操作（分组工具栏）</h4>
+    <ul>
+        <li><strong>全选：</strong>切换该分组下所有按钮的勾选状态</li>
+        <li><strong>执行选中：</strong>批量执行勾选的按钮（跳过交互式类型）</li>
+        <li><strong>停止选中：</strong>发送中止信号给选中按钮的正在执行任务</li>
+        <li><strong>删除选中：</strong>删除勾选的按钮（正在执行的会被跳过）</li>
+    </ul>
+
+    <h4>5. 快捷按钮类型说明</h4>
     <table>
         <tr>
             <th>按钮类型</th>
@@ -445,9 +478,18 @@ HELP_HTML = '''<!DOCTYPE html>
         <li>创建"资源监控"类型快捷按钮</li>
         <li>配置要监控的进程名称（如：doubao、java、mysql 等）</li>
         <li>设置采样频率（单位：秒），建议 5-60 秒</li>
-        <li>点击按钮启动监控，监控数据自动写入日志文件</li>
-        <li>监控数据保存在 <code>local/OneClick/</code> 目录下，可生成趋势图表</li>
+        <li>点击按钮打开监控控制面板</li>
+        <li>点击<code>开始监控</code>启动监控，脚本将在后台运行</li>
+        <li>点击<code>停止监控</code>终止监控进程</li>
+        <li>点击<code>查看数据</code>打开图表窗口查看历史数据</li>
+        <li>点击<code>下载数据</code>从远程服务器下载最新监控数据到本地（仅远程模式）</li>
+        <li>点击<code>清除数据</code>可选择清除本地、服务器或全部监控数据</li>
     </ol>
+
+    <div class="tip-box">
+        <div class="tip-title">💡 监控数据存储</div>
+        <p>本机监控数据保存在 <code>local/OneClick/</code> 目录下，远程监控数据保存在服务器的 <code>{文件暂存路径}/OneClick/Monitor/</code> 目录下。</p>
+    </div>
 
     <h4>4. 弱网模拟功能详解</h4>
     <div class="warning-box">
@@ -456,15 +498,15 @@ HELP_HTML = '''<!DOCTYPE html>
     </div>
 
     <ol class="step-list">
-        <li>创建"弱网"类型快捷按钮，配置服务器信息</li>
-        <li>点击按钮进入弱网控制面板，选择目标网卡（自动获取服务器网卡列表）</li>
+        <li>创建"弱网"类型快捷按钮，配置服务器信息（包括文件暂存路径，用于存放脚本和日志）</li>
+        <li>点击按钮进入弱网控制面板，选择目标网卡（自动获取服务器网卡列表，也可手动刷新）</li>
         <li>编辑规则：设置延迟、丢包率、带宽限制、损坏率、重复率、重排率等参数</li>
         <li>设置每条规则的<strong>持续时长</strong>（规则生效时间）和<strong>间隔时长</strong>（恢复正常网络的时间）</li>
         <li>将规则添加到队列，可调整顺序或删除不需要的规则</li>
         <li>设置循环次数（0 表示无限循环）</li>
         <li>点击<code>开始弱网</code>执行，脚本将在服务器后台运行</li>
         <li>点击<code>查看运行日志</code>可查看实时进度和历史运行记录（日志会自动下载到本地）</li>
-        <li>点击<code>停止弱网</code>终止脚本并清除所有 tc 规则</li>
+        <li>点击<code>停止弱网</code>立即终止脚本并清除所有 tc 规则</li>
     </ol>
 
     <div class="tip-box">
@@ -504,10 +546,10 @@ HELP_HTML = '''<!DOCTYPE html>
     <p>A: 文件传输速度受网络带宽影响，大文件建议压缩后传输。</p>
 
     <h3>Q4: 监控数据保存在哪里？</h3>
-    <p>A: 监控数据默认保存在程序运行目录下的 <code>local/OneClick/</code> 文件夹中，文件格式为 <code>.log</code>。</p>
+    <p>A: 本机监控数据保存在程序运行目录下的 <code>local/OneClick/</code> 文件夹中。远程监控数据保存在服务器的 <code>{文件暂存路径}/OneClick/Monitor/</code> 目录下，可通过控制面板的<code>下载数据</code>按钮下载到本地。</p>
 
     <h3>Q5: 如何备份配置？</h3>
-    <p>A: 点击菜单栏 <code>配置保存</code> → <code>另存为</code>，选择保存位置即可备份当前配置。配置文件包含服务器列表和所有快捷按钮设置。</p>
+    <p>A: 点击菜单栏 <code>文件</code> → <code>另存为</code>，选择保存位置即可备份当前配置。配置文件包含服务器列表和所有快捷按钮设置。</p>
 
     <h3>Q6: 弱网功能无法使用？</h3>
     <p>A: 弱网功能基于 Linux tc 命令，仅限远程 Linux 服务器使用，且需要 root 权限或 sudo 权限。请确认：</p>
@@ -528,13 +570,13 @@ HELP_HTML = '''<!DOCTYPE html>
     </ul>
 
     <h3>Q8: 弱网日志保存在哪里？</h3>
-    <p>A: 服务器上的日志保存在 <code>/home/{用户名}/OneClick/WeakNet/OneClickWeakNet.log</code>。点击"查看运行日志"时会自动下载到本地 <code>local/{IP}/WeakNet/</code> 目录下。</p>
+    <p>A: 服务器上的日志保存在 <code>{文件暂存路径}/OneClick/WeakNet/OneClickWeakNet.log</code>。点击"查看运行日志"时会自动下载到本地 <code>local/{IP}/WeakNet/</code> 目录下。</p>
 
     <h3>Q9: Windows 7 无法运行？</h3>
     <p>A: Windows 7 需要安装 <span class="highlight">SP1 服务包</span> 和相关系统补丁后才能正常运行。</p>
 
     <div class="footer">
-        <p>OneClick v1.0 | 一键式服务器运维管理工具</p>
+        <p>OneClick V2.0 | 一键式服务器运维管理工具</p>
         <p>如有问题，请联系技术支持</p>
     </div>
 </body>

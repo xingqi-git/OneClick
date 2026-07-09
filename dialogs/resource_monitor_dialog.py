@@ -155,6 +155,8 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
         self.button_id = button_id
         self.parent = parent
+        # 获取按钮名称，用于日志前缀
+        self.button_name = self.parent.sc_buttons[button_id]['config'].get('指令名称', '资源监控')
         self.g_windows = []  # 保存所有图表窗口的引用
         from monitor_scripts import MONITOR_SH, MONITOR_SH_2, MONITOR_PS1
         self.monitor_sh_normal = MONITOR_SH
@@ -328,7 +330,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         worker.moveToThread(thread)
 
         worker.info_signal.connect(self.update_status)
-        worker.log_signal.connect(self.parent.update_run_info)
+        worker.log_signal.connect(self._log)
         worker.finished.connect(worker.deleteLater)
 
         thread.started.connect(worker.run_task)
@@ -408,7 +410,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     try:
                         if result.poll() is None:
                             AutoCloseMessageBox("提示", "监控已经开始，关闭软件不会停止监控", 2000, self, 'start_monitor').exec_()
-                            self.parent.update_run_info("本机监控已经开始")
+                            self._log("本机监控已经开始")
                         else:
                             # 失败：普通提示框，需要手动启用按钮
                             self.message_info_box(("提示", f"监控脚本启动失败{result.returncode}"))
@@ -444,7 +446,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
             # 连接信号和槽
             # worker.log_signal.connect(lambda: None)
-            worker.log_signal.connect(self.parent.update_run_info)
+            worker.log_signal.connect(self._log)
             worker.info_signal.connect(self.message_info_box)
             worker.finished.connect(on_local_worker_finished)
             worker.finished.connect(worker.deleteLater)
@@ -571,7 +573,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             def on_ssh_worker_finished(result):
                 if result:
                     AutoCloseMessageBox("提示", "监控已经开始，关闭软件不会停止监控", 2000, self, 'start_monitor').exec_()
-                    self.parent.update_run_info(f"{ip}监控开始")
+                    self._log(f"{ip}监控开始")
                 else:
                     # 失败情况（普通提示框已由 worker.info_signal 弹出），手动启用按钮
                     self._operation_running = False
@@ -597,7 +599,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             worker.moveToThread(thread)
 
             worker.info_signal.connect(self.message_info_box)
-            worker.log_signal.connect(self.parent.update_run_info)
+            worker.log_signal.connect(self._log)
             worker.finished.connect(on_ssh_worker_finished)
             worker.finished.connect(worker.deleteLater)
 
@@ -649,7 +651,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             def on_worker_finished(result):
                 if result:
                     AutoCloseMessageBox("提示", "本机监控已经停止", 2000, self, 'stop_monitor').exec_()
-                    self.parent.update_run_info("本机监控停止")
+                    self._log("本机监控停止")
                 else:
                     # 失败情况（普通提示框已由 worker.info_signal 弹出），手动启用按钮
                     self._operation_running = False
@@ -674,7 +676,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             worker.moveToThread(thread)
 
             # worker.log_signal.connect(lambda : None) # 屏蔽日志输出
-            worker.log_signal.connect(self.parent.update_run_info)
+            worker.log_signal.connect(self._log)
             worker.info_signal.connect(self.message_info_box)
             worker.finished.connect(on_worker_finished)
             worker.finished.connect(worker.deleteLater)
@@ -728,7 +730,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             def on_stop_monitor_finished(result):
                 if result:
                     AutoCloseMessageBox("提示", f"{ip}监控已经停止", 2000, self, 'stop_monitor').exec_()
-                    self.parent.update_run_info(f"{ip}监控已经停止")
+                    self._log(f"{ip}监控已经停止")
                 else:
                     # 失败情况（普通提示框已由 worker.info_signal 弹出），手动启用按钮
                     self._operation_running = False
@@ -754,7 +756,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             worker.moveToThread(thread)
 
             # worker.log_signal.connect(lambda : None) # 屏蔽日志输出
-            worker.log_signal.connect(self.parent.update_run_info)
+            worker.log_signal.connect(self._log)
             worker.info_signal.connect(self.message_info_box)
             worker.finished.connect(on_stop_monitor_finished)
             worker.finished.connect(worker.deleteLater)
@@ -781,7 +783,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 try:
                     local_monitor_path = self.monitor_data_path + "/Monitor"
                     shutil.rmtree(local_monitor_path)
-                    self.parent.update_run_info(f"本机监控数据已删除{local_monitor_path}")
+                    self._log(f"本机监控数据已删除{local_monitor_path}")
                     AutoCloseMessageBox("提示", "本机监控数据已清除", 2000, self).exec_()
                 except FileNotFoundError:
                     AutoCloseMessageBox("提示", "没有本机监控数据，无需删除", 2000, self).exec_()
@@ -816,7 +818,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 try:
                     local_monitor_path = self.monitor_data_path + "/Monitor"
                     shutil.rmtree(local_monitor_path)
-                    self.parent.update_run_info(f"本机监控数据已删除{local_monitor_path}")
+                    self._log(f"本机监控数据已删除{local_monitor_path}")
                     AutoCloseMessageBox("提示", "本地监控数据已清除", 2000, self).exec_()
                 except FileNotFoundError:
                     AutoCloseMessageBox("提示", "没有本机监控数据，无需删除", 2000, self).exec_()
@@ -854,7 +856,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 try:
                     local_monitor_path = self.monitor_data_path + "/Monitor"
                     shutil.rmtree(local_monitor_path)
-                    self.parent.update_run_info(f"本机监控数据已删除{local_monitor_path}")
+                    self._log(f"本机监控数据已删除{local_monitor_path}")
                 except FileNotFoundError:
                     pass
                 except Exception as e:
@@ -904,7 +906,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     elif clean_server:
                         if result:
                             AutoCloseMessageBox("提示", f"{ip}服务器监控数据已清除", 2000, self).exec_()
-                            self.parent.update_run_info(f"{ip}监控数据已清空")
+                            self._log(f"{ip}监控数据已清空")
                         else:
                             AutoCloseMessageBox("提示", "清除服务器数据失败", 2000, self).exec_()
                     # 所有情况都由 AutoCloseMessageBox.accept() 启用按钮
@@ -926,7 +928,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 }
                 
                 worker.moveToThread(thread)
-                worker.log_signal.connect(self.parent.update_run_info)
+                worker.log_signal.connect(self._log)
                 worker.finished.connect(on_clean_cmd_finished)
                 worker.finished.connect(worker.deleteLater)
                 thread.started.connect(worker.run_task)
@@ -990,7 +992,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             success, err_msg = result
             if success:
                 AutoCloseMessageBox("提示", f"监控数据已下载到{self.monitor_data_path}/Monitor", 2000, self).exec_()
-                self.parent.update_run_info(f"监控数据已下载到{self.monitor_data_path}/Monitor")
+                self._log(f"监控数据已下载到{self.monitor_data_path}/Monitor")
             else:
                 # 失败显示提示
                 AutoCloseMessageBox("提示", f"下载数据失败，原因：{err_msg}", 2000, self).exec_()
@@ -1013,7 +1015,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
         worker.moveToThread(thread)
 
-        worker.log_signal.connect(self.parent.update_run_info)
+        worker.log_signal.connect(self._log)
         worker.finished.connect(on_download_data_finished)
         worker.finished.connect(worker.deleteLater)
 
@@ -1099,6 +1101,13 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         )
         self.g_windows.append(g_window)
         g_window.show()
+
+    def _log(self, text, level='INFO'):
+        """带按钮名称前缀的日志输出"""
+        if text.startswith(f'<{self.button_name}>'):
+            self.parent.update_run_info(text, level)
+        else:
+            self.parent.update_run_info(f'<{self.button_name}> {text}', level)
 
     def _show_local_data_graph(self):
         """展示本地数据（检查是否有数据，无数据则提示，有数据直接打开）"""
@@ -1190,7 +1199,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     }
 
                     worker.moveToThread(thread)
-                    worker.log_signal.connect(self.parent.update_run_info)
+                    worker.log_signal.connect(self._log)
                     worker.finished.connect(on_download_finished)
                     worker.finished.connect(worker.deleteLater)
                     thread.started.connect(worker.run_task)

@@ -31,6 +31,8 @@ import sys
 if __name__ == '__main__':
     def run():
         app = QApplication(sys.argv)
+        app.setApplicationName("OneClick")
+        app.setApplicationVersion("V2.0")
 
         # global_font = QFont()  # 获取系统默认字体的配置
         # global_font.setKerning(False)  # 关Kerning，解决roo等o中间有空格的显示问题

@@ -232,7 +232,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             else:
                 button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
                 button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
-                self.update_run_info(f'<{button_type}>|<{button_text}>快捷按钮创建成功')
+                self.update_run_info(f'<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
                 self.update_run_info('取消编辑快捷按钮')
@@ -254,7 +254,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             else:
                 button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
                 button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
-                self.update_run_info(f'<{button_type}>|<{button_text}>快捷按钮创建成功')
+                self.update_run_info(f'<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
                 self.update_run_info('取消编辑快捷按钮')
@@ -275,7 +275,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             else:
                 button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
                 button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
-                self.update_run_info(f'<{button_type}>|<{button_text}>快捷按钮创建成功')
+                self.update_run_info(f'<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
                 self.update_run_info('取消编辑快捷按钮')
@@ -297,7 +297,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             else:
                 button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
                 button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
-                self.update_run_info(f'<{button_type}>|<{button_text}>快捷按钮创建成功')
+                self.update_run_info(f'<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
                 self.update_run_info('取消编辑快捷按钮')
@@ -318,7 +318,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             else:
                 button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
                 button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
-                self.update_run_info(f'<{button_type}>|<{button_text}>快捷按钮创建成功')
+                self.update_run_info(f'<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
                 self.update_run_info('取消编辑快捷按钮')
@@ -340,7 +340,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             else:
                 button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
                 button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
-                self.update_run_info(f'<{button_type}>|<{button_text}>快捷按钮创建成功')
+                self.update_run_info(f'<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
                 self.update_run_info('取消编辑快捷按钮')
@@ -361,7 +361,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             else:
                 button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
                 button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
-                self.update_run_info(f'<{button_type}>|<{button_text}>快捷按钮创建成功')
+                self.update_run_info(f'<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
                 self.update_run_info('取消编辑弱网快捷按钮')
@@ -613,7 +613,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         h_layout.setContentsMargins(0, 0, 0, 0)
         h_layout.setSpacing(2)
 
-        # 复选框
+        # 复选框：左边留出间距
+        h_layout.addSpacing(15)
         checkbox = QCheckBox(container)
         checkbox.setFixedWidth(20)
 
@@ -807,9 +808,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         button_name = self.sc_buttons[button_id]['config']['指令名称']
         # 检查是否正在执行
         if self.sc_buttons[button_id]['button'].property('executing'):
-            self.update_run_info(f'<{button_name}>正在执行中，请先停止', 'WARNING')
+            self.update_run_info(f'<{button_name}> 正在执行中，请先停止', 'WARNING')
             return
-        self.update_run_info(f'<{button_name}>开始执行')
+        self.update_run_info(f'<{button_name}> 开始执行')
         self.set_button_executing(button_id, True)
 
         # 初始化SSHTools
@@ -820,7 +821,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             ssh_tool.username = self.sc_buttons[button_id]['config']['用户名']
             ssh_tool.password = self.sc_buttons[button_id]['config']['密码']
         except Exception as e:
-            self.update_run_info(f'<{button_name}>执行失败:{e}', 'ERROR')
+            self.update_run_info(f'<{button_name}> 执行失败:{e}', 'ERROR')
             self.set_button_executing(button_id, False)
             return
 
@@ -846,9 +847,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         def on_worker_finished(result):
             """worker结束处理界面"""
             if result:
-                self.update_run_info(f'<{button_name}>执行成功')
+                self.update_run_info(f'<{button_name}> 执行成功')
             else:
-                self.update_run_info(f'<{button_name}>执行失败', 'ERROR')
+                self.update_run_info(f'<{button_name}> 执行失败', 'ERROR')
             self.set_button_executing(button_id, False)
             thread.quit()
 
@@ -870,7 +871,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         worker.moveToThread(thread)
 
         # 绑定worker信号槽
-        worker.log_signal.connect(self.update_run_info)
+        log_wrapper = self._make_log_wrapper(button_name)
+        worker.log_signal.connect(log_wrapper)
         worker.finished.connect(on_worker_finished)
         worker.finished.connect(worker.deleteLater)
 
@@ -897,9 +899,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         button_name = self.sc_buttons[button_id]['config']['指令名称']
         # 检查是否正在执行
         if self.sc_buttons[button_id]['button'].property('executing'):
-            self.update_run_info(f'<{button_name}>正在执行中，请先停止', 'WARNING')
+            self.update_run_info(f'<{button_name}> 正在执行中，请先停止', 'WARNING')
             return
-        self.update_run_info(f'<{button_name}>开始执行')
+        self.update_run_info(f'<{button_name}> 开始执行')
         self.set_button_executing(button_id, True)
 
         # 初始化SSHTools
@@ -910,7 +912,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             ssh_tool.username = self.sc_buttons[button_id]['config']['用户名']
             ssh_tool.password = self.sc_buttons[button_id]['config']['密码']
         except Exception as e:
-            self.update_run_info(f'<<{button_name}>>执行失败:{e}', 'ERROR')
+            self.update_run_info(f'<{button_name}> 执行失败:{e}', 'ERROR')
             self.set_button_executing(button_id, False)
             return
 
@@ -926,9 +928,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         def on_worker_finished(result):
             if result:
-                self.update_run_info(f'<<{button_name}>>执行成功')
+                self.update_run_info(f'<{button_name}> 执行成功')
             else:
-                self.update_run_info(f'<<{button_name}>>执行失败', 'ERROR')
+                self.update_run_info(f'<{button_name}> 执行失败', 'ERROR')
             self.set_button_executing(button_id, False)
             # 不要在worker里deleteLater自己，会被放到worker的线程中执行
             thread.quit()
@@ -951,7 +953,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         worker.moveToThread(thread)
 
         # 绑定信号槽
-        worker.log_signal.connect(self.update_run_info)
+        log_wrapper = self._make_log_wrapper(button_name)
+        worker.log_signal.connect(log_wrapper)
         worker.echo_signal.connect(self.update_linux_print)
         worker.finished.connect(on_worker_finished)
         worker.finished.connect(worker.deleteLater)
@@ -979,9 +982,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         button_name = self.sc_buttons[button_id]['config']['指令名称']
         # 检查是否正在执行
         if self.sc_buttons[button_id]['button'].property('executing'):
-            self.update_run_info(f'<{button_name}>正在执行中，请先停止', 'WARNING')
+            self.update_run_info(f'<{button_name}> 正在执行中，请先停止', 'WARNING')
             return
-        self.update_run_info(f'<<{button_name}>>开始执行')
+        self.update_run_info(f'<{button_name}> 开始执行')
         self.set_button_executing(button_id, True)
 
         # 初始化SSHTools
@@ -992,7 +995,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             ssh_tool.username = self.sc_buttons[button_id]['config']['用户名']
             ssh_tool.password = self.sc_buttons[button_id]['config']['密码']
         except Exception as e:
-            self.update_run_info(f'<<{button_name}>>执行失败:{e}', 'ERROR')
+            self.update_run_info(f'<{button_name}> 执行失败:{e}', 'ERROR')
             self.set_button_executing(button_id, False)
             return
 
@@ -1022,9 +1025,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         def on_worker_finished(result):
             if result:
-                self.update_run_info(f'<<{button_name}>>执行成功')
+                self.update_run_info(f'<{button_name}> 执行成功')
             else:
-                self.update_run_info(f'<<{button_name}>>执行失败', 'ERROR')
+                self.update_run_info(f'<{button_name}> 执行失败', 'ERROR')
             self.set_button_executing(button_id, False)
             thread.quit()
 
@@ -1042,7 +1045,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         worker.moveToThread(thread)
 
         # 绑定worker信号槽
-        worker.log_signal.connect(self.update_run_info)
+        log_wrapper = self._make_log_wrapper(button_name)
+        worker.log_signal.connect(log_wrapper)
         worker.finished.connect(on_worker_finished)
         worker.finished.connect(worker.deleteLater)
 
@@ -1069,9 +1073,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         button_name = self.sc_buttons[button_id]['config']['指令名称']
         # 检查是否正在执行
         if self.sc_buttons[button_id]['button'].property('executing'):
-            self.update_run_info(f'<{button_name}>正在执行中，请先停止', 'WARNING')
+            self.update_run_info(f'<{button_name}> 正在执行中，请先停止', 'WARNING')
             return
-        self.update_run_info(f'<<{button_name}>>开始执行')
+        self.update_run_info(f'<{button_name}> 开始执行')
         self.set_button_executing(button_id, True)
 
         # 初始化SSHTools
@@ -1082,7 +1086,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             ssh_tool.username = self.sc_buttons[button_id]['config']['用户名']
             ssh_tool.password = self.sc_buttons[button_id]['config']['密码']
         except Exception as e:
-            self.update_run_info(f'<<{button_name}>>执行失败:{e}', 'ERROR')
+            self.update_run_info(f'<{button_name}> 执行失败:{e}', 'ERROR')
             self.set_button_executing(button_id, False)
             return
 
@@ -1120,9 +1124,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         def on_worker_finished(result):
             if result:
-                self.update_run_info(f'<<{button_name}>>执行成功')
+                self.update_run_info(f'<{button_name}> 执行成功')
             else:
-                self.update_run_info(f'<<{button_name}>>执行失败', 'ERROR')
+                self.update_run_info(f'<{button_name}> 执行失败', 'ERROR')
             self.set_button_executing(button_id, False)
             thread.quit()
 
@@ -1140,7 +1144,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         worker.moveToThread(thread)
 
         # 绑定worker信号槽
-        worker.log_signal.connect(self.update_run_info)
+        log_wrapper = self._make_log_wrapper(button_name)
+        worker.log_signal.connect(log_wrapper)
         worker.finished.connect(on_worker_finished)
         worker.finished.connect(worker.deleteLater)
 
@@ -1167,9 +1172,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         button_name = self.sc_buttons[button_id]['config']['指令名称']
         # 检查是否正在执行
         if self.sc_buttons[button_id]['button'].property('executing'):
-            self.update_run_info(f'<{button_name}>正在执行中，请先停止', 'WARNING')
+            self.update_run_info(f'<{button_name}> 正在执行中，请先停止', 'WARNING')
             return
-        self.update_run_info(f'<<{button_name}>>开始执行')
+        self.update_run_info(f'<{button_name}> 开始执行')
         self.set_button_executing(button_id, True)
 
         # 初始化WindowsTools
@@ -1200,9 +1205,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         def on_worker_finished(result):
             if result:
-                self.update_run_info(f'<<{button_name}>>执行成功')
+                self.update_run_info(f'<{button_name}> 执行成功')
             else:
-                self.update_run_info(f'<<{button_name}>>执行失败', 'ERROR')
+                self.update_run_info(f'<{button_name}> 执行失败', 'ERROR')
             self.set_button_executing(button_id, False)
             thread.quit()
 
@@ -1220,7 +1225,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         worker.moveToThread(thread)
 
         # 绑定worker信号槽
-        worker.log_signal.connect(self.update_run_info)
+        log_wrapper = self._make_log_wrapper(button_name)
+        worker.log_signal.connect(log_wrapper)
         worker.finished.connect(on_worker_finished)
         worker.finished.connect(worker.deleteLater)
 
@@ -1319,6 +1325,16 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self.update_run_info("文件日志已开启")
         else:
             self.update_run_info("文件日志已关闭")
+
+    def _make_log_wrapper(self, button_name):
+        """创建带按钮名称前缀的日志包装函数"""
+        def wrapper(text, level='INFO'):
+            # 如果已经有前缀了就不加了（避免重复）
+            if text.startswith(f'<{button_name}> '):
+                self.update_run_info(text, level)
+            else:
+                self.update_run_info(f'<{button_name}> {text}', level)
+        return wrapper
 
     def update_run_info(self, text, level='INFO'):
         """同步显示到UI（带颜色），同时发给logger写文件
@@ -1455,7 +1471,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         original_config['分组'] = self.sc_buttons[button_id]['group']
         self.add_button(original_config)
         btn_text = original_config['指令名称']
-        self.update_run_info(f"复制<{btn_text}>快捷按钮成功")
+        self.update_run_info(f"复制删除<{btn_text}>快捷按钮成功")
 
     def stop_single_button(self, button_id):
         """停止单个按钮的线程"""
@@ -1467,7 +1483,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 thread_names_to_stop.append(thread_name)
 
         if not thread_names_to_stop:
-            self.update_run_info(f'<{button_name}>没有正在执行的指令', 'WARNING')
+            self.update_run_info(f'<{button_name}> 没有正在执行的指令', 'WARNING')
             return
 
         for thread_name in thread_names_to_stop:
@@ -1483,7 +1499,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             stopped_count += 1
 
         if stopped_count > 0:
-            self.update_run_info(f'<{button_name}>已发送中止请求，请等待')
+            self.update_run_info(f'<{button_name}> 已发送中止请求，请等待')
 
     def _delete_button_internal(self, button_id):
         """内部删除按钮（不弹确认框），供删除分组调用"""
@@ -1503,7 +1519,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 删除界面控件
         btn_info['widget'].deleteLater()
         del self.sc_buttons[button_id]
-        self.update_run_info(f"删除<{sc_ty}>|<{btn_text}>快捷按钮成功")
+        self.update_run_info(f"删除<{btn_text}>快捷按钮成功")
 
     def delete_button(self, button_id):
         confirm_dialog = QMessageBox()
@@ -1894,6 +1910,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             else:
                 self.update_run_info(f'{key}无法识别的数据类型', 'WARNING')
         self.update_run_info(f"批量添加快捷按钮 成功，来自{file_path}")
+        # 加载完成后默认选中第一个分组
+        if self.group_tabWidget.count() > 0:
+            self.group_tabWidget.setCurrentIndex(0)
 
     def load_server_config(self, path):
         """启动时如果有默认配置会调用，传入默认配置路径，手动点的时候传入的是False，弹出对话框"""
