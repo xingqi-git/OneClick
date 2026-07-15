@@ -31,3 +31,5 @@ var/
 .envrc
 *.log
 *.spec
+config.json
+OneClick.log
