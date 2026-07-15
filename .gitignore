@@ -30,6 +30,4 @@ var/
 .venv
 .envrc
 *.log
-config.json
 *.spec
-config.json
