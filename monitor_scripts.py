@@ -119,10 +119,10 @@ collect_single_pid_metrics() {
 
     # 进程CPU使用率（%，保留2位小数）
     local proc_stat1=$(cat /proc/$pid/stat 2>/dev/null | awk '{print $14 "," $15}')
-    local sys_stat1=$(cat /proc/stat 2>/dev/null | awk '/^cpu / {print $2+$3+$4+$5+$6+$7+$8}')
+    local sys_stat1=$(cat /proc/stat 2>/dev/null | awk '/^cpu / {printf "%d", $2+$3+$4+$5+$6+$7+$8}')
     sleep 0.1
     local proc_stat2=$(cat /proc/$pid/stat 2>/dev/null | awk '{print $14 "," $15}')
-    local sys_stat2=$(cat /proc/stat 2>/dev/null | awk '/^cpu / {print $2+$3+$4+$5+$6+$7+$8}')
+    local sys_stat2=$(cat /proc/stat 2>/dev/null | awk '/^cpu / {printf "%d", $2+$3+$4+$5+$6+$7+$8}')
 
     local utime1=$(echo "$proc_stat1" | cut -d',' -f1)
     utime1=${utime1:-0}
@@ -132,13 +132,18 @@ collect_single_pid_metrics() {
     utime2=${utime2:-0}
     local stime2=$(echo "$proc_stat2" | cut -d',' -f2)
     stime2=${stime2:-0}
-    local proc_cpu_diff=$((utime2 + stime2 - utime1 - stime1))
-    local sys_cpu_diff=$((sys_stat2 - sys_stat1))
-
+    
     local proc_cpu=0.00
-    if [[ $sys_cpu_diff -gt 0 ]]; then
-        proc_cpu=$(awk -v p="$proc_cpu_diff" -v s="$sys_cpu_diff" \ 'BEGIN{printf "%.1f", (p/s)*100}')
-    fi
+    proc_cpu=$(awk -v u1="$utime1" -v s1="$stime1" -v u2="$utime2" -v s2="$stime2" -v ss1="$sys_stat1" -v ss2="$sys_stat2" \
+        'BEGIN{
+            p_diff = (u2 + s2) - (u1 + s1);
+            s_diff = ss2 - ss1;
+            if (s_diff > 0) {
+                printf "%.1f", (p_diff / s_diff) * 100;
+            } else {
+                print "0.00";
+            }
+        }')
 
     # 进程文件描述符数
     local proc_fds=$(ls /proc/$pid/fd 2>/dev/null | wc -l)

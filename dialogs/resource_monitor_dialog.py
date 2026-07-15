@@ -168,11 +168,23 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         # 按钮逻辑和窗口默认值
         self.process_input_plainTextEdit.setPlainText(self.parent.sc_buttons[button_id]['config']['进程'])
         self.freq_lineEdit.setText(self.parent.sc_buttons[button_id]['config']['采样频率'])
+        
+        # 根据是本机监控还是服务器监控，更新UI显示的监控内容
+        if self.parent.sc_buttons[button_id]['config']['IP'] == '':
+            # 本机监控
+            self.sys_plainTextEdit.setPlainText("已用内存(MB)\nCPU使用率(%)\n磁盘读(KB/s)\n磁盘写(KB/s)")
+            self.process_plainTextEdit.setPlainText("已用内存(MB)\nCPU使用率(%)\n句柄数")
+            # 本机监控时隐藏嵌入式勾选框
+            self.embedded_checkBox.setVisible(False)
+            if hasattr(self, 'embedded_label'):
+                self.embedded_label.setVisible(False)
+        else:
+            # 服务器监控
+            self.sys_plainTextEdit.setPlainText("已用内存(MB)\nCPU使用率(%)\n磁盘读(KB/s)\n磁盘写(KB/s)\n文件描述符\nSocket描述符\n进程数")
+            self.process_plainTextEdit.setPlainText("进程RSS(MB)\n堆内存VmData(MB)\n进程CPU(%)\n进程FD数\n进程Socket数")
+        
         # 回显嵌入式勾选状态
         self.embedded_checkBox.setChecked(self.parent.sc_buttons[button_id]['config'].get('嵌入式', False))
-        # 本机监控时隐藏嵌入式勾选框
-        if self.parent.sc_buttons[button_id]['config']['IP'] == '':
-            self.embedded_checkBox.setVisible(False)
         self.start_pushButton.clicked.connect(self.start_monitor)
         self.stop_pushButton.clicked.connect(self.stop_monitor)
         self.clean_pushButton.clicked.connect(self.clean_data)
@@ -292,8 +304,8 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                         worker.info_signal.emit(("连接中...", "未知"))
                         continue
                 try:
-                    # 检查是否有监控
-                    cmd = "ps -ef | grep OneClickMonitor.sh | grep -v grep | wc -l"
+                    # 检查是否有监控 - 用基础ps命令，兼容嵌入式BusyBox
+                    cmd = "ps | grep OneClickMonitor | grep -v grep | wc -l"
                     stdin, stdout, stderr = ssh_client.ssh.exec_command(cmd)
                     if stderr.read():
                         worker.info_signal.emit(("已连接", "未知"))
@@ -520,9 +532,8 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 self.message_info_box(("提示", f"请检查指令内容{e}"))
                 self.set_all_buttons_enable()
                 return
-            #  >/dev/null 2>&1：将 stdout/stderr 全部重定向到空设备（丢弃nohup提示和脚本输出）
-            #  echo $!：输出后台进程的PID到stdout
-            monitor_cmd = f"nohup {monitor_cmd} >/dev/null 2>&1 & echo $!"
+            # 基础命令（nohup会在执行时检测是否存在，兼容嵌入式系统
+            monitor_cmd_bash = monitor_cmd
 
             def do_ssh_monitor_worker():
                 try:
@@ -543,7 +554,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     stdout.read()
                     stderr.read()
                     # 上传脚本
-                    send_result = ssh_client.send_files(monitor_sh_path, f"{user_path}")
+                    send_result = ssh_client.send_files(monitor_sh_path, f"{user_path}", float('inf'), '', work_dir)
                     if not send_result:
                         worker.info_signal.emit(("提示", "上传脚本失败"))
                         return False
@@ -552,9 +563,21 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     ssh_client.disconnect()
                     return False
 
-                # 执行指令
+                # 执行指令 - 先检测nohup是否存在，兼容嵌入式系统
                 try:
-                    stdin, stdout, stderr = ssh_client.ssh.exec_command(monitor_cmd)
+                    # 先检测nohup
+                    stdin, stdout, stderr = ssh_client.ssh.exec_command("which nohup 2>/dev/null")
+                    nohup_path = stdout.read().decode().strip()
+                    stderr.read().decode()
+                    
+                    # 构建最终执行命令
+                    if nohup_path:
+                        run_cmd = f"nohup {monitor_cmd_bash} >/dev/null 2>&1 & echo $!"
+                    else:
+                        # 嵌入式系统无nohup，直接后台运行
+                        run_cmd = f"{monitor_cmd_bash} >/dev/null 2>&1 & echo $!"
+                    
+                    stdin, stdout, stderr = ssh_client.ssh.exec_command(run_cmd)
                     pid = stdout.read().decode().strip()
                     err = stderr.read().decode().strip()
                     ssh_client.disconnect()
@@ -707,16 +730,23 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 self.set_all_buttons_enable()
                 return
 
-            stop_cmd = "pkill -9 -f OneClickMonitor.sh"
-
             def do_stop_monitor():
                 connect_result = ssh_client.connect()
                 if not connect_result:
                     worker.info_signal.emit(("提示", f"停止监控失败，原因：连接服务器失败"))
                     return False
                 try:
-                    stdin,stdout, stderr = ssh_client.ssh.exec_command(stop_cmd)
+                    # 用基础命令查找PID，兼容嵌入式（避免pkill -f不支持）
+                    find_pid_cmd = "ps | grep OneClickMonitor | grep -v grep | awk '{print $1}'"
+                    stdin, stdout, stderr = ssh_client.ssh.exec_command(find_pid_cmd)
+                    pids = stdout.read().decode().strip().split()
                     err = stderr.read().decode().strip()
+                    
+                    # 遍历kill所有PID
+                    for pid in pids:
+                        if pid.isdigit():
+                            ssh_client.ssh.exec_command(f"kill -9 {pid}")
+                    
                     ssh_client.disconnect()
                     if err:
                         worker.info_signal.emit(("提示", f"停止监控失败{err}"))

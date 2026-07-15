@@ -163,7 +163,7 @@ class Ui_Dialog(object):
         self.label_7.setText(_translate("Dialog", "待发送文件(夹)"))
         self.local_path_pushButton.setText(_translate("Dialog", "请选择"))
         self.label_10.setText(_translate("Dialog", "目标路径"))
-        self.server_path_lineEdit.setPlaceholderText(_translate("Dialog", "/home/user"))
+        self.server_path_lineEdit.setPlaceholderText(_translate("Dialog", "例如：/home/user"))
         self.label_12.setText(_translate("Dialog", "待发送文件夹的筛选条件"))
         self.filename_lineEdit.setPlaceholderText(_translate("Dialog", "默认全部"))
         self.label_8.setText(_translate("Dialog", "修改时间"))

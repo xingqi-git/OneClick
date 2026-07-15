@@ -10,7 +10,8 @@ sc_class2str = {
     'GetFilesDialog': "获取文件",
     'CopyFilesDialog': "复制本地文件",
     'ResourceMonitorDialog1': "资源监控",
-    'WeakNetDialog1': "弱网"
+    'WeakNetDialog1': "弱网",
+    'ServerCheckDialog': "服务器检查"
 }
 
 

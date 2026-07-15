@@ -14,7 +14,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 class Ui_Dialog(object):
     def setupUi(self, Dialog):
         Dialog.setObjectName("Dialog")
-        Dialog.resize(500, 358)
+        Dialog.resize(500, 380)
         self.verticalLayout = QtWidgets.QVBoxLayout(Dialog)
         self.verticalLayout.setObjectName("verticalLayout")
         self.gridLayout = QtWidgets.QGridLayout()
@@ -51,13 +51,14 @@ class Ui_Dialog(object):
         self.gridLayout.addWidget(self.process_plainTextEdit, 1, 1, 1, 1)
         self.freq_lineEdit = QtWidgets.QLineEdit(Dialog)
         self.freq_lineEdit.setObjectName("freq_lineEdit")
-        # 采样频率和嵌入式勾选框放同一行
-        self.freq_horizontalLayout = QtWidgets.QHBoxLayout()
-        self.freq_horizontalLayout.addWidget(self.freq_lineEdit)
+        self.gridLayout.addWidget(self.freq_lineEdit, 3, 1, 1, 1)
+        self.embedded_label = QtWidgets.QLabel(Dialog)
+        self.embedded_label.setObjectName("embedded_label")
+        self.gridLayout.addWidget(self.embedded_label, 4, 0, 1, 1)
         self.embedded_checkBox = QtWidgets.QCheckBox(Dialog)
+        self.embedded_checkBox.setText("")
         self.embedded_checkBox.setObjectName("embedded_checkBox")
-        self.freq_horizontalLayout.addWidget(self.embedded_checkBox)
-        self.gridLayout.addLayout(self.freq_horizontalLayout, 3, 1, 1, 1)
+        self.gridLayout.addWidget(self.embedded_checkBox, 4, 1, 1, 1)
         self.gridLayout.setColumnStretch(0, 1)
         self.gridLayout.setColumnStretch(1, 4)
         self.verticalLayout.addLayout(self.gridLayout)
@@ -113,15 +114,6 @@ class Ui_Dialog(object):
         self.verticalLayout.addLayout(self.horizontalLayout_2)
 
         self.retranslateUi(Dialog)
-        QtCore.QMetaObject.connectSlotsByName(Dialog)
-        Dialog.setTabOrder(self.sys_plainTextEdit, self.process_plainTextEdit)
-        Dialog.setTabOrder(self.process_plainTextEdit, self.process_input_plainTextEdit)
-        Dialog.setTabOrder(self.process_input_plainTextEdit, self.freq_lineEdit)
-        Dialog.setTabOrder(self.freq_lineEdit, self.start_pushButton)
-        Dialog.setTabOrder(self.start_pushButton, self.stop_pushButton)
-        Dialog.setTabOrder(self.stop_pushButton, self.clean_pushButton)
-        Dialog.setTabOrder(self.clean_pushButton, self.download_pushButton)
-        Dialog.setTabOrder(self.download_pushButton, self.watch_pushButton)
 
     def retranslateUi(self, Dialog):
         _translate = QtCore.QCoreApplication.translate
@@ -138,7 +130,7 @@ class Ui_Dialog(object):
         self.process_plainTextEdit.setPlainText(_translate("Dialog", "已用内存(MB)    CPU使用率(%)\n"
 "文件描述符      Socket描述符"))
         self.freq_lineEdit.setPlaceholderText(_translate("Dialog", "默认5秒"))
-        self.embedded_checkBox.setText(_translate("Dialog", "嵌入式系统(ash)"))
+        self.embedded_label.setText(_translate("Dialog", "嵌入式系统(ash)"))
         self.ssh_label.setText(_translate("Dialog", "连接状态："))
         self.monitor_label.setText(_translate("Dialog", "监控状态："))
         self.start_pushButton.setText(_translate("Dialog", "开始监控"))

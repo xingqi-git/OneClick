@@ -13,7 +13,7 @@ import datetime
 from utils.logger import setup_logging, get_logger
 from dialogs import (SendCMDDialog, SendCMD2Dialog, SendFilesDialog, GetFilesDialog, CopyFilesDialog,
                      SetServerDialog, ResourceMonitorDialog1, ResourceMonitorDialog2,
-                     WeakNetDialog1, WeakNetControlDialog, HelpDialog, sc_class2str)
+                     WeakNetDialog1, WeakNetControlDialog, HelpDialog, sc_class2str, ServerCheckDialog, ServerCheckRunDialog)
 
 
 class DraggableButton(QPushButton):
@@ -78,6 +78,22 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.resource_monitor_action.triggered.connect(self.resource_monitor_dialog)  # 资源监控编辑框
         self.weak_net_action.triggered.connect(self.weak_net_dialog)  # 弱网编辑框
         self.get_sc_from_cfg_action.triggered.connect(self.load_sc_config)  # 从配置文件获取快捷按钮
+        
+        # 添加服务器检查菜单项，放到弱网下面
+        from PyQt5.QtWidgets import QAction
+        self.server_check_action = QAction("服务器检查", self)
+        # 找到弱网action在菜单中的位置，然后插入在它后面
+        actions = self.menu.actions()
+        weak_net_idx = -1
+        for i, action in enumerate(actions):
+            if action == self.weak_net_action:
+                weak_net_idx = i
+                break
+        if weak_net_idx != -1:
+            self.menu.insertAction(actions[weak_net_idx + 1], self.server_check_action)
+        else:
+            self.menu.addAction(self.server_check_action)
+        self.server_check_action.triggered.connect(self.server_check_dialog)
 
         self.edit_server_action.triggered.connect(self.server_cfg_dialog)  # 服务器列表的编辑框
         self.get_server_from_cfg_action.triggered.connect(self.load_server_config)  # 从配置文件获取服务器
@@ -368,6 +384,26 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             else:
                 self.update_run_info('取消创建弱网快捷按钮')
 
+    def server_check_dialog(self, button_id=None):
+        sc_dlg = ServerCheckDialog(parent=self)
+        if button_id:
+            sc_dlg.setWindowTitle('编辑<服务器检查>配置')
+            sc_dlg.edit_sc(button_id)
+        if sc_dlg.exec_() == QtWidgets.QDialog.DialogCode.Accepted:
+            if button_id:
+                button_type = self.sc_buttons[button_id]["config"]["指令类型"]
+                button_text = self.sc_buttons[button_id]["config"]["指令名称"]
+                self.update_run_info(f'{button_type} {button_text}快捷按钮编辑成功')
+            else:
+                if f"button_{self.btn_count}" in self.sc_buttons:
+                    button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
+                    self.update_run_info(f'<{button_text}>快捷按钮创建成功')
+        else:
+            if button_id:
+                self.update_run_info('取消编辑服务器检查快捷按钮')
+            else:
+                self.update_run_info('取消创建服务器检查快捷按钮')
+
     def server_cfg_dialog(self):
         s_cfg_dlg = SetServerDialog(parent=self)
         # 显示弹出窗口（模态显示，阻止操作主窗口）
@@ -385,6 +421,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         '复制本地文件':     ('#607D8B', '#455A64'),   # 蓝灰色
         '资源监控':         ('#009688', '#00796B'),   # 青色
         '弱网':             ('#795548', '#5D4037'),   # 棕色
+        '服务器检查':       ('#E91E63', '#C2185B'),   # 粉色
     }
 
     def get_button_style(self, cmd_type):
@@ -637,6 +674,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             '复制本地文件': self.click_copy_files,
             '资源监控': self.resource_monitor,
             '弱网': self.weak_net,
+            '服务器检查': self.server_check_exec,
         }
         handler = click_map.get(cmd_type)
         if handler is None:
@@ -1276,6 +1314,16 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if result != QtWidgets.QDialog.DialogCode.Accepted:
                 self.set_button_executing(button_id, False)
 
+    def server_check_exec(self, button_id):
+        """服务器检查按钮执行函数"""
+        if button_id in self.sc_buttons:
+            self.set_button_executing(button_id, True)
+            check_dlg = ServerCheckRunDialog(button_id, self)
+            check_dlg.setWindowTitle('服务器检查面板')
+            result = check_dlg.exec_()
+            if result != QtWidgets.QDialog.DialogCode.Accepted:
+                self.set_button_executing(button_id, False)
+
     def _on_log_file_checkbox_changed(self, state):
         """日志勾选框状态变化：控制文件日志开关"""
         import logging.handlers
@@ -1544,6 +1592,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 '复制本地文件': self.copy_file_dialog,
                 '资源监控': self.resource_monitor_dialog,
                 '弱网': self.weak_net_dialog,
+                '服务器检查': self.server_check_dialog,
             }
             sc_ty = self.sc_buttons[button_id]['config']['指令类型']
             dialog_func = ty_dialog.get(sc_ty)  # 假设指令类型是发送命令，dialog_func就是self.cmd1_dialog
@@ -1555,7 +1604,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
     # ==================== 分组批量操作 ====================
 
     # 批量执行时跳过的类型
-    SKIP_BATCH_TYPES = {'发送命令并接收回显', '资源监控', '弱网'}
+    SKIP_BATCH_TYPES = {'发送命令并接收回显', '资源监控', '弱网', '服务器检查'}
 
     def select_all_in_group(self, group_name):
         """切换分组内所有按钮的勾选状态"""

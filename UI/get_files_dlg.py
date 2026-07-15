@@ -162,7 +162,7 @@ class Ui_Dialog(object):
         self.label_workdir.setText(_translate("Dialog", "文件暂存路径"))
         self.label_7.setText(_translate("Dialog", "待获取文件(夹)"))
         self.label_10.setText(_translate("Dialog", "本地保存路径"))
-        self.server_path_lineEdit.setPlaceholderText(_translate("Dialog", "/home/user"))
+        self.server_path_lineEdit.setPlaceholderText(_translate("Dialog", "例如：/home/user"))
         self.local_path_pushButton.setText(_translate("Dialog", "当前路径/时间IP(例:20251024031415-1.1.1.1)/"))
         self.label_9.setText(_translate("Dialog", "名称包含"))
         self.label_8.setText(_translate("Dialog", "修改时间"))

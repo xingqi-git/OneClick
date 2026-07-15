@@ -129,7 +129,7 @@
         <string/>
        </property>
        <property name="placeholderText">
-        <string>/home/user</string>
+        <string>例如：/home/user</string>
        </property>
       </widget>
      </item>

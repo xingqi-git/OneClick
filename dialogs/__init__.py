@@ -7,3 +7,5 @@ from .set_server_dialog import SetServerDialog
 from .resource_monitor_dialog import ResourceMonitorDialog1, ResourceMonitorDialog2
 from .weak_net_dialog import WeakNetDialog1, WeakNetControlDialog
 from .help_dialog import HelpDialog
+from .server_check_dialog import ServerCheckDialog
+from .server_check_run_dialog import ServerCheckRunDialog

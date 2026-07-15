@@ -298,6 +298,17 @@ HELP_HTML = '''<!DOCTYPE html>
         </ul>
     </div>
 
+    <div class="feature-card">
+        <div class="feature-title">✅ 6. 服务器检查</div>
+        <ul>
+            <li><strong>多服务器批量检查：</strong>支持同时检查多台服务器的健康状态</li>
+            <li><strong>丰富检查项：</strong>连通性、SSH 登录、Root 权限、系统时间、防火墙、自定义命令</li>
+            <li><strong>实时结果更新：</strong>逐项显示检查结果，绿色 ✔️ 通过 / 红色 ❌ 不通过</li>
+            <li><strong>智能依赖：</strong>前面检查失败，后续依赖项自动标记跳过</li>
+            <li><strong>运行控制：</strong>可随时停止检查，关闭窗口时有确认提示</li>
+        </ul>
+    </div>
+
     <h2>🚀 三、快速上手</h2>
 
     <div class="feature-card">
@@ -463,6 +474,11 @@ HELP_HTML = '''<!DOCTYPE html>
             <td>基于 tc 的网络模拟，支持延迟/丢包/带宽等规则</td>
             <td>网络稳定性测试、故障注入</td>
         </tr>
+        <tr>
+            <td><strong>服务器检查</strong></td>
+            <td>多服务器健康状态批量检查，支持 6 种内置检查项 + 自定义命令回显</td>
+            <td>环境巡检、上线前验证、定期健康检查</td>
+        </tr>
     </table>
 
     <h4>3. 资源监控功能详解</h4>
@@ -521,6 +537,63 @@ HELP_HTML = '''<!DOCTYPE html>
             <li><strong>带宽：</strong>限制网络带宽（如 1mbit、100kbit）</li>
         </ul>
     </div>
+
+    <h3>5. 服务器检查功能详解</h3>
+    <p>服务器检查功能用于批量验证多台服务器的健康状态，支持多种内置检查项和自定义命令回显检查。</p>
+
+    <div class="tip-box">
+        <div class="tip-title">💡 检查项说明</div>
+        <table>
+            <tr>
+                <th style="width:25%">检查项</th>
+                <th style="width:25%">配置参数</th>
+                <th>说明</th>
+            </tr>
+            <tr>
+                <td><strong>连通</strong></td>
+                <td>检查复选框 + 期望结果（是/否）</td>
+                <td>通过 ping 命令检测服务器网络是否可达</td>
+            </tr>
+            <tr>
+                <td><strong>SSH登录</strong></td>
+                <td>检查复选框 + 期望结果（是/否）</td>
+                <td>验证 SSH 服务是否正常响应并可登录</td>
+            </tr>
+            <tr>
+                <td><strong>Root SSH权限</strong></td>
+                <td>检查复选框 + 期望结果（是/否）</td>
+                <td>检查 sshd_config 中 PermitRootLogin 配置值</td>
+            </tr>
+            <tr>
+                <td><strong>系统时间</strong></td>
+                <td>检查复选框 + 允许误差（分钟）</td>
+                <td>比较服务器 UTC 时间与本地 UTC 时间偏差</td>
+            </tr>
+            <tr>
+                <td><strong>防火墙</strong></td>
+                <td>检查复选框 + 期望结果（是/否）</td>
+                <td>检测 firewalld/ufw/SELinux 等防火墙状态</td>
+            </tr>
+            <tr>
+                <td><strong>命令回显N</strong></td>
+                <td>命令内容 + 期望类型（包含/不包含） + 期望内容</td>
+                <td>执行自定义命令，匹配输出是否符合预期</td>
+            </tr>
+        </table>
+    </div>
+
+    <h4>服务器检查配置步骤</h4>
+    <ol class="step-list">
+        <li>点击菜单栏 <code>添加快捷按钮 -> 服务器检查</code></li>
+        <li>在配置对话框中点击 <code>添加服务器列</code>，选择要检查的服务器（可多选）</li>
+        <li>在表格中为每台服务器勾选需要执行的检查项</li>
+        <li>为各项检查配置期望结果（如系统时间的最大允许误差）</li>
+        <li>添加自定义命令回显检查项（可选）：点击表格左侧的添加按钮</li>
+        <li>填写按钮名称后点击 <code>生成快捷按钮</code></li>
+        <li>点击生成的快捷按钮进入检查面板，将自动开始执行所有检查</li>
+        <li>检查结果会逐项实时更新（绿色 ✔️ 通过，红色 ❌ 不通过，⏸️ 跳过）</li>
+        <li>可点击 <code>停止检查</code> 中止，或 <code>关闭</code> 窗口（正在运行时有确认提示）</li>
+    </ol>
 
     <h2>❓ 四、常见问题</h2>
 

@@ -32,3 +32,4 @@ var/
 *.log
 config.json
 *.spec
+config.json
