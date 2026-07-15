@@ -22,6 +22,7 @@ OUTPUT_DIR="./"                        # 默认输出文件夹：当前目录
 SYS_LOG_NAME="system.log"              # 系统日志文件名
 SYS_LOG_FILE=""                        # 系统日志完整路径（后续拼接文件夹+文件名）
 TARGET_PROCS=()                        # 默认不监控指定进程，为空数组（明确初始化）
+MAX_DURATION=0                         # 最大运行时长（秒），0=无限
 
 # ---------------------- 命令行参数解析 ----------------------
 usage() {
@@ -30,6 +31,7 @@ usage() {
     echo "  -f, --freq <秒数>        采样频率，默认5秒"
     echo "  -o, --output <文件夹路径>   输出文件夹路径，默认当前目录（./）"
     echo "  -p, --proc <进程名>     指定监控的进程名（可多个，空格分隔），进程日志自动命名为<进程名>_<PID>.log"
+    echo "  -d, --duration <秒数>    最大运行时长（秒），0=无限运行，默认0"
     echo "  -h, --help              显示帮助信息"
     exit 1
 }
@@ -50,6 +52,10 @@ while [[ $# -gt 0 ]]; do
                 TARGET_PROCS+=("$1")
                 shift
             done
+            ;;
+        -d|--duration)
+            MAX_DURATION="$2"
+            shift 2
             ;;
         -h|--help)
             usage
@@ -184,14 +190,28 @@ collect_sys_metrics() {
 
 # ---------------------- 主监控循环 ----------------------
 main_monitor() {
-    echo "开始系统监控，采样频率：${SAMPLE_FREQ}秒"
-    echo "系统日志：${SYS_LOG_FILE}"
+    # 运行日志文件路径
+    local RUN_LOG="$OUTPUT_DIR/OneClickMonitor.log"
+
+    # 写入启动标记（和弱网统一格式）
+    echo "[$(date "+%Y-%m-%d %H:%M:%S")] ======== 资源监控脚本启动 ========" | tee -a "$RUN_LOG"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 采样频率：${SAMPLE_FREQ}秒" | tee -a "$RUN_LOG"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 系统数据日志：${SYS_LOG_FILE}" | tee -a "$RUN_LOG"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 运行日志：${RUN_LOG}" | tee -a "$RUN_LOG"
     if [[ ${#TARGET_PROCS[@]} -gt 0 ]]; then
-        echo "监控进程列表：${TARGET_PROCS[*]}"
-        echo "进程日志规则：每个PID对应独立日志文件，路径为 $OUTPUT_DIR/<进程名>_<PID>.log"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] 监控进程列表：${TARGET_PROCS[*]}" | tee -a "$RUN_LOG"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] 进程日志规则：每个PID对应独立日志文件，路径为 $OUTPUT_DIR/<进程名>_<PID>.log" | tee -a "$RUN_LOG"
     fi
-    echo "按 Ctrl+C 停止监控"
-    echo "特性：无进程时不创建日志，PID消失则停止写入对应日志，新增PID自动创建日志"
+    if [[ $MAX_DURATION -gt 0 ]]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] 最大运行时长：${MAX_DURATION}秒" | tee -a "$RUN_LOG"
+    else
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] 最大运行时长：无限" | tee -a "$RUN_LOG"
+    fi
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 按 Ctrl+C 停止监控" | tee -a "$RUN_LOG"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 特性：无进程时不创建日志，PID消失则停止写入对应日志，新增PID自动创建日志" | tee -a "$RUN_LOG"
+
+    # 记录开始时间
+    local start_time=$(date +%s)
 
     while true; do
         # 初始化/检查系统日志表头
@@ -201,7 +221,7 @@ main_monitor() {
         local sys_data=$(collect_sys_metrics)
         echo "$sys_data" >> "$SYS_LOG_FILE"
         local sys_time=$(echo "$sys_data" | cut -d',' -f1)
-        echo "[$sys_time] 已写入系统数据到 $SYS_LOG_FILE"
+        echo "[$sys_time] 已写入系统数据到 $SYS_LOG_FILE" | tee -a "$RUN_LOG"
 
         # 处理进程监控（重写后的逻辑）
         if [[ ${#TARGET_PROCS[@]} -gt 0 ]]; then
@@ -211,7 +231,7 @@ main_monitor() {
 
                 # 无有效PID时跳过
                 if [[ ${#current_pids[@]} -eq 0 ]]; then
-                    echo "[$sys_time] 进程 $proc 无有效PID，跳过进程日志写入"
+                    echo "[$sys_time] 进程 $proc 无有效PID，跳过进程日志写入" | tee -a "$RUN_LOG"
                     continue
                 fi
 
@@ -223,7 +243,7 @@ main_monitor() {
                     if [[ ! -f "$proc_log_file" ]]; then
                         local pid_header=$(generate_single_pid_header "$proc" "$pid")
                         echo "$pid_header" > "$proc_log_file"
-                        echo "[$sys_time] 进程 $proc (PID:$pid) 日志已创建：$proc_log_file"
+                        echo "[$sys_time] 进程 $proc (PID:$pid) 日志已创建：$proc_log_file" | tee -a "$RUN_LOG"
                     fi
 
                     # 采集并写入该PID的指标
@@ -231,10 +251,22 @@ main_monitor() {
                     # 仅当指标非空时写入（PID有效才会有数据）
                     if [[ -n "$pid_metrics" ]]; then
                         echo "$pid_metrics" >> "$proc_log_file"
-                        echo "[$sys_time] 已写入进程 $proc (PID:$pid) 数据到 $proc_log_file"
+                        echo "[$sys_time] 已写入进程 $proc (PID:$pid) 数据到 $proc_log_file" | tee -a "$RUN_LOG"
                     fi
                 done
             done
+        fi
+
+        # 检查是否超过最大运行时长
+        if [[ $MAX_DURATION -gt 0 ]]; then
+            local current_time=$(date +%s)
+            local elapsed=$((current_time - start_time))
+            local remaining=$((MAX_DURATION - elapsed))
+            echo "[$sys_time] 已运行 ${elapsed} 秒，剩余 ${remaining} 秒" | tee -a "$RUN_LOG"
+            if [[ $elapsed -ge $MAX_DURATION ]]; then
+                echo "[$sys_time] 达到最大运行时长 ${MAX_DURATION} 秒，监控停止" | tee -a "$RUN_LOG"
+                break
+            fi
         fi
 
         # 等待采样间隔
@@ -264,6 +296,8 @@ param (
     [string]$output = $PSScriptRoot,  # 输出目录
     [Alias("p")]
     [string[]]$proc,                  # 监控进程名
+    [Alias("d")]
+    [int]$duration = 0,               # 最大运行时长（秒，0=无限）
     [Alias("h")]
     [switch]$help
 )
@@ -274,6 +308,7 @@ if ($help) {
     Write-Host "  -f <秒数>    输出间隔（默认5秒，-f 1则1秒输出一次）"
     Write-Host "  -o <路径>    输出目录（默认脚本所在目录）"
     Write-Host "  -p <进程名>  监控进程（多个空格分隔）"
+    Write-Host "  -d <秒数>    最大运行时长（秒，0=无限）"
     Write-Host "  -h           显示帮助"
     exit 0
 }
@@ -441,12 +476,35 @@ function Collect-ProcessMetrics {
 
 # 主监控逻辑（优化：精准控制循环间隔）
 function Main-Monitor {
+    # 运行日志文件路径
+    $RUN_LOG = Join-Path $OUTPUT_DIR "OneClickMonitor.log"
+
+    # 自定义Write-Log函数，同时输出到终端和日志文件
+    function Write-Log {
+        param([string]$Message)
+        $logMsg = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message"
+        Write-Host $logMsg
+        $logMsg | Out-File -FilePath $RUN_LOG -Encoding utf8 -Append
+    }
+
     # 初始化系统日志表头
     if (-not (Test-Path $SYS_LOG_FILE)) {
         Generate-SysHeader | Out-File -FilePath $SYS_LOG_FILE -Encoding utf8
     }
 
-    Write-Host "监控启动：精准间隔${freq}秒 | 按Ctrl+C停止"
+    # 记录开始时间
+    $startTime = Get-Date
+    # 写入启动标记（和弱网统一格式）
+    Write-Log "======== 资源监控脚本启动 ========"
+    Write-Log "采样频率：${freq}秒"
+    if ($duration -gt 0) {
+        Write-Log "最大运行时长：${duration}秒"
+    } else {
+        Write-Log "最大运行时长：无限"
+    }
+    Write-Log "系统数据日志：$SYS_LOG_FILE"
+    Write-Log "运行日志：$RUN_LOG"
+    Write-Log "按 Ctrl+C 停止监控"
     while ($true) {
         $loopStart = Get-Date  # 记录本轮循环开始时间
         $currentTimestamp = $loopStart.ToFileTime()
@@ -454,7 +512,7 @@ function Main-Monitor {
         # 1. 采集系统数据并写入
         $sysResult = Collect-SysMetrics
         $sysResult.Data | Out-File -FilePath $SYS_LOG_FILE -Encoding utf8 -Append
-        Write-Host "[$($sysResult.Time)] 系统数据已写入：$SYS_LOG_FILE"
+        Write-Log "系统数据已写入：$SYS_LOG_FILE"
 
         # 2. 采集进程数据 proc="doubao,pycharm64"
         if ($proc -and $proc.Count -gt 0) {
@@ -465,7 +523,7 @@ function Main-Monitor {
                 $singleP = $singleP.Trim() # 去除首尾空格
                 $pids = Get-LivePids -ProcName $singleP
                 if ($pids.Count -eq 0) {
-                    Write-Host "[$($sysResult.Time)] 进程$singleP无有效PID，跳过"
+                    Write-Log "进程$singleP无有效PID，跳过"
                     continue
                 }
                 # 采集进程数据
@@ -479,7 +537,7 @@ function Main-Monitor {
                         Generate-ProcessHeader -ProcName $singleP -ProcessPID $procData.PID | Out-File -FilePath $procLog -Encoding utf8
                     }
                     $procData.Data | Out-File -FilePath $procLog -Encoding utf8 -Append
-                    Write-Host "[$($sysResult.Time)] 进程$singleP(PID:$($procData.PID))数据已写入：$procLog"
+                    Write-Log "进程$singleP(PID:$($procData.PID))数据已写入：$procLog"
                 }
                 # 汇总当前进程名的所有子进程数据
                 $totalMemMB = 0    # 内存总和
@@ -508,11 +566,23 @@ function Main-Monitor {
                 # 写入汇总日志
                 $summaryData | Out-File -FilePath $summaryLog -Encoding utf8 -Append
                 # 输出汇总日志提示
-                Write-Host "[$($sysResult.Time)] 进程$p汇总数据已写入：$summaryLog"
+                Write-Log "进程$p汇总数据已写入：$summaryLog"
             }
         }
 
-        # 3. 精准计算等待时间（确保总间隔严格等于freq）
+        # 3. 检查是否超过最大运行时长
+        if ($duration -gt 0) {
+            $elapsed = (Get-Date) - $startTime
+            $elapsedSec = [math]::Floor($elapsed.TotalSeconds)
+            $remainingSec = $duration - $elapsedSec
+            Write-Log "已运行 ${elapsedSec} 秒，剩余 ${remainingSec} 秒"
+            if ($elapsed.TotalSeconds -ge $duration) {
+                Write-Log "达到最大运行时长 ${duration} 秒，监控停止"
+                break
+            }
+        }
+
+        # 4. 精准计算等待时间（确保总间隔严格等于freq）
         $loopElapsed = (Get-Date) - $loopStart
         $waitTime = [math]::Max(0, $freq - $loopElapsed.TotalSeconds)
         if ($waitTime -gt 0) {
@@ -552,6 +622,7 @@ SYS_LOG_NAME="system.log"
 SYS_LOG_FILE=""
 # ash不支持数组，改用空格分隔字符串存储进程列表
 TARGET_PROCS=""
+MAX_DURATION=0                         # 最大运行时长（秒），0=无限
 
 # ---------------------- 帮助文档 ----------------------
 usage() {
@@ -560,6 +631,7 @@ usage() {
     echo "  -f, --freq <秒数>        采样频率，默认5秒"
     echo "  -o, --output <文件夹>    输出目录，默认当前目录"
     echo "  -p, --proc <进程名>      多进程空格分隔，如 -p nginx java"
+    echo "  -d, --duration <秒数>    最大运行时长（秒），0=无限运行，默认0"
     echo "  -h, --help               显示帮助"
     exit 1
 }
@@ -582,6 +654,10 @@ while [ $# -gt 0 ]; do
                 TARGET_PROCS="$TARGET_PROCS $1"
                 shift
             done
+            ;;
+        -d|--duration)
+            MAX_DURATION="$2"
+            shift 2
             ;;
         -h|--help)
             usage
@@ -725,14 +801,27 @@ update_log_header() {
 
 # ---------------------- 主循环 ----------------------
 main_monitor() {
-    echo "===== 系统监控启动 ====="
-    echo "采样间隔：${SAMPLE_FREQ}s"
-    echo "系统日志：$SYS_LOG_FILE"
+    # 运行日志文件路径
+    local RUN_LOG="$OUTPUT_DIR/OneClickMonitor.log"
+    local now=$(date '+%Y-%m-%d %H:%M:%S')
+
+    # 写入启动标记（和弱网统一格式）
+    echo "[$now] ======== 资源监控脚本启动 ========" | tee -a "$RUN_LOG"
+    echo "[$now] 采样频率：${SAMPLE_FREQ}秒" | tee -a "$RUN_LOG"
+    echo "[$now] 系统数据日志：$SYS_LOG_FILE" | tee -a "$RUN_LOG"
+    echo "[$now] 运行日志：$RUN_LOG" | tee -a "$RUN_LOG"
     if [ -n "$TARGET_PROCS" ]; then
-        echo "监控进程：$TARGET_PROCS"
+        echo "[$now] 监控进程：$TARGET_PROCS" | tee -a "$RUN_LOG"
     fi
-    echo "Ctrl+C 终止监控"
-    echo "========================"
+    if [ "$MAX_DURATION" -gt 0 ]; then
+        echo "[$now] 最大运行时长：${MAX_DURATION}秒" | tee -a "$RUN_LOG"
+    else
+        echo "[$now] 最大运行时长：无限" | tee -a "$RUN_LOG"
+    fi
+    echo "[$now] 按 Ctrl+C 停止监控" | tee -a "$RUN_LOG"
+
+    # 记录开始时间
+    local start_time=$(date +%s)
 
     while true; do
         update_log_header
@@ -742,13 +831,13 @@ main_monitor() {
         if [ -n "$sys_line" ]; then
             echo "$sys_line" >> "$SYS_LOG_FILE"
             local cur_time=$(echo "$sys_line" | cut -d',' -f1)
-            echo "[$cur_time] 写入系统指标"
+            echo "[$cur_time] 写入系统指标" | tee -a "$RUN_LOG"
 
             # ash无数组，直接遍历空格分隔的进程字符串
             for proc in $TARGET_PROCS; do
                 pids=$(get_proc_current_pids "$proc")
                 if [ -z "$pids" ]; then
-                    echo "[$cur_time] $proc 无运行PID"
+                    echo "[$cur_time] $proc 无运行PID" | tee -a "$RUN_LOG"
                     continue
                 fi
                 for pid in $pids; do
@@ -759,6 +848,19 @@ main_monitor() {
                 done
             done
         fi
+
+        # 检查是否超过最大运行时长
+        if [ "$MAX_DURATION" -gt 0 ]; then
+            local current_time=$(date +%s)
+            local elapsed=$((current_time - start_time))
+            local remaining=$((MAX_DURATION - elapsed))
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] 已运行 ${elapsed} 秒，剩余 ${remaining} 秒" | tee -a "$RUN_LOG"
+            if [ $elapsed -ge $MAX_DURATION ]; then
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] 达到最大运行时长 ${MAX_DURATION} 秒，监控停止" | tee -a "$RUN_LOG"
+                break
+            fi
+        fi
+
         sleep "${SAMPLE_FREQ}"
     done
 }

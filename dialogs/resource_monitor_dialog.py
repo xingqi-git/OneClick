@@ -158,6 +158,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         # 获取按钮名称，用于日志前缀
         self.button_name = self.parent.sc_buttons[button_id]['config'].get('指令名称', '资源监控')
         self.g_windows = []  # 保存所有图表窗口的引用
+        self.last_log_size = 0  # 用于记录上次读取日志的位置
         from monitor_scripts import MONITOR_SH, MONITOR_SH_2, MONITOR_PS1
         self.monitor_sh_normal = MONITOR_SH
         self.monitor_sh_embedded = MONITOR_SH_2
@@ -168,6 +169,14 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         # 按钮逻辑和窗口默认值
         self.process_input_plainTextEdit.setPlainText(self.parent.sc_buttons[button_id]['config']['进程'])
         self.freq_lineEdit.setText(self.parent.sc_buttons[button_id]['config']['采样频率'])
+        
+        # 监控时长回显
+        duration_value = self.parent.sc_buttons[button_id]['config'].get('监控时长', '')
+        duration_unit = self.parent.sc_buttons[button_id]['config'].get('监控时长单位', '天')
+        self.duration_lineEdit.setText(duration_value)
+        # 设置单位下拉框
+        unit_index_map = {'秒': 0, '分钟': 1, '小时': 2, '天': 3}
+        self.duration_comboBox.setCurrentIndex(unit_index_map.get(duration_unit, 3))
         
         # 根据是本机监控还是服务器监控，更新UI显示的监控内容
         if self.parent.sc_buttons[button_id]['config']['IP'] == '':
@@ -218,7 +227,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         return self.monitor_sh_normal
 
     def on_local_button_click(self):
-        self.update_status(('本机', '未知'))
+        self.update_status(('本机', '未知', ''))
 
         script_name = "OneClickMonitor.ps1"
 
@@ -239,10 +248,29 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                                     pids.append(str(proc.info['pid']))
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
+                
+                # ============ 1. 判断脚本状态 ============
                 if not pids:
-                    worker.info_signal.emit(('本机', '无监控'))
+                    script_status = "无监控"
                 else:
-                    worker.info_signal.emit(('本机', '监控中'))
+                    script_status = "监控中"
+
+                # ============ 2. 读取运行日志（取最近10000行，控制内存） ============
+                log_content = ""
+                local_log_path = os.path.join(self.monitor_data_path, "Monitor", "OneClickMonitor.log")
+                try:
+                    if os.path.exists(local_log_path):
+                        with open(local_log_path, 'r', encoding='utf-8', errors='ignore') as f:
+                            lines = f.readlines()
+                            # 只取最后10000行
+                            if len(lines) > 10000:
+                                lines = lines[-10000:]
+                            log_content = ''.join(lines).strip()
+                except Exception:
+                    pass  # 日志读取失败不影响
+                
+                # 发送信号更新 UI
+                worker.info_signal.emit(('本机', script_status, log_content))
 
         def on_thread_finished():
             thread.deleteLater()
@@ -279,12 +307,13 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         thread.start()
 
     def on_ssh_button_click(self):
-        self.update_status(('连接中...', '未知'))
+        self.update_status(('连接中...', '未知', ''))
 
         ip = self.parent.sc_buttons[self.button_id]['config']['IP']
         port = self.parent.sc_buttons[self.button_id]['config']['端口']
         username = self.parent.sc_buttons[self.button_id]['config']['用户名']
         password = self.parent.sc_buttons[self.button_id]['config']['密码']
+        work_dir = self.parent.sc_buttons[self.button_id]['config'].get('文件暂存路径', '')
 
         ssh_client = ssh_tools.SSHTools()
         ssh_client.ip = ip
@@ -301,24 +330,41 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 if not ssh_client.is_connected():
                     result = ssh_client.connect()
                     if not result:
-                        worker.info_signal.emit(("连接中...", "未知"))
+                        worker.info_signal.emit(("连接中...", "未知", ""))
                         continue
                 try:
                     # 检查是否有监控 - 用基础ps命令，兼容嵌入式BusyBox
                     cmd = "ps | grep OneClickMonitor | grep -v grep | wc -l"
                     stdin, stdout, stderr = ssh_client.ssh.exec_command(cmd)
                     if stderr.read():
-                        worker.info_signal.emit(("已连接", "未知"))
+                        worker.info_signal.emit(("已连接", "未知", ""))
+                        continue
                     monitor_count = stdout.read().decode('utf-8').strip()
                     if not monitor_count:
-                        worker.info_signal.emit(("已连接", "未知"))
+                        worker.info_signal.emit(("已连接", "未知", ""))
+                        continue
+                    
+                    # ============ 1. 判断脚本状态 ============
                     if monitor_count[-1] == "0":
-                        worker.info_signal.emit(("已连接", "无监控"))
+                        script_status = "无监控"
                     else:
-                        worker.info_signal.emit(("已连接", "监控中"))
+                        script_status = "监控中"
+
+                    # ============ 2. 读取运行日志（取最近10000行，控制流量） ============
+                    log_content = ""
+                    if work_dir:
+                        try:
+                            remote_log_path = f"{work_dir}/OneClick/Monitor/OneClickMonitor.log"
+                            stdin, stdout, stderr = ssh_client.ssh.exec_command(f"tail -n 10000 {remote_log_path} 2>/dev/null")
+                            log_content = stdout.read().decode('utf-8').strip()
+                        except Exception:
+                            pass  # 日志读取失败不影响
+                    
+                    # 发送信号更新 UI
+                    worker.info_signal.emit(("已连接", script_status, log_content))
                 except Exception as e:
                     worker.log_signal.emit(f'检查监控状态失败: {e}')
-                    worker.info_signal.emit(("连接中...", "未知"))
+                    worker.info_signal.emit(("连接中...", "未知", ""))
                     continue
 
         def on_thread_finished():
@@ -395,6 +441,25 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                         worker.info_signal.emit(("提示", "采样频率必须是正整数"))
                         return False
 
+                # 添加时长参数
+                duration_text = self.duration_lineEdit.text().strip()
+                if duration_text:
+                    try:
+                        duration = int(duration_text)
+                        duration_unit = self.duration_comboBox.currentText()
+                        # 转换为秒
+                        if duration_unit == '分钟':
+                            duration = duration * 60
+                        elif duration_unit == '小时':
+                            duration = duration * 3600
+                        elif duration_unit == '天':
+                            duration = duration * 86400
+                        cmd.append('-d')
+                        cmd.append(str(duration))
+                    except ValueError:
+                        worker.info_signal.emit(("提示", "监控时长必须是正整数"))
+                        return False
+
                 creation_flags = 0
                 if sys.platform == "win32":
                     creation_flags = subprocess.CREATE_NO_WINDOW  # 隐藏控制台窗口
@@ -423,6 +488,9 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                         if result.poll() is None:
                             AutoCloseMessageBox("提示", "监控已经开始，关闭软件不会停止监控", 2000, self, 'start_monitor').exec_()
                             self._log("本机监控已经开始")
+                            # 重置日志位置，下次读取会读取完整新日志
+                            self.last_log_size = 0
+                            self.log_textBrowser.clear()
                         else:
                             # 失败：普通提示框，需要手动启用按钮
                             self.message_info_box(("提示", f"监控脚本启动失败{result.returncode}"))
@@ -528,6 +596,27 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                         self.message_info_box(("提示", f"采样频率必须是正整数{e}"))
                         self.set_all_buttons_enable()
                         return
+                
+                # 检查是否设置了监控时长
+                duration_text = self.duration_lineEdit.text().strip()
+                if duration_text:
+                    try:
+                        duration = int(duration_text)
+                        duration_unit = self.duration_comboBox.currentText()
+                        # 转换为秒
+                        if duration_unit == '秒':
+                            pass
+                        elif duration_unit == '分钟':
+                            duration = duration * 60
+                        elif duration_unit == '小时':
+                            duration = duration * 3600
+                        elif duration_unit == '天':
+                            duration = duration * 86400
+                        monitor_cmd += f" -d {duration}"
+                    except Exception as e:
+                        self.message_info_box(("提示", f"监控时长必须是正整数{e}"))
+                        self.set_all_buttons_enable()
+                        return
             except Exception as e:
                 self.message_info_box(("提示", f"请检查指令内容{e}"))
                 self.set_all_buttons_enable()
@@ -597,6 +686,9 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 if result:
                     AutoCloseMessageBox("提示", "监控已经开始，关闭软件不会停止监控", 2000, self, 'start_monitor').exec_()
                     self._log(f"{ip}监控开始")
+                    # 重置日志位置，下次读取会读取完整新日志
+                    self.last_log_size = 0
+                    self.log_textBrowser.clear()
                 else:
                     # 失败情况（普通提示框已由 worker.info_signal 弹出），手动启用按钮
                     self._operation_running = False
@@ -669,6 +761,17 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     except Exception as e:
                         worker.info_signal.emit(("错误", f"终止进程 {pid} 时出错: {e}"))
                         return False
+                
+                # 写入停止日志
+                local_log_path = os.path.join(self.monitor_data_path, "Monitor", "OneClickMonitor.log")
+                try:
+                    from datetime import datetime
+                    stop_msg = f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 资源监控脚本已终止\n'
+                    with open(local_log_path, 'a', encoding='utf-8') as f:
+                        f.write(stop_msg)
+                except Exception:
+                    pass  # 写日志失败不影响停止功能
+                
                 return True
 
             def on_worker_finished(result):
@@ -746,6 +849,14 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     for pid in pids:
                         if pid.isdigit():
                             ssh_client.ssh.exec_command(f"kill -9 {pid}")
+                    
+                    # 写入停止日志
+                    work_dir = self.parent.sc_buttons[self.button_id]['config'].get('文件暂存路径', '')
+                    if work_dir:
+                        remote_log_path = f"{work_dir}/OneClick/Monitor/OneClickMonitor.log"
+                        ssh_client.ssh.exec_command(
+                            f'echo "[$(date "+%Y-%m-%d %H:%M:%S")] 资源监控脚本已终止" >> {remote_log_path}'
+                        )
                     
                     ssh_client.disconnect()
                     if err:
@@ -1091,11 +1202,22 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
     def update_status(self, data):
         """
         更新状态
-        :param data: 状态列表, 0: ssh状态, 1: 监控状态
+        :param data: 状态列表, 0: ssh状态, 1: 监控状态, 2: 日志内容(完整内容)
         :return:
         """
         self.ssh_stutas_label.setText(data[0])
         self.monitor_stutas_label.setText(data[1])
+        
+        # 日志完整重新显示（方案A）
+        if len(data) > 2 and data[2]:
+            self.log_textBrowser.setPlainText(data[2])
+            # 自动滚动到底部
+            scrollbar = self.log_textBrowser.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
+        elif len(data) > 2:
+            # 日志为空时清空显示
+            self.log_textBrowser.clear()
+        
         # 有操作运行时不更新按钮状态，等操作完成后再更新
         if not getattr(self, '_operation_running', False):
             # 停止按钮可用性控制：只有监控中时可用
@@ -1251,10 +1373,13 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             self.message_info_box(("提示", "操作中，请稍后"))
             return
 
-        # 保存数据，下次打开自动填入
+        # 保存数据到配置文件，下次打开自动填入
         self.parent.sc_buttons[self.button_id]['config']['进程'] = self.process_input_plainTextEdit.toPlainText()
         self.parent.sc_buttons[self.button_id]['config']['采样频率'] = self.freq_lineEdit.text()
+        self.parent.sc_buttons[self.button_id]['config']['监控时长'] = self.duration_lineEdit.text()
+        self.parent.sc_buttons[self.button_id]['config']['监控时长单位'] = self.duration_comboBox.currentText()
         self.parent.sc_buttons[self.button_id]['config']['嵌入式'] = self.embedded_checkBox.isChecked()
+        self.parent.save_config()
 
         # 安全结束监控线程
         if self.work_thread_id is not None and self.work_thread_id in self.parent.sc_threads:

@@ -434,21 +434,11 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
                         nics = nic_output.split('\n')
                         nics = [n.strip() for n in nics if n.strip()]
 
-                    # ============ 3. 读取运行日志（增量读取） ============
+                    # ============ 3. 读取运行日志（取最近10000行，控制流量） ============
                     log_content = ""
                     try:
-                        # 先获取文件大小
-                        stdin, stdout, stderr = ssh_client.ssh.exec_command(f"wc -c < {self.remote_log_path} 2>/dev/null || echo 0")
-                        current_size_str = stdout.read().decode().strip()
-                        if current_size_str and current_size_str.isdigit():
-                            current_size = int(current_size_str)
-                            if current_size > self.last_log_size:
-                                # 增量读取
-                                stdin, stdout, stderr = ssh_client.ssh.exec_command(
-                                    f"tail -c +{self.last_log_size + 1} {self.remote_log_path} 2>/dev/null"
-                                )
-                                log_content = stdout.read().decode('utf-8').strip()
-                                self.last_log_size = current_size
+                        stdin, stdout, stderr = ssh_client.ssh.exec_command(f"tail -n 10000 {self.remote_log_path} 2>/dev/null")
+                        log_content = stdout.read().decode('utf-8').strip()
                     except Exception:
                         pass  # 日志读取失败不影响
 
@@ -518,12 +508,15 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
                 if idx >= 0:
                     self.nic_comboBox.setCurrentIndex(idx)
 
-        # 如果有日志内容，追加显示
+        # 日志完整重新显示（方案A）
         if len(status) > 3 and status[3]:
-            self.log_textBrowser.append(status[3])
+            self.log_textBrowser.setPlainText(status[3])
             # 自动滚动到底部
             scrollbar = self.log_textBrowser.verticalScrollBar()
             scrollbar.setValue(scrollbar.maximum())
+        elif len(status) > 3:
+            # 日志为空时清空显示
+            self.log_textBrowser.clear()
 
         # 有操作运行时不更新按钮状态，等操作完成后再更新
         if not self._operation_running:
