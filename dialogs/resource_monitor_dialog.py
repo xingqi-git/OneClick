@@ -158,7 +158,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         # 获取按钮名称，用于日志前缀
         self.button_name = self.parent.sc_buttons[button_id]['config'].get('指令名称', '资源监控')
         self.g_windows = []  # 保存所有图表窗口的引用
-        self.last_log_size = 0  # 用于记录上次读取日志的位置
+        self._last_log_content = ""  # 缓存上一次的日志内容
         from monitor_scripts import MONITOR_SH, MONITOR_SH_2, MONITOR_PS1
         self.monitor_sh_normal = MONITOR_SH
         self.monitor_sh_embedded = MONITOR_SH_2
@@ -508,9 +508,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                         if result.poll() is None:
                             AutoCloseMessageBox("提示", "监控已经开始，关闭软件不会停止监控", 2000, self, 'start_monitor').exec_()
                             self._log("本机监控已经开始")
-                            # 重置日志位置，下次读取会读取完整新日志
-                            self.last_log_size = 0
-                            self.log_textBrowser.clear()
                         else:
                             # 失败：普通提示框，需要手动启用按钮
                             self.message_info_box(("提示", f"监控脚本启动失败{result.returncode}"))
@@ -706,9 +703,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 if result:
                     AutoCloseMessageBox("提示", "监控已经开始，关闭软件不会停止监控", 2000, self, 'start_monitor').exec_()
                     self._log(f"{ip}监控开始")
-                    # 重置日志位置，下次读取会读取完整新日志
-                    self.last_log_size = 0
-                    self.log_textBrowser.clear()
                 else:
                     # 失败情况（普通提示框已由 worker.info_signal 弹出），手动启用按钮
                     self._operation_running = False
@@ -945,6 +939,8 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     local_monitor_path = self.monitor_data_path + "/Monitor"
                     shutil.rmtree(local_monitor_path)
                     self._log(f"本机监控数据已删除{local_monitor_path}")
+                    self.log_textBrowser.clear()
+                    self._last_log_content = ""  # 同步清空缓存
                     AutoCloseMessageBox("提示", "本机监控数据已清除", 2000, self).exec_()
                 except FileNotFoundError:
                     AutoCloseMessageBox("提示", "没有本机监控数据，无需删除", 2000, self).exec_()
@@ -980,6 +976,8 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     local_monitor_path = self.monitor_data_path + "/Monitor"
                     shutil.rmtree(local_monitor_path)
                     self._log(f"本机监控数据已删除{local_monitor_path}")
+                    self.log_textBrowser.clear()
+                    self._last_log_content = ""  # 同步清空缓存
                     AutoCloseMessageBox("提示", "本地监控数据已清除", 2000, self).exec_()
                 except FileNotFoundError:
                     AutoCloseMessageBox("提示", "没有本机监控数据，无需删除", 2000, self).exec_()
@@ -1018,6 +1016,8 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     local_monitor_path = self.monitor_data_path + "/Monitor"
                     shutil.rmtree(local_monitor_path)
                     self._log(f"本机监控数据已删除{local_monitor_path}")
+                    self.log_textBrowser.clear()
+                    self._last_log_content = ""  # 同步清空缓存
                 except FileNotFoundError:
                     pass
                 except Exception as e:
@@ -1061,11 +1061,15 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 
                 def on_clean_cmd_finished(result):
                     if clean_local and clean_server:
+                        self.log_textBrowser.clear()
+                        self._last_log_content = ""  # 同步清空缓存
                         AutoCloseMessageBox("提示", "本地和服务器监控数据已清除", 2000, self).exec_()
                     elif clean_local:
                         AutoCloseMessageBox("提示", "本地监控数据已清除", 2000, self).exec_()
                     elif clean_server:
                         if result:
+                            self.log_textBrowser.clear()
+                            self._last_log_content = ""  # 同步清空缓存
                             AutoCloseMessageBox("提示", f"{ip}服务器监控数据已清除", 2000, self).exec_()
                             self._log(f"{ip}监控数据已清空")
                         else:
@@ -1228,15 +1232,33 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         self.ssh_stutas_label.setText(data[0])
         self.monitor_stutas_label.setText(data[1])
         
-        # 日志完整重新显示（方案A）
-        if len(data) > 2 and data[2]:
-            self.log_textBrowser.setPlainText(data[2])
-            # 自动滚动到底部
-            scrollbar = self.log_textBrowser.verticalScrollBar()
-            scrollbar.setValue(scrollbar.maximum())
-        elif len(data) > 2:
-            # 日志为空时清空显示
-            self.log_textBrowser.clear()
+        # 日志智能更新
+        if len(data) > 2:
+            current_log = data[2]
+            if current_log == self._last_log_content:
+                # 完全一样，不更新
+                pass
+            elif current_log.startswith(self._last_log_content):
+                    # 新内容以旧内容开头，只追加差异
+                    diff = current_log[len(self._last_log_content):]
+                    # 去掉首尾多余的空白字符，避免重复换行
+                    diff = diff.strip()
+                    if diff:
+                        self.log_textBrowser.append(diff)
+                        # 自动滚动到底部
+                        scrollbar = self.log_textBrowser.verticalScrollBar()
+                        scrollbar.setValue(scrollbar.maximum())
+                    self._last_log_content = current_log
+            else:
+                # 其他情况，全量更新
+                if current_log:
+                    self.log_textBrowser.setPlainText(current_log)
+                    # 自动滚动到底部
+                    scrollbar = self.log_textBrowser.verticalScrollBar()
+                    scrollbar.setValue(scrollbar.maximum())
+                else:
+                    self.log_textBrowser.clear()
+                self._last_log_content = current_log
         
         # 有操作运行时不更新按钮状态，等操作完成后再更新
         if not getattr(self, '_operation_running', False):

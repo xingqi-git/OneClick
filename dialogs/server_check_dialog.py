@@ -62,10 +62,9 @@ class ServerCheckDialog(QDialog, server_check_dlg.Ui_Dialog):
         self.save_pushButton.clicked.connect(self.create_sc)
         self.reset_pushButton.clicked.connect(self.reset)
         self.close_pushButton.clicked.connect(self.close)
-        self.add_col_pushButton.clicked.connect(self.show_add_server_dialog)
-        self.del_col_pushButton.clicked.connect(self.delete_selected_column)
+        self.add_server_pushButton.clicked.connect(self.show_add_server_dialog)
         self.add_row_pushButton.clicked.connect(self.add_command_echo_row)
-        self.del_row_pushButton.clicked.connect(self.delete_command_echo_row)
+        self.del_selected_pushButton.clicked.connect(self.delete_selected)
 
         # 初始化表格
         self.init_table()
@@ -221,6 +220,10 @@ class ServerCheckDialog(QDialog, server_check_dlg.Ui_Dialog):
             hlayout.addWidget(QLabel("分钟"))
             hlayout.addStretch()
             layout.addLayout(hlayout)
+            
+            sync_check = QCheckBox("自动同步时间")
+            sync_check.setChecked(False)
+            layout.addWidget(sync_check)
         elif item_name.startswith("命令回显"):
             # 输入命令
             cmd_line = QLineEdit()
@@ -238,23 +241,6 @@ class ServerCheckDialog(QDialog, server_check_dlg.Ui_Dialog):
 
         widget.setLayout(layout)
         self.tableWidget.setCellWidget(row, col, widget)
-
-    def delete_selected_column(self):
-        """删除选中的列"""
-        selected_columns = set()
-        selected_indexes = self.tableWidget.selectedIndexes()
-        
-        for index in selected_indexes:
-            selected_columns.add(index.column())
-        
-        if not selected_columns:
-            QMessageBox.warning(self, "提示", "请先选择一列")
-            return
-        
-        # 删除列（从大到小删除，避免索引混乱）
-        columns_to_delete = sorted(list(selected_columns), reverse=True)
-        for col in columns_to_delete:
-            self.tableWidget.removeColumn(col)
 
     def add_command_echo_row(self):
         """添加命令回显行"""
@@ -283,24 +269,43 @@ class ServerCheckDialog(QDialog, server_check_dlg.Ui_Dialog):
         for col in range(self.tableWidget.columnCount()):
             self.create_check_widget(row_idx, col)
 
-    def delete_command_echo_row(self):
-        """删除选中的行（仅命令回显行）"""
-        selected_rows = set()
+    def delete_selected(self):
+        """删除选中的行或列"""
         selected_indexes = self.tableWidget.selectedIndexes()
         
-        for index in selected_indexes:
-            row = index.row()
-            item_name = self.tableWidget.verticalHeaderItem(row).text()
-            if item_name.startswith("命令回显"):
-                selected_rows.add(row)
-        
-        if not selected_rows:
-            QMessageBox.warning(self, "提示", "请先选择命令回显行")
+        if not selected_indexes:
+            QMessageBox.warning(self, "提示", "请通过点击表头选中完整的一行或者一列")
             return
         
-        # 删除行（从大到小删除，避免索引混乱）
-        rows_to_delete = sorted(list(selected_rows), reverse=True)
-        for row in rows_to_delete:
+        # 收集选中的行和列
+        selected_rows = set()
+        selected_columns = set()
+        
+        for index in selected_indexes:
+            selected_rows.add(index.row())
+            selected_columns.add(index.column())
+        
+        # 检查是否是完整的整行选择（所有列的这一行都被选中）
+        is_full_row_selection = len(selected_rows) == 1 and len(selected_indexes) == self.tableWidget.columnCount()
+        # 检查是否是完整的整列选择（所有行的这一列都被选中）
+        is_full_col_selection = len(selected_columns) == 1 and len(selected_indexes) == self.tableWidget.rowCount()
+        
+        if not is_full_row_selection and not is_full_col_selection:
+            QMessageBox.warning(self, "提示", "请通过点击表头选中完整的一行或者一列")
+            return
+        
+        if is_full_col_selection:
+            # 删除列
+            col = next(iter(selected_columns))
+            self.tableWidget.removeColumn(col)
+        elif is_full_row_selection:
+            # 删除行
+            row = next(iter(selected_rows))
+            # 前5行不可删除
+            if row < 5:
+                QMessageBox.warning(self, "提示", "前5行不可删除")
+                return
+            
             self.tableWidget.removeRow(row)
 
     def create_sc(self):
@@ -358,6 +363,11 @@ class ServerCheckDialog(QDialog, server_check_dlg.Ui_Dialog):
             spin = widget.findChild(QSpinBox)
             if spin:
                 config['允许误差'] = spin.value()
+            check_boxes = widget.findChildren(QCheckBox)
+            for cb in check_boxes:
+                if cb.text() == "自动同步时间":
+                    config['自动同步'] = cb.isChecked()
+                    break
         elif check_item.startswith("命令回显"):
             line_edits = widget.findChildren(QLineEdit)
             combo = widget.findChild(QComboBox)
@@ -372,9 +382,11 @@ class ServerCheckDialog(QDialog, server_check_dlg.Ui_Dialog):
     def reset(self):
         """重置"""
         self.sc_name_lineEdit.clear()
-        self.tableWidget.clear()
+        self.sc_name_lineEdit.setText("服务器检查：")
+        # 不要用clear()，会清除表头
         self.tableWidget.setRowCount(0)
         self.tableWidget.setColumnCount(0)
+        self.sc_cfg = {}
         self.init_table()
     
     def edit_sc(self, button_id):
@@ -392,6 +404,36 @@ class ServerCheckDialog(QDialog, server_check_dlg.Ui_Dialog):
             # 加载服务器检查配置
             if '服务器检查配置' in config:
                 server_configs = config['服务器检查配置']
+                
+                # 1. 先收集所有需要的检查项 - 只从配置里收集，不要强制加默认项
+                all_check_items = set()
+                for checks in server_configs.values():
+                    all_check_items.update(checks.keys())
+                
+                # 2. 先把默认的非命令回显项加进去（如果配置里有的话）
+                default_core_items = [item for item in self.DEFAULT_CHECK_ITEMS 
+                                     if item in all_check_items and not item.startswith("命令回显")]
+                
+                # 3. 如果配置里没有任何核心检查项，就加默认的
+                if not default_core_items:
+                    default_core_items = [item for item in self.DEFAULT_CHECK_ITEMS 
+                                         if not item.startswith("命令回显")]
+                
+                # 4. 收集命令回显项
+                command_items = sorted([item for item in all_check_items if item.startswith("命令回显")], 
+                                      key=lambda x: int(x.replace("命令回显", "")))
+                
+                final_check_items = default_core_items + command_items
+                
+                # 5. 如果最终没有检查项（不太可能），就用默认的
+                if not final_check_items:
+                    final_check_items = self.DEFAULT_CHECK_ITEMS
+                
+                # 6. 重建表格行
+                self.tableWidget.setRowCount(len(final_check_items))
+                self.tableWidget.setVerticalHeaderLabels(final_check_items)
+                
+                # 7. 添加服务器列并填充数据
                 for server_name, checks in server_configs.items():
                     self.add_server_column(server_name)
                     
@@ -422,6 +464,12 @@ class ServerCheckDialog(QDialog, server_check_dlg.Ui_Dialog):
             spin = widget.findChild(QSpinBox)
             if spin:
                 spin.setValue(config['允许误差'])
+        if '自动同步' in config:
+            check_boxes = widget.findChildren(QCheckBox)
+            for cb in check_boxes:
+                if cb.text() == "自动同步时间":
+                    cb.setChecked(config['自动同步'])
+                    break
         if '命令' in config or '期望内容' in config or '期望类型' in config:
             line_edits = widget.findChildren(QLineEdit)
             combo = widget.findChild(QComboBox)

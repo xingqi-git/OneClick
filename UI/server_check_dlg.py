@@ -1,4 +1,5 @@
 
+
 # -*- coding: utf-8 -*-
 
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -17,23 +18,18 @@ class Ui_Dialog(object):
         self.label_config.setObjectName("label_config")
         self.verticalLayout_2.addWidget(self.label_config)
         
-        # 工具栏（添加列、添加行、删除行、删除列）
+        # 工具栏（添加服务器、添加命令回显行、删除选中）
         self.horizontalLayout_toolbar = QtWidgets.QHBoxLayout()
         self.horizontalLayout_toolbar.setObjectName("horizontalLayout_toolbar")
-        self.add_col_pushButton = QtWidgets.QPushButton(Dialog)
-        self.add_col_pushButton.setObjectName("add_col_pushButton")
-        self.horizontalLayout_toolbar.addWidget(self.add_col_pushButton)
-        self.del_col_pushButton = QtWidgets.QPushButton(Dialog)
-        self.del_col_pushButton.setObjectName("del_col_pushButton")
-        self.horizontalLayout_toolbar.addWidget(self.del_col_pushButton)
-        spacer1 = QtWidgets.QSpacerItem(20, 20, QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Minimum)
-        self.horizontalLayout_toolbar.addItem(spacer1)
+        self.add_server_pushButton = QtWidgets.QPushButton(Dialog)
+        self.add_server_pushButton.setObjectName("add_server_pushButton")
+        self.horizontalLayout_toolbar.addWidget(self.add_server_pushButton)
         self.add_row_pushButton = QtWidgets.QPushButton(Dialog)
         self.add_row_pushButton.setObjectName("add_row_pushButton")
         self.horizontalLayout_toolbar.addWidget(self.add_row_pushButton)
-        self.del_row_pushButton = QtWidgets.QPushButton(Dialog)
-        self.del_row_pushButton.setObjectName("del_row_pushButton")
-        self.horizontalLayout_toolbar.addWidget(self.del_row_pushButton)
+        self.del_selected_pushButton = QtWidgets.QPushButton(Dialog)
+        self.del_selected_pushButton.setObjectName("del_selected_pushButton")
+        self.horizontalLayout_toolbar.addWidget(self.del_selected_pushButton)
         spacerItem = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.horizontalLayout_toolbar.addItem(spacerItem)
         self.verticalLayout_2.addLayout(self.horizontalLayout_toolbar)
@@ -91,12 +87,10 @@ class Ui_Dialog(object):
         _translate = QtCore.QCoreApplication.translate
         Dialog.setWindowTitle(_translate("Dialog", "添加<服务器检查>配置"))
         self.label_config.setText(_translate("Dialog", "服务器检查配置"))
-        self.add_col_pushButton.setText(_translate("Dialog", "添加服务器列"))
-        self.del_col_pushButton.setText(_translate("Dialog", "删除选中列"))
+        self.add_server_pushButton.setText(_translate("Dialog", "添加服务器"))
         self.add_row_pushButton.setText(_translate("Dialog", "添加命令回显行"))
-        self.del_row_pushButton.setText(_translate("Dialog", "删除命令回显行"))
+        self.del_selected_pushButton.setText(_translate("Dialog", "删除选中"))
         self.label_8.setText(_translate("Dialog", "快捷按钮名称"))
         self.save_pushButton.setText(_translate("Dialog", "生成快捷按钮"))
         self.reset_pushButton.setText(_translate("Dialog", "重置"))
         self.close_pushButton.setText(_translate("Dialog", "关闭"))
-

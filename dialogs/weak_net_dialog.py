@@ -221,7 +221,7 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
         self.lookup_thread_id = None
         self._operation_running = False  # 操作进行中，防止状态检查线程更新按钮
         self._can_close = True  # 用于阻止关闭窗口
-        self.last_log_size = 0  # 记录上次读取的日志大小，用于增量读取
+        self._last_log_content = ""  # 缓存上一次的日志内容
 
         # 从配置恢复
         cfg = self.parent.sc_buttons[self.button_id]['config']
@@ -517,15 +517,33 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
                 if idx >= 0:
                     self.nic_comboBox.setCurrentIndex(idx)
 
-        # 日志完整重新显示（方案A）
-        if len(status) > 3 and status[3]:
-            self.log_textBrowser.setPlainText(status[3])
-            # 自动滚动到底部
-            scrollbar = self.log_textBrowser.verticalScrollBar()
-            scrollbar.setValue(scrollbar.maximum())
-        elif len(status) > 3:
-            # 日志为空时清空显示
-            self.log_textBrowser.clear()
+        # 日志智能更新
+        if len(status) > 3:
+            current_log = status[3]
+            if current_log == self._last_log_content:
+                # 完全一样，不更新
+                pass
+            elif current_log.startswith(self._last_log_content):
+                    # 新内容以旧内容开头，只追加差异
+                    diff = current_log[len(self._last_log_content):]
+                    # 去掉首尾多余的空白字符，避免重复换行
+                    diff = diff.strip()
+                    if diff:
+                        self.log_textBrowser.append(diff)
+                        # 自动滚动到底部
+                        scrollbar = self.log_textBrowser.verticalScrollBar()
+                        scrollbar.setValue(scrollbar.maximum())
+                    self._last_log_content = current_log
+            else:
+                # 其他情况，全量更新
+                if current_log:
+                    self.log_textBrowser.setPlainText(current_log)
+                    # 自动滚动到底部
+                    scrollbar = self.log_textBrowser.verticalScrollBar()
+                    scrollbar.setValue(scrollbar.maximum())
+                else:
+                    self.log_textBrowser.clear()
+                self._last_log_content = current_log
 
         # 有操作运行时不更新按钮状态，等操作完成后再更新
         if not self._operation_running:
@@ -694,9 +712,6 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
                 self._original_rules = self._get_table_rules()
                 self._original_loop = self.loop_lineEdit.text()
                 self._original_nic = self.saved_nic
-                # 重置日志位置，下次读取会读取完整新日志
-                self.last_log_size = 0
-                self.log_textBrowser.clear()
             else:
                 # 失败情况（普通提示框已由 worker.info_signal 弹出），手动启用按钮
                 self._operation_running = False
@@ -861,7 +876,7 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
         def on_finished(result):
             if result:
                 self.log_textBrowser.clear()
-                self.last_log_size = 0
+                self._last_log_content = ""  # 同步清空缓存
                 AutoCloseMessageBox("提示", "服务器日志已清除", 2000, self).exec_()
                 self._log("服务器日志已清除")
             else:

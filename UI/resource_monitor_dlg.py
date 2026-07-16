@@ -71,7 +71,6 @@ class Ui_Dialog(object):
         self.process_input_plainTextEdit = QtWidgets.QPlainTextEdit(Dialog)
         self.process_input_plainTextEdit.setPlainText("")
         self.process_input_plainTextEdit.setObjectName("process_input_plainTextEdit")
-        self.process_input_plainTextEdit.setMaximumHeight(60)
         self.process_names_horizontalLayout.addWidget(self.process_input_plainTextEdit)
         self.verticalLayout.addLayout(self.process_names_horizontalLayout)
         

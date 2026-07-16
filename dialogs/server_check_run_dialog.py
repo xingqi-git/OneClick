@@ -154,6 +154,11 @@ class ServerCheckRunDialog(QDialog, server_check_run_dlg.Ui_Dialog):
             hlayout.addWidget(QLabel("分钟"))
             hlayout.addStretch()
             layout.addLayout(hlayout)
+            
+            sync_check = QCheckBox("自动同步时间")
+            sync_check.setChecked(config.get('自动同步', False))
+            sync_check.setEnabled(False)
+            layout.addWidget(sync_check)
         elif check_item.startswith("命令回显"):
             cmd_line = QLineEdit()
             cmd_line.setText(config.get('命令', ''))
@@ -189,6 +194,17 @@ class ServerCheckRunDialog(QDialog, server_check_run_dlg.Ui_Dialog):
 
     def start_check(self):
         """开始检查（照搬资源监控：闭包 + OneClickWorker 模式）"""
+        # 先清理旧的线程和worker
+        if hasattr(self, 'thread') and self.thread:
+            if self.thread.isRunning():
+                self.stop_flag = True
+                self.thread.quit()
+                if not self.thread.wait(3000):  # 等待最多3秒
+                    self.thread.terminate()
+                    self.thread.wait()
+        self.worker = None
+        self.thread = None
+        
         self.is_running = True
         self.stop_flag = False
         self.finished_count = 0
@@ -337,11 +353,32 @@ class ServerCheckRunDialog(QDialog, server_check_run_dlg.Ui_Dialog):
             # ================ 4. 系统时间检查 ================
             elif check_item == "系统时间":
                 allow_minutes = int(check_config.get('允许误差', 5))
+                auto_sync = check_config.get('自动同步', False)
+                
                 ok, diff = self._check_system_time(ssh_client)
-                if ok:
-                    self.worker.info_signal.emit(("STATUS", row_idx, col_idx, f"✔️ 偏差{diff:.1f}分", True))
+                is_ok = (diff <= allow_minutes)
+                
+                if not is_ok and auto_sync:
+                    # 尝试同步时间
+                    sync_success = self._sync_server_time(ssh_client, server_user, server_pass)
+                    
+                    if sync_success:
+                        # 同步成功，等待一下让时间生效，再重新检查（只检查不显示）
+                        time.sleep(0.5)
+                        ok, new_diff = self._check_system_time(ssh_client)
+                        self.worker.info_signal.emit(
+                            ("STATUS", row_idx, col_idx, f"✔️ 原偏差{diff:.1f}分,已同步", True)
+                        )
+                    else:
+                        # 同步失败
+                        self.worker.info_signal.emit(
+                            ("STATUS", row_idx, col_idx, f"❌ 偏差{diff:.1f}分,同步失败", False)
+                        )
                 else:
-                    self.worker.info_signal.emit(("STATUS", row_idx, col_idx, f"❌ 偏差{diff:.1f}分", False))
+                    if is_ok:
+                        self.worker.info_signal.emit(("STATUS", row_idx, col_idx, f"✔️ 偏差{diff:.1f}分", True))
+                    else:
+                        self.worker.info_signal.emit(("STATUS", row_idx, col_idx, f"❌ 偏差{diff:.1f}分", False))
 
             # ================ 5. 防火墙检查 ================
             elif check_item == "防火墙":
@@ -430,18 +467,64 @@ class ServerCheckRunDialog(QDialog, server_check_run_dlg.Ui_Dialog):
         except Exception:
             return False, "检查出错"
 
+    def _sync_server_time(self, ssh_client, server_user, server_pass):
+        """同步服务器时间到本地时间"""
+        try:
+            # 获取本地时间，格式化为 "YYYY-MM-DD HH:MM:SS"
+            local_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # 构建date命令，直接设置时间
+            date_cmd = f"date -s '{local_time_str}'"
+            
+            # 先尝试直接执行
+            stdin, stdout, stderr = ssh_client.exec_command(date_cmd, timeout=5)
+            err = stderr.read().decode('utf-8', errors='ignore').strip()
+            
+            if not err:
+                # 同步成功，还要尝试更新硬件时钟
+                try:
+                    hwclock_cmd = "hwclock -w"
+                    ssh_client.exec_command(hwclock_cmd, timeout=3)
+                except:
+                    pass
+                return True
+            
+            # 如果直接执行失败，尝试用sudo
+            if server_pass:
+                # 用sudo执行
+                sudo_cmd = f"echo {server_pass} | sudo -S {date_cmd}"
+                stdin, stdout, stderr = ssh_client.exec_command(sudo_cmd, timeout=5)
+                output = stdout.read().decode('utf-8', errors='ignore')
+                err = stderr.read().decode('utf-8', errors='ignore').strip()
+                
+                # 检查是否成功
+                if "password" not in err.lower() and len(err) < 100:
+                    # 尝试更新硬件时钟
+                    try:
+                        hwclock_cmd = f"echo {server_pass} | sudo -S hwclock -w"
+                        ssh_client.exec_command(hwclock_cmd, timeout=3)
+                    except:
+                        pass
+                    return True
+            
+            return False
+        except Exception:
+            return False
+
     def _check_system_time(self, ssh_client):
         if not ssh_client:
             return False, 9999
         try:
-            stdin, stdout, stderr = ssh_client.exec_command("date -u +%s", timeout=3)
+            # 获取服务器当前时间戳（本地时区）
+            stdin, stdout, stderr = ssh_client.exec_command("date +%s", timeout=3)
             output = stdout.read().decode('utf-8', errors='ignore').strip()
             if not output.isdigit():
                 return False, 9999
 
-            server_time = datetime.utcfromtimestamp(int(output))
-            local_time = datetime.utcnow()
-            diff_minutes = abs((server_time - local_time).total_seconds()) / 60.0
+            # 比较本地时间戳和服务器时间戳
+            server_timestamp = int(output)
+            local_timestamp = int(datetime.now().timestamp())
+            diff_seconds = abs(server_timestamp - local_timestamp)
+            diff_minutes = diff_seconds / 60.0
             return True, diff_minutes
         except Exception:
             return False, 9999
@@ -509,6 +592,16 @@ class ServerCheckRunDialog(QDialog, server_check_run_dlg.Ui_Dialog):
             self.stop_flag = True
             self.is_running = False
             self.update_button_states()
+            
+            # 停止后清理线程和worker
+            if hasattr(self, 'thread') and self.thread:
+                if self.thread.isRunning():
+                    self.thread.quit()
+                    if not self.thread.wait(3000):
+                        self.thread.terminate()
+                        self.thread.wait()
+            self.worker = None
+            self.thread = None
 
     def on_all_checks_finished(self):
         self.is_running = False
@@ -521,6 +614,13 @@ class ServerCheckRunDialog(QDialog, server_check_run_dlg.Ui_Dialog):
 
         QMessageBox.information(self, "完成", "所有服务器检查完成！")
         self._log("全部完成")
+        
+        # 检查完成后清理线程和worker
+        if hasattr(self, 'thread') and self.thread:
+            self.thread.quit()
+            self.thread.wait(1000)
+        self.worker = None
+        self.thread = None
 
     def update_cell_status(self, row, col, status, success=None):
         try:
