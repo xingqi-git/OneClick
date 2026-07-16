@@ -436,6 +436,8 @@ class SSHTools(object):
 
         print("开始查找符合条件的文件...")
         time_now = time.time()
+        # 生成毫秒级本地时间戳，用于临时目录命名，避免重名
+        local_timestamp_ms = f"{int(time_now * 1000)}"
         dir_list = []
         file_list = []
 
@@ -475,7 +477,7 @@ class SSHTools(object):
         local_base = os.path.basename(local_path)
         # 构造服务器临时目录
         base_dir = work_dir if work_dir else f"/home/{self.username}"
-        temp_remote_dir = f"{base_dir}/OneClick_temp{time_now}"
+        temp_remote_dir = f"{base_dir}/OneClick_temp{local_timestamp_ms}"
 
         # 收集所有需要创建的目录：dir_list + file_list中所有文件的父目录，保证空目录也能被创建
         all_dirs = set()
@@ -662,18 +664,23 @@ class SSHTools(object):
         # 标记传输状态为进行中
         self.transfer_stat = 1
 
-        # 获取服务器当前时间戳，用于生成唯一临时目录名，避免冲突
-        time_cmd = "date +%s.%N"
+        # 获取服务器当前时间戳，用于筛选条件
+        time_cmd = "date +%s"
         stdin, stdout, stderr = self.ssh.exec_command(time_cmd)
         server_now = stdout.read().decode('utf-8').strip()
         stderr.read()
+        
+        # 获取本地当前时间戳（精确到毫秒），用于生成唯一临时目录名，避免冲突
+        # 使用本地时间避免部分Linux服务器不支持%N参数的问题，同时保证毫秒级精度
+        local_timestamp_ms = f"{int(time.time() * 1000)}"
 
         # 构造远程临时目录路径，放在当前用户home下避免权限问题
         # 构造服务器临时目录
         base_dir = work_dir if work_dir else f"/home/{self.username}"
-        temp_remote_path = f"{base_dir}/OneClick_temp{server_now}"
-        # 提取远程源路径的基础名
+        temp_remote_path = f"{base_dir}/OneClick_temp{local_timestamp_ms}"
+        # 提取远程源路径的基础名并清洗Windows不支持的字符
         remote_base = os.path.basename(remote_path)
+        remote_base = re.sub(r'[<>:"/\\|?*]', '-', remote_base)
 
 
         print("开始查找符合条件的文件...")
@@ -747,18 +754,28 @@ class SSHTools(object):
 
         print(f"找到{len(dir_list)}个目录, {len(file_list)}个文件")
 
+        # 清洗完整路径：所有目录名和文件名中的Windows不支持字符都替换为 -
+        def sanitize_path_for_windows(path):
+            parts = path.split('/')
+            sanitized_parts = [re.sub(r'[<>:"/\\|?*]', '-', part) for part in parts]
+            return '/'.join(sanitized_parts)
+
         # 收集所有需要创建的目录：dir_list + file_list中所有文件的父目录，保证空目录也能被创建
         all_dirs = set()
         for d in dir_list:
             rel_path = d.replace(os.path.dirname(remote_path), '', 1).lstrip('/')
             if rel_path == '':
                 continue
-            dst_dir = f"{temp_remote_path}/{rel_path}"
+            # 清洗路径中的所有目录名
+            sanitized_rel_path = sanitize_path_for_windows(rel_path)
+            dst_dir = f"{temp_remote_path}/{sanitized_rel_path}"
             all_dirs.add(dst_dir)
 
         for f in file_list:
             rel_path = f.replace(os.path.dirname(remote_path), '', 1).lstrip('/')
-            dst_dir = os.path.dirname(f"{temp_remote_path}/{rel_path}")
+            # 清洗完整路径
+            sanitized_rel_path = sanitize_path_for_windows(rel_path)
+            dst_dir = os.path.dirname(f"{temp_remote_path}/{sanitized_rel_path}")
             all_dirs.add(dst_dir)
 
         # 按路径长度从长到短排序，这样创建了最长路径后，短路径如果是父路径就可以跳过
@@ -817,7 +834,9 @@ class SSHTools(object):
 
             cp_count += 1
             rel_path = file_path.replace(os.path.dirname(remote_path), '', 1).lstrip('/')
-            dst_path = f"{temp_remote_path}/{rel_path}"
+            # 复制前清洗完整路径，避免Windows下载时因特殊字符失败
+            sanitized_rel_path = sanitize_path_for_windows(rel_path)
+            dst_path = f"{temp_remote_path}/{sanitized_rel_path}"
 
             if self.username != 'root':
                 # -p保留权限、时间复制，但不递归
@@ -853,11 +872,34 @@ class SSHTools(object):
 
         dst_path = f"{temp_remote_path}/{remote_base}"
 
-        stdin, stdout, stderr = self.ssh.exec_command(f'du -sb "{dst_path}" | awk \'{{print $1}}\'')
-        dst_size = int(stdout.read().decode('utf-8').strip())
+        # 多层fallback计算远程文件/目录大小，兼容嵌入式Linux系统
+        dst_size = 0
+        # 方案1: 尝试用du -sb（标准Linux）
+        stdin, stdout, stderr = self.ssh.exec_command(f'du -sb "{dst_path}" 2>/dev/null | awk \'{{print $1}}\'')
+        output = stdout.read().decode('utf-8').strip()
         stderr.read()
-
-        print(f"开始下载，大小: {dst_size/1048576:.2f} M")
+        if output.isdigit():
+            dst_size = int(output)
+        else:
+            # 方案2: BusyBox du -s，按1024字节/块估算
+            stdin, stdout, stderr = self.ssh.exec_command(f'du -s "{dst_path}" 2>/dev/null')
+            du_output = stdout.read().decode('utf-8').strip()
+            stderr.read()
+            output = du_output.split()[0] if du_output else ''
+            if output.isdigit():
+                dst_size = int(output) * 1024  # 估算每块1024字节
+            else:
+                # 方案3: 用find + wc -c逐个统计文件大小
+                stdin, stdout, stderr = self.ssh.exec_command(f'find "{dst_path}" -type f -exec wc -c {{}} \\; 2>/dev/null | awk \'{{sum+=$1}} END {{print sum}}\'')
+                output = stdout.read().decode('utf-8').strip()
+                stderr.read()
+                if output.isdigit():
+                    dst_size = int(output)
+        
+        if dst_size > 0:
+            print(f"开始下载，大小: {dst_size/1048576:.2f} M")
+        else:
+            print(f"开始下载（无法获取大小）")
 
         try:
             with SCPClient(self.transport, progress=lambda name, size, sent: self._print_progress(sent, dst_size)) as client:

@@ -227,7 +227,16 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
         cfg = self.parent.sc_buttons[self.button_id]['config']
         self.button_name = cfg.get('指令名称', '弱网')
         rule_list = cfg.get('规则列表', [])
+        
+        # 运行次数输入验证（失去光标后验证，只允许0和正整数，非法自动改为默认0）
+        def validate_loop_count():
+            text = self.loop_lineEdit.text().strip()
+            if not text.isdigit() or int(text) < 0:
+                self.loop_lineEdit.setText('0')
+        self.loop_lineEdit.editingFinished.connect(validate_loop_count)
+        
         self.loop_lineEdit.setText(cfg.get('循环次数', '0'))
+        validate_loop_count()  # 初始化时验证一次
         self.saved_nic = cfg.get('网卡', '')  # 保存配置的网卡，用于后续恢复
         self.work_dir = cfg.get('文件暂存路径', '')
         if not self.work_dir:

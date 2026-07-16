@@ -168,12 +168,32 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
         # 按钮逻辑和窗口默认值
         self.process_input_plainTextEdit.setPlainText(self.parent.sc_buttons[button_id]['config']['进程'])
-        self.freq_lineEdit.setText(self.parent.sc_buttons[button_id]['config']['采样频率'])
+        
+        # 采样频率输入验证（失去光标后验证，只允许正整数，非法自动改为默认5）
+        def validate_freq():
+            text = self.freq_lineEdit.text().strip()
+            if not text.isdigit() or int(text) <= 0:
+                self.freq_lineEdit.setText('5')
+        self.freq_lineEdit.editingFinished.connect(validate_freq)
+        
+        # 采样频率回显
+        freq_value = self.parent.sc_buttons[button_id]['config']['采样频率']
+        self.freq_lineEdit.setText(freq_value)
+        validate_freq()  # 初始化时验证一次
         
         # 监控时长回显
         duration_value = self.parent.sc_buttons[button_id]['config'].get('监控时长', '')
         duration_unit = self.parent.sc_buttons[button_id]['config'].get('监控时长单位', '天')
+        
+        # 监控时长输入验证（失去光标后验证，只允许0和正整数，非法自动改为默认0）
+        def validate_duration():
+            text = self.duration_lineEdit.text().strip()
+            if not text.isdigit() or int(text) < 0:
+                self.duration_lineEdit.setText('0')
+        self.duration_lineEdit.editingFinished.connect(validate_duration)
+        
         self.duration_lineEdit.setText(duration_value)
+        validate_duration()  # 初始化时验证一次
         # 设置单位下拉框
         unit_index_map = {'秒': 0, '分钟': 1, '小时': 2, '天': 3}
         self.duration_comboBox.setCurrentIndex(unit_index_map.get(duration_unit, 3))

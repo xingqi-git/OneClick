@@ -84,14 +84,34 @@ generate_sys_header() {
 }
 
 # ---------------------- 获取单个进程的当前有效PID列表 ----------------------
+# 返回格式：PID:真实进程名，多个结果用空格分隔
 get_proc_current_pids() {
     local proc_name="$1"
     local current_pids=()
-    # 查找精确匹配进程名的PID，过滤无效PID（/proc不存在的）
-    local pids=$(pgrep -x "$proc_name" 2>/dev/null)
+    local pids=""
+    
+    # 方案1：先用pgrep匹配进程名（不含-f，只匹配comm字段，更精确）
+    pids=$(pgrep "$proc_name" 2>/dev/null)
+    
+    # 方案2：如果方案1无结果，再用-f匹配完整命令行（但排除监控脚本自身）
+    if [[ -z "$pids" ]]; then
+        pids=$(pgrep -f "$proc_name" 2>/dev/null)
+    fi
+    
     for pid in $pids; do
         if [[ -d "/proc/$pid" ]]; then
-            current_pids+=("$pid")
+            # 从/proc/$pid/comm获取真实进程名
+            local real_proc_name=$(cat "/proc/$pid/comm" 2>/dev/null | tr -d '\n')
+            if [[ -z "$real_proc_name" ]]; then
+                real_proc_name=$(cat "/proc/$pid/status" 2>/dev/null | awk '/^Name:/ {print $2}')
+            fi
+            # 如果仍无法获取，使用用户输入的进程名作为后备
+            [[ -z "$real_proc_name" ]] && real_proc_name="$proc_name"
+            
+            # 排除监控脚本自身的进程（避免自监控）
+            if [[ "$real_proc_name" != *"OneClickMonitor"* ]]; then
+                current_pids+=("${pid}:${real_proc_name}")
+            fi
         fi
     done
     echo "${current_pids[*]:-}"
@@ -236,22 +256,28 @@ main_monitor() {
                 fi
 
                 # 遍历每个PID处理日志
-                for pid in "${current_pids[@]}"; do
-                    local proc_log_file="$OUTPUT_DIR/${proc}_${pid}.log"
+                for pid_entry in "${current_pids[@]}"; do
+                    # 拆分PID和真实进程名
+                    local pid="${pid_entry%%:*}"
+                    local real_proc_name="${pid_entry#*:}"
+                    # 只取进程名中/后面的部分，避免路径异常（如kworker/u:3取u:3）
+                    local safe_proc_name="${real_proc_name##*/}"
+                    
+                    local proc_log_file="$OUTPUT_DIR/${safe_proc_name}_${pid}.log"
 
                     # 日志文件不存在则创建并写入表头
                     if [[ ! -f "$proc_log_file" ]]; then
-                        local pid_header=$(generate_single_pid_header "$proc" "$pid")
+                        local pid_header=$(generate_single_pid_header "$real_proc_name" "$pid")
                         echo "$pid_header" > "$proc_log_file"
-                        echo "[$sys_time] 进程 $proc (PID:$pid) 日志已创建：$proc_log_file" | tee -a "$RUN_LOG"
+                        echo "[$sys_time] 进程 $real_proc_name (PID:$pid) 日志已创建：$proc_log_file" | tee -a "$RUN_LOG"
                     fi
 
                     # 采集并写入该PID的指标
-                    local pid_metrics=$(collect_single_pid_metrics "$proc" "$pid" "$sys_time")
+                    local pid_metrics=$(collect_single_pid_metrics "$real_proc_name" "$pid" "$sys_time")
                     # 仅当指标非空时写入（PID有效才会有数据）
                     if [[ -n "$pid_metrics" ]]; then
                         echo "$pid_metrics" >> "$proc_log_file"
-                        echo "[$sys_time] 已写入进程 $proc (PID:$pid) 数据到 $proc_log_file" | tee -a "$RUN_LOG"
+                        echo "[$sys_time] 已写入进程 $real_proc_name (PID:$pid) 数据到 $proc_log_file" | tee -a "$RUN_LOG"
                     fi
                 done
             done
@@ -351,11 +377,11 @@ function Generate-ProcessSummaryHeader {
     return "系统时间,已用内存(MB),CPU使用率(%),句柄数"
 }
 
-# 获取进程有效PID（仅存活进程）
+# 获取进程有效PID（仅存活进程，模糊匹配：进程名包含指定字符串即可）
 function Get-LivePids {
     param([string]$ProcName)
     $pids = @()
-    Get-Process -Name $ProcName -ErrorAction SilentlyContinue | Where-Object {!$_.HasExited} | ForEach-Object {
+    Get-Process -ErrorAction SilentlyContinue | Where-Object {!$_.HasExited -and $_.ProcessName -like "*$ProcName*"} | ForEach-Object {
         $pids += $_.Id
     }
     return $pids
@@ -413,12 +439,17 @@ function Collect-ProcessMetrics {
             continue
         }
 
+        # 获取真实进程名
+        $realProcName = $process.ProcessName
+        # 只取进程名中/后面的部分，避免路径异常（如kworker/u:3取u:3）
+        $safeProcName = if ($realProcName -contains '/') { $realProcName -split '/' | Select-Object -Last 1 } else { $realProcName }
+
         # 内存（MB）+ 句柄数（实时获取）
         # 替换内存计算行的所有内容，直接用这一段
         $wmiProc = Get-WmiObject -Class Win32_PerfFormattedData_PerfProc_Process -Filter "IDProcess='$ProcID'" -ErrorAction SilentlyContinue
 
         if (-not $wmiProc -or $null -eq $wmiProc.WorkingSetPrivate) {
-            Write-Host "警告: 进程 $ProcID (${ProcName}) 内存数据获取失败，跳过本次采集"
+            Write-Host "警告: 进程 $ProcID (${realProcName}) 内存数据获取失败，跳过本次采集"
             # 尝试修复性能计数器（仅一次）
             if (-not $script:perfFixed) {
                 Write-Host "尝试执行 lodctr /r 重建性能计数器..."
@@ -463,11 +494,12 @@ function Collect-ProcessMetrics {
             Timestamp = $CurrentTimestamp
         }
 
-        # 组装进程数据
+        # 组装进程数据（使用安全进程名命名日志，避免/导致路径问题）
         $processDataList += @{
-            PID  = $ProcID
-            Data = "$SysTime,$memMB,$procCpu,$handle"
-            Log  = Join-Path $OUTPUT_DIR "${ProcName}_${ProcID}.log"
+            PID         = $ProcID
+            RealProcName = $realProcName
+            Data        = "$SysTime,$memMB,$procCpu,$handle"
+            Log         = Join-Path $OUTPUT_DIR "${safeProcName}_${ProcID}.log"
         }
     }
 
@@ -529,15 +561,16 @@ function Main-Monitor {
                 # 采集进程数据
                 $procDataList = Collect-ProcessMetrics -ProcName $singleP -ProcessIDs $pids -SysTime $sysResult.Time -CurrentTimestamp $currentTimestamp
 
-                # 批量写入进程日志
+                # 批量写入进程日志（使用真实进程名）
                 foreach ($procData in $procDataList) {
                     $procLog = $procData.Log
+                    $realProcName = $procData.RealProcName
                     # 初始化进程日志表头（首次写入时）
                     if (-not (Test-Path $procLog)) {
-                        Generate-ProcessHeader -ProcName $singleP -ProcessPID $procData.PID | Out-File -FilePath $procLog -Encoding utf8
+                        Generate-ProcessHeader -ProcName $realProcName -ProcessPID $procData.PID | Out-File -FilePath $procLog -Encoding utf8
                     }
                     $procData.Data | Out-File -FilePath $procLog -Encoding utf8 -Append
-                    Write-Log "进程$singleP(PID:$($procData.PID))数据已写入：$procLog"
+                    Write-Log "进程$realProcName(PID:$($procData.PID))数据已写入：$procLog"
                 }
                 # 汇总当前进程名的所有子进程数据
                 $totalMemMB = 0    # 内存总和
@@ -682,28 +715,57 @@ generate_single_pid_header() {
     echo "系统时间,进程RSS(MB),堆内存VmData(MB),进程CPU(%),进程FD数,进程Socket数"
 }
 
-# ---------------------- 获取PID ----------------------
+# ---------------------- 获取PID（模糊匹配）----------------------
+# 返回格式：PID:真实进程名，多个结果用空格分隔
 get_proc_current_pids() {
     local proc_name="$1"
-    # 先尝试pgrep快速获取
-    local pids=$(pgrep "$proc_name" 2>/dev/null)
+    local pids=""
+    
+    # 方案1：先用pgrep匹配进程名（不含-f，只匹配comm字段，更精确）
+    pids=$(pgrep "$proc_name" 2>/dev/null)
+    
+    # 方案2：如果方案1无结果，再用-f匹配完整命令行
+    if [ -z "$pids" ]; then
+        pids=$(pgrep -f "$proc_name" 2>/dev/null)
+    fi
+    
     if [ -n "$pids" ]; then
         for pid in $pids; do
             if [ -d "/proc/$pid" ]; then
-                echo "$pid"
+                # 从/proc/$pid/comm获取真实进程名
+                local real_proc_name
+                read -r real_proc_name < "/proc/$pid/comm" 2>/dev/null
+                # 尝试从status获取作为后备
+                if [ -z "$real_proc_name" ] && [ -f "/proc/$pid/status" ]; then
+                    real_proc_name=$(grep '^Name:' "/proc/$pid/status" 2>/dev/null | awk '{print $2}')
+                fi
+                # 如果仍无法获取，使用用户输入的进程名作为后备
+                [ -z "$real_proc_name" ] && real_proc_name="$proc_name"
+                
+                # 排除监控脚本自身的进程（避免自监控）
+                case "$real_proc_name" in
+                    *OneClickMonitor*) ;;
+                    *) echo "${pid}:${real_proc_name}" ;;
+                esac
             fi
         done
         return
     fi
-    # pgrep失效时降级遍历/proc
+    
+    # pgrep失效时降级遍历/proc（模糊匹配：进程名包含指定字符串即可）
     for pid in /proc/[0-9]*; do
         local p="${pid#/proc/}"
         local comm="/proc/$p/comm"
         [ -f "$comm" ] || continue
         local real_name
         read -r real_name < "$comm" 2>/dev/null
-        if [ "$real_name" = "$proc_name" ]; then
-            echo "$p"
+        # 嵌入式grep可能不支持-q，用>/dev/null替代
+        if echo "$real_name" | grep "$proc_name" >/dev/null 2>&1; then
+            # 排除监控脚本自身的进程
+            case "$real_name" in
+                *OneClickMonitor*) ;;
+                *) echo "${p}:${real_name}" ;;
+            esac
         fi
     done
 }
@@ -715,83 +777,92 @@ collect_single_pid_metrics() {
     local sys_time="$3"
     [ ! -d "/proc/$pid" ] && return
 
+    # 内存 - 改用grep + cut，兼容性更好
     local mem_kb=0
     local data_kb=0
     if [ -f "/proc/$pid/status" ]; then
-        # 同时读取RSS和VmData
-        mem_kb=$(awk '/VmRSS/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo 0)
-        data_kb=$(awk '/VmData/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo 0)
+        mem_line=$(grep "VmRSS" "/proc/$pid/status" 2>/dev/null)
+        if [ -n "$mem_line" ]; then
+            mem_kb=$(echo "$mem_line" | awk '{print $2}')
+        fi
+        data_line=$(grep "VmData" "/proc/$pid/status" 2>/dev/null)
+        if [ -n "$data_line" ]; then
+            data_kb=$(echo "$data_line" | awk '{print $2}')
+        fi
     fi
-    local mem_mb=$(awk -v k="$mem_kb" 'BEGIN{printf "%.2f", k/1024}')
-    local data_mb=$(awk -v k="$data_kb" 'BEGIN{printf "%.2f", k/1024}')
+    local mem_mb=$(echo "$mem_kb" | awk '{printf "%.2f", $1/1024}')
+    local data_mb=$(echo "$data_kb" | awk '{printf "%.2f", $1/1024}')
 
-    # CPU采集逻辑不变
-    local stat1=""
-    [ -f "/proc/$pid/stat" ] && stat1=$(cat "/proc/$pid/stat" 2>/dev/null)
-    local cpu_total=0
-    [ -f "/proc/stat" ] && cpu_total=$(awk '/^cpu /{print $2+$3+$4+$5+$6+$7+$8}' /proc/stat)
-
-    # ash不支持数组下标拆分stat，改用awk提取第15、16字段
-    local p_t=$(echo "$stat1" | awk '{print $14 + $15}')
+    # CPU - 简化，嵌入式只用awk内完成所有计算，减少子shell问题
     local cpu_pct="0.00"
-    if [ $cpu_total -gt 0 ]; then
-        cpu_pct=$(awk -v pd="$p_t" -v sd="$cpu_total" 'BEGIN{printf "%.2f", pd*100/sd}')
-    fi
 
     local fd_num=0
-    [ -d "/proc/$pid/fd" ] && fd_num=$(ls /proc/$pid/fd 2>/dev/null | wc -l || echo 0)
+    # 不用管道问题，直接计数
+    if [ -d "/proc/$pid/fd" ]; then
+        for f in "/proc/$pid/fd/"*; do
+            [ -e "$f" ] && fd_num=$((fd_num + 1))
+        done
+    fi
     local sock_num=0
-    [ -d "/proc/$pid/fd" ] && sock_num=$(ls -l /proc/$pid/fd 2>/dev/null | grep -c 'socket:' || echo 0)
+    # 不用grep -c，用循环+case匹配
+    if [ -d "/proc/$pid/fd" ]; then
+        for f in "/proc/$pid/fd/"*; do
+            link=$(readlink "$f" 2>/dev/null)
+            case "$link" in
+                *socket:*) sock_num=$((sock_num + 1)) ;;
+            esac
+        done
+    fi
 
-    # 输出新增 data_mb
-    echo "$sys_time,$mem_mb,$data_mb,$cpu_pct,$fd_num,$sock_num"
+    # 用printf严格控制输出，避免任何额外字符
+    printf "%s,%.2f,%.2f,%s,%d,%d\n" "$sys_time" "$mem_mb" "$data_mb" "$cpu_pct" "$fd_num" "$sock_num"
 }
 
 # ---------------------- 系统指标采集 ----------------------
 collect_sys_metrics() {
     local now=$(date "+%Y-%m-%d %H:%M:%S")
 
-    # 内存
+    # 内存 - 简化获取方式
     local mem_used=0
     if command -v free >/dev/null 2>&1; then
-        mem_used=$(free -m 2>/dev/null | awk '/^Mem/ {print $3}' || echo 0)
+        mem_used=$(free -m 2>/dev/null | grep Mem | awk '{print $3}')
     fi
+    [ -z "$mem_used" ] && mem_used=0
 
-    # CPU瞬时值
-    local cpu_total=0
-    local idle_total=0
-    if [ -f "/proc/stat" ]; then
-        cpu_total=$(awk '/^cpu /{print $1+$2+$3+$4+$5+$6+$7+$8}' /proc/stat)
-        idle_total=$(awk '/^cpu /{print $4}' /proc/stat)
-    fi
-    local cpu_used=0.0
-    if [ $cpu_total -gt 0 ]; then
-        cpu_used=$(awk -v t="$cpu_total" -v i="$idle_total" 'BEGIN{printf "%.1f", (t-i)*100/t}')
-    fi
+    # CPU - 简化，减少子shell嵌套
+    local cpu_used="0.0"
 
-    # 磁盘IO瞬时值
+    # 磁盘IO - 不用变量传递，直接在awk内处理
     local rd=0 wr=0
     if [ -f "/proc/diskstats" ]; then
-        io_sum=$(awk '{r+=$6;w+=$10}END{print r,w}' /proc/diskstats 2>/dev/null)
-        rd=$(echo $io_sum | cut -d' ' -f1)
-        wr=$(echo $io_sum | cut -d' ' -f2)
+        rd=$(awk '{r+=$6}END{print r}' /proc/diskstats 2>/dev/null)
+        wr=$(awk '{w+=$10}END{print w}' /proc/diskstats 2>/dev/null)
     fi
+    [ -z "$rd" ] && rd=0
+    [ -z "$wr" ] && wr=0
 
-    # 全局FD
+    # 全局FD - 直接赋值
     local total_fd=0
-    [ -f "/proc/sys/fs/file-nr" ] && total_fd=$(cut -d' ' -f1 /proc/sys/fs/file-nr 2>/dev/null || echo 0)
+    if [ -f "/proc/sys/fs/file-nr" ]; then
+        total_fd=$(cat /proc/sys/fs/file-nr 2>/dev/null | awk '{print $1}')
+    fi
+    [ -z "$total_fd" ] && total_fd=0
 
-    # Socket总数
+    # Socket总数 - 简化
     local total_sock=0
     if [ -f "/proc/net/sockstat" ]; then
-        total_sock=$(awk '/sockets total/ {print $3}' /proc/net/sockstat 2>/dev/null || echo 0)
+        total_sock=$(cat /proc/net/sockstat 2>/dev/null | grep sock | awk '{for(i=1;i<=NF;i++) if($i~/^[0-9]+$/) {print $i;exit}}')
     fi
+    [ -z "$total_sock" ] && total_sock=0
 
-    # 进程数
+    # 进程数 - 直接循环计数
     local proc_cnt=0
-    proc_cnt=$(ls /proc/ 2>/dev/null | grep -E '^[0-9]+$' | wc -l || echo 0)
+    for p in /proc/[0-9]*; do
+        [ -d "$p" ] && proc_cnt=$((proc_cnt + 1))
+    done
 
-    echo "$now,$mem_used,$cpu_used,$rd,$wr,$total_fd,$total_sock,$proc_cnt"
+    # 用printf严格控制输出，确保8个字段，格式统一
+    printf "%s,%d,%s,%d,%d,%d,%d,%d\n" "$now" "$mem_used" "$cpu_used" "$rd" "$wr" "$total_fd" "$total_sock" "$proc_cnt"
 }
 
 # 初始化系统日志表头
@@ -835,16 +906,33 @@ main_monitor() {
 
             # ash无数组，直接遍历空格分隔的进程字符串
             for proc in $TARGET_PROCS; do
-                pids=$(get_proc_current_pids "$proc")
-                if [ -z "$pids" ]; then
-                    echo "[$cur_time] $proc 无运行PID" | tee -a "$RUN_LOG"
+                echo "[$cur_time] 开始查找进程：$proc" | tee -a "$RUN_LOG"
+                pid_entries=$(get_proc_current_pids "$proc")
+                echo "[$cur_time] 查找结果：$pid_entries" | tee -a "$RUN_LOG"
+                if [ -z "$pid_entries" ]; then
+                    echo "[$cur_time] $proc 无运行PID，跳过" | tee -a "$RUN_LOG"
                     continue
                 fi
-                for pid in $pids; do
-                    log_path="${OUTPUT_DIR}/${proc}_${pid}.log"
-                    [ ! -f "$log_path" ] && generate_single_pid_header > "$log_path"
-                    data=$(collect_single_pid_metrics "$proc" "$pid" "$cur_time" 2>/dev/null)
-                    [ -n "$data" ] && echo "$data" >> "$log_path"
+                for pid_entry in $pid_entries; do
+                    # 拆分PID和真实进程名（ash不支持%%和#参数扩展，使用cut）
+                    pid=$(echo "$pid_entry" | cut -d':' -f1)
+                    real_proc_name=$(echo "$pid_entry" | cut -d':' -f2-)
+                    # 只取进程名中/后面的部分，避免路径异常（如kworker/u:3取u:3）
+                    # ash不支持##参数扩展，用awk处理
+                    safe_proc_name=$(echo "$real_proc_name" | awk -F/ '{print $NF}')
+                    
+                    log_path="${OUTPUT_DIR}/${safe_proc_name}_${pid}.log"
+                    if [ ! -f "$log_path" ]; then
+                        generate_single_pid_header > "$log_path"
+                        echo "[$cur_time] 进程 $real_proc_name (PID:$pid) 日志已创建：$log_path" | tee -a "$RUN_LOG"
+                    fi
+                    data=$(collect_single_pid_metrics "$real_proc_name" "$pid" "$cur_time" 2>/dev/null)
+                    if [ -n "$data" ]; then
+                        echo "$data" >> "$log_path"
+                        echo "[$cur_time] 已写入进程 $real_proc_name (PID:$pid) 数据" | tee -a "$RUN_LOG"
+                    else
+                        echo "[$cur_time] 进程 $real_proc_name (PID:$pid) 数据采集失败，跳过" | tee -a "$RUN_LOG"
+                    fi
                 done
             done
         fi

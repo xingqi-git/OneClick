@@ -134,7 +134,8 @@ class Worker(QtCore.QObject):
             self.canceled_flag = False
             self.message.emit("正在绘图，请稍后...")
             # 解析菜单项名称，获取数据分类和指标 self.data = [self.data_dic, action_name]
-            parts = self.data[1].split('-') # parts = [系统-已用内存M]/[系统-CPU使用率%]/[top-已用内存]
+            # 用rsplit从右往左只分割1次，兼容进程名中包含'-'的情况(如0-1_405-进程RSS)
+            parts = self.data[1].rsplit('-', 1)
             if len(parts) < 2:
                 error = ("参数错误", f"菜单项【{self.data[1]}】格式错误，应为'分类-指标'")
                 self.finished.emit((error[0], error[1]))
