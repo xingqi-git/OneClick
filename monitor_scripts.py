@@ -17,12 +17,12 @@ MONITOR_SH = r'''#!/bin/bash
 set -euo pipefail
 
 # ---------------------- 配置参数（可通过命令行覆盖，优先级更高） ----------------------
-SAMPLE_FREQ=5                          # 默认采样频率：5秒
-OUTPUT_DIR="./"                        # 默认输出文件夹：当前目录
+SAMPLE_FREQ={{SAMPLE_FREQ}}            # 默认采样频率：5秒
+OUTPUT_DIR="{{OUTPUT_DIR}}"            # 默认输出文件夹：当前目录
 SYS_LOG_NAME="system.log"              # 系统日志文件名
 SYS_LOG_FILE=""                        # 系统日志完整路径（后续拼接文件夹+文件名）
-TARGET_PROCS=()                        # 默认不监控指定进程，为空数组（明确初始化）
-MAX_DURATION=0                         # 最大运行时长（秒），0=无限
+TARGET_PROCS=({{TARGET_PROCS}})        # 默认不监控指定进程，为空数组（明确初始化）
+MAX_DURATION={{MAX_DURATION}}          # 最大运行时长（秒），0=无限
 
 # ---------------------- 命令行参数解析 ----------------------
 usage() {
@@ -317,13 +317,13 @@ Windows系统/进程监控（优化版）
 #>
 param (
     [Alias("f")]
-    [int]$freq = 5,                   # 输出间隔（秒，默认5），-f 1则1秒输出一次
+    [int]$freq = {{SAMPLE_FREQ}},     # 输出间隔（秒，默认5），-f 1则1秒输出一次
     [Alias("o")]
-    [string]$output = $PSScriptRoot,  # 输出目录
+    [string]$output = "{{OUTPUT_DIR}}",  # 输出目录
     [Alias("p")]
-    [string[]]$proc,                  # 监控进程名
+    [string[]]$proc = @({{TARGET_PROCS}}),  # 监控进程名
     [Alias("d")]
-    [int]$duration = 0,               # 最大运行时长（秒，0=无限）
+    [int]$duration = {{MAX_DURATION}}, # 最大运行时长（秒，0=无限）
     [Alias("h")]
     [switch]$help
 )
@@ -649,13 +649,13 @@ MONITOR_SH_2 = r'''#!/bin/sh
 # set -u
 
 # ---------------------- 配置参数 ----------------------
-SAMPLE_FREQ=5
-OUTPUT_DIR="./"
+SAMPLE_FREQ={{SAMPLE_FREQ}}
+OUTPUT_DIR="{{OUTPUT_DIR}}"
 SYS_LOG_NAME="system.log"
 SYS_LOG_FILE=""
 # ash不支持数组，改用空格分隔字符串存储进程列表
-TARGET_PROCS=""
-MAX_DURATION=0                         # 最大运行时长（秒），0=无限
+TARGET_PROCS="{{TARGET_PROCS}}"
+MAX_DURATION={{MAX_DURATION}}          # 最大运行时长（秒），0=无限
 
 # ---------------------- 帮助文档 ----------------------
 usage() {

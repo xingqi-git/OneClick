@@ -246,6 +246,67 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             return self.monitor_sh_embedded
         return self.monitor_sh_normal
 
+    def generate_monitor_script(self, script_template, output_dir):
+        """生成最终的监控脚本，将参数写死在脚本中
+        
+        Args:
+            script_template: 脚本模板内容
+            output_dir: 输出目录路径
+            
+        Returns:
+            str: 替换参数后的完整脚本内容
+        """
+        # 获取采样频率
+        freq_text = self.freq_lineEdit.text().strip()
+        try:
+            freq = int(freq_text) if freq_text else 5
+        except ValueError:
+            freq = 5
+
+        # 获取监控时长（转换为秒）
+        duration_text = self.duration_lineEdit.text().strip()
+        try:
+            duration = int(duration_text) if duration_text else 0
+            duration_unit = self.duration_comboBox.currentText()
+            if duration_unit == '分钟':
+                duration = duration * 60
+            elif duration_unit == '小时':
+                duration = duration * 3600
+            elif duration_unit == '天':
+                duration = duration * 86400
+        except ValueError:
+            duration = 0
+
+        # 获取进程列表
+        proc_input = self.process_input_plainTextEdit.toPlainText().strip()
+        proc_list = [p.strip() for p in proc_input.replace('/', ',').split(',') if p.strip()]
+
+        # 判断脚本类型并生成对应的进程参数格式
+        if '#!/bin/bash' in script_template:
+            # MONITOR_SH (Bash) - 数组格式: ("mgcaa" "nginx")
+            if proc_list:
+                target_procs = ' '.join(f'"{p}"' for p in proc_list)
+            else:
+                target_procs = ''
+        elif '#!/bin/sh' in script_template:
+            # MONITOR_SH_2 (ash) - 空格分隔字符串: "mgcaa nginx"
+            target_procs = ' '.join(proc_list)
+        else:
+            # MONITOR_PS1 (PowerShell) - 数组格式: "mgcaa", "nginx"
+            if proc_list:
+                target_procs = ', '.join(f'"{p}"' for p in proc_list)
+            else:
+                target_procs = ''
+
+        # 替换占位符
+        script = script_template
+        script = script.replace('{{SAMPLE_FREQ}}', str(freq))
+        script = script.replace('{{OUTPUT_DIR}}', output_dir)
+        script = script.replace('{{TARGET_PROCS}}', target_procs)
+        script = script.replace('{{MAX_DURATION}}', str(duration))
+
+        return script
+
     def on_local_button_click(self):
         self.update_status(('本机', '未知', ''))
 
@@ -435,62 +496,27 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 os.makedirs(self.monitor_data_path + "/Monitor", mode=0o777, exist_ok=True)
                 ps1_path = self.monitor_data_path + "/Monitor/OneClickMonitor.ps1"
 
-                # 构建脚本执行的指令
+                # 构建脚本执行的指令（不再传参，参数已写死在脚本中）
                 cmd = [
                     "powershell",
                     "-ExecutionPolicy", "Bypass",
                     "-File", ps1_path
                 ]
 
-                # 构建进程列表（去重、过滤空值）
-                proc_input = self.process_input_plainTextEdit.toPlainText().strip()
-                procs = proc_input.replace('/', ',')
-                # 添加进程参数
-                if procs:
-                    cmd.append('-p')
-                    cmd.append(procs)
-
-                # 添加频率参数
-                freq_text = self.freq_lineEdit.text().strip()
-                if freq_text:
-                    try:
-                        freq = int(freq_text)
-                        cmd.append('-f')
-                        cmd.append(str(freq))
-                    except ValueError:
-                        worker.info_signal.emit(("提示", "采样频率必须是正整数"))
-                        return False
-
-                # 添加时长参数
-                duration_text = self.duration_lineEdit.text().strip()
-                if duration_text:
-                    try:
-                        duration = int(duration_text)
-                        duration_unit = self.duration_comboBox.currentText()
-                        # 转换为秒
-                        if duration_unit == '分钟':
-                            duration = duration * 60
-                        elif duration_unit == '小时':
-                            duration = duration * 3600
-                        elif duration_unit == '天':
-                            duration = duration * 86400
-                        cmd.append('-d')
-                        cmd.append(str(duration))
-                    except ValueError:
-                        worker.info_signal.emit(("提示", "监控时长必须是正整数"))
-                        return False
-
                 creation_flags = 0
                 if sys.platform == "win32":
                     creation_flags = subprocess.CREATE_NO_WINDOW  # 隐藏控制台窗口
-                # 将脚本内容写入
+
+                # 生成带参数的脚本内容并写入
+                output_dir = os.path.join(self.monitor_data_path, "Monitor").replace('\\', '/')
+                script_content = self.generate_monitor_script(self.monitor_ps1, output_dir)
                 with open(ps1_path, "w", encoding="utf-8-sig", newline='\r\n') as f:
-                    f.write(self.monitor_ps1)
+                    f.write(script_content)
+
                 #  后台执行脚本：
                 # - Popen：异步执行，不阻塞主进程
                 # - stdout/stderr=DEVNULL：重定向所有输出到空设备，无任何打印
                 # - creationflags=CREATE_NO_WINDOW：Windows下隐藏PowerShell窗口（可选）
-                # ["powershell", "-Command", ps_command],
                 result = subprocess.Popen(
                     cmd,
                     shell=False,
@@ -594,52 +620,12 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 work_dir = self.parent.sc_buttons[self.button_id]['config']['文件暂存路径']
                 user_path = f"{work_dir}/OneClick/Monitor"
                 script_path = f"{user_path}/OneClickMonitor.sh"
-                monitor_cmd = f"{script_path} -o {user_path}"
-
-                # 检查是否有进程需要监控
-                if self.process_input_plainTextEdit.toPlainText().strip():
-                    monitor_cmd = monitor_cmd + " -p"
-                    process_list = self.process_input_plainTextEdit.toPlainText().split('/')
-                    for p in process_list:
-                        if p.strip():
-                            monitor_cmd += f" {p.strip()}"
-
-                # 检查是否设置了采样频率
-                if self.freq_lineEdit.text().strip():
-                    try:
-                        freq = int(self.freq_lineEdit.text().strip())
-                        monitor_cmd += f" -f {freq}"
-                    except Exception as e:
-                        self.message_info_box(("提示", f"采样频率必须是正整数{e}"))
-                        self.set_all_buttons_enable()
-                        return
-                
-                # 检查是否设置了监控时长
-                duration_text = self.duration_lineEdit.text().strip()
-                if duration_text:
-                    try:
-                        duration = int(duration_text)
-                        duration_unit = self.duration_comboBox.currentText()
-                        # 转换为秒
-                        if duration_unit == '秒':
-                            pass
-                        elif duration_unit == '分钟':
-                            duration = duration * 60
-                        elif duration_unit == '小时':
-                            duration = duration * 3600
-                        elif duration_unit == '天':
-                            duration = duration * 86400
-                        monitor_cmd += f" -d {duration}"
-                    except Exception as e:
-                        self.message_info_box(("提示", f"监控时长必须是正整数{e}"))
-                        self.set_all_buttons_enable()
-                        return
+                # 不再构建命令行参数，直接执行脚本（参数已写死在脚本中）
+                monitor_cmd_bash = f"{script_path}"
             except Exception as e:
                 self.message_info_box(("提示", f"请检查指令内容{e}"))
                 self.set_all_buttons_enable()
                 return
-            # 基础命令（nohup会在执行时检测是否存在，兼容嵌入式系统
-            monitor_cmd_bash = monitor_cmd
 
             def do_ssh_monitor_worker():
                 try:
@@ -647,9 +633,12 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     os.makedirs(self.monitor_data_path + "/Monitor", mode=0o777, exist_ok=True)
                     monitor_sh_path = self.monitor_data_path + "/Monitor/OneClickMonitor.sh"
 
+                    # 生成带参数的脚本内容
+                    script_content = self.generate_monitor_script(self.monitor_sh, user_path)
+
                     # 在本地创建脚本
                     with open(monitor_sh_path, "w", encoding="utf-8", newline='\n') as f:
-                        f.write(self.monitor_sh)
+                        f.write(script_content)
                     ssh_result = ssh_client.connect()
                     if not ssh_result:
                         worker.info_signal.emit(("提示", "连接服务器失败"))
@@ -676,7 +665,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     nohup_path = stdout.read().decode().strip()
                     stderr.read().decode()
                     
-                    # 构建最终执行命令
+                    # 构建最终执行命令（不再传参）
                     if nohup_path:
                         run_cmd = f"nohup {monitor_cmd_bash} >/dev/null 2>&1 & echo $!"
                     else:
