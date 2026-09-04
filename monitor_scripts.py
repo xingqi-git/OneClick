@@ -119,7 +119,7 @@ get_proc_current_pids() {
 
 # ---------------------- 生成单个PID的进程日志表头 ----------------------
 generate_single_pid_header() {
-    echo "系统时间,进程RSS(MB),堆内存VmData(MB),进程CPU(%),进程FD数,进程Socket数"
+    echo "系统时间,VmRSS(MB),VmData(MB),VmPeak(MB),VmSize(MB),VmHWM(MB),RssAnon(MB),VmSwap(MB),CPU(%),FD数,Socket数"
 }
 
 # ---------------------- 采集单个PID的进程指标 ----------------------
@@ -134,14 +134,41 @@ collect_single_pid_metrics() {
         return
     fi
 
-    # 进程内存（VmRSS和VmData，转换为MB保留2位小数）
-    local proc_mem=$(cat /proc/$pid/status 2>/dev/null | awk '/VmRSS/ {print $2}')
+    # 进程内存（从 /proc/$pid/status 读取，转换为MB保留2位小数）
+    # VmRSS - 常驻物理内存
+    local proc_mem=$(cat /proc/$pid/status 2>/dev/null | awk '/^VmRSS:/ {print $2}')
     proc_mem=$(awk -v mem="$proc_mem" 'BEGIN{printf "%.2f", mem / 1024}')
     proc_mem=${proc_mem:-0.00}
 
-    local proc_data=$(cat /proc/$pid/status 2>/dev/null | awk '/VmData/ {print $2}')
+    # VmData - 数据段+堆内存
+    local proc_data=$(cat /proc/$pid/status 2>/dev/null | awk '/^VmData:/ {print $2}')
     proc_data=$(awk -v mem="$proc_data" 'BEGIN{printf "%.2f", mem / 1024}')
     proc_data=${proc_data:-0.00}
+
+    # VmPeak - 虚拟内存峰值
+    local proc_vmpeak=$(cat /proc/$pid/status 2>/dev/null | awk '/^VmPeak:/ {print $2}')
+    proc_vmpeak=$(awk -v mem="$proc_vmpeak" 'BEGIN{printf "%.2f", mem / 1024}')
+    proc_vmpeak=${proc_vmpeak:-0.00}
+
+    # VmSize - 当前虚拟内存大小
+    local proc_vmsize=$(cat /proc/$pid/status 2>/dev/null | awk '/^VmSize:/ {print $2}')
+    proc_vmsize=$(awk -v mem="$proc_vmsize" 'BEGIN{printf "%.2f", mem / 1024}')
+    proc_vmsize=${proc_vmsize:-0.00}
+
+    # VmHWM - 物理内存峰值（高水位）
+    local proc_vmhwm=$(cat /proc/$pid/status 2>/dev/null | awk '/^VmHWM:/ {print $2}')
+    proc_vmhwm=$(awk -v mem="$proc_vmhwm" 'BEGIN{printf "%.2f", mem / 1024}')
+    proc_vmhwm=${proc_vmhwm:-0.00}
+
+    # RssAnon - 匿名页内存（堆+栈）
+    local proc_rssanon=$(cat /proc/$pid/status 2>/dev/null | awk '/^RssAnon:/ {print $2}')
+    proc_rssanon=$(awk -v mem="$proc_rssanon" 'BEGIN{printf "%.2f", mem / 1024}')
+    proc_rssanon=${proc_rssanon:-0.00}
+
+    # VmSwap - 交换区使用量
+    local proc_vmswap=$(cat /proc/$pid/status 2>/dev/null | awk '/^VmSwap:/ {print $2}')
+    proc_vmswap=$(awk -v mem="$proc_vmswap" 'BEGIN{printf "%.2f", mem / 1024}')
+    proc_vmswap=${proc_vmswap:-0.00}
 
     # 进程CPU使用率（%，保留2位小数）
     local proc_stat1=$(cat /proc/$pid/stat 2>/dev/null | awk '{print $14 "," $15}')
@@ -179,8 +206,8 @@ collect_single_pid_metrics() {
     local proc_socks=$(ls -l /proc/$pid/fd 2>/dev/null | grep -c 'socket:\[')
     proc_socks=${proc_socks:-0}
 
-    # 拼接指标行
-    echo "$sys_time,$proc_mem,$proc_data,$proc_cpu,$proc_fds,$proc_socks"
+    # 拼接指标行（顺序与表头一致）
+    echo "$sys_time,$proc_mem,$proc_data,$proc_vmpeak,$proc_vmsize,$proc_vmhwm,$proc_rssanon,$proc_vmswap,$proc_cpu,$proc_fds,$proc_socks"
 }
 
 # ---------------------- 更新日志表头（仅处理系统日志） ----------------------
@@ -712,7 +739,7 @@ generate_sys_header() {
     echo "系统时间,内存使用MB,整机CPU%,磁盘读KB/s,磁盘写KB/s,全局FD,全局Socket,运行进程总数"
 }
 generate_single_pid_header() {
-    echo "系统时间,进程RSS(MB),堆内存VmData(MB),进程CPU(%),进程FD数,进程Socket数"
+    echo "系统时间,VmRSS(MB),VmData(MB),VmPeak(MB),VmSize(MB),VmHWM(MB),RssAnon(MB),VmSwap(MB),CPU(%),FD数,Socket数"
 }
 
 # ---------------------- 获取PID（模糊匹配）----------------------
@@ -780,18 +807,48 @@ collect_single_pid_metrics() {
     # 内存 - 改用grep + cut，兼容性更好
     local mem_kb=0
     local data_kb=0
+    local vmpeak_kb=0
+    local vmsize_kb=0
+    local vmhwm_kb=0
+    local rssanon_kb=0
+    local vmswap_kb=0
     if [ -f "/proc/$pid/status" ]; then
-        mem_line=$(grep "VmRSS" "/proc/$pid/status" 2>/dev/null)
+        mem_line=$(grep "^VmRSS:" "/proc/$pid/status" 2>/dev/null)
         if [ -n "$mem_line" ]; then
             mem_kb=$(echo "$mem_line" | awk '{print $2}')
         fi
-        data_line=$(grep "VmData" "/proc/$pid/status" 2>/dev/null)
+        data_line=$(grep "^VmData:" "/proc/$pid/status" 2>/dev/null)
         if [ -n "$data_line" ]; then
             data_kb=$(echo "$data_line" | awk '{print $2}')
+        fi
+        vmpeak_line=$(grep "^VmPeak:" "/proc/$pid/status" 2>/dev/null)
+        if [ -n "$vmpeak_line" ]; then
+            vmpeak_kb=$(echo "$vmpeak_line" | awk '{print $2}')
+        fi
+        vmsize_line=$(grep "^VmSize:" "/proc/$pid/status" 2>/dev/null)
+        if [ -n "$vmsize_line" ]; then
+            vmsize_kb=$(echo "$vmsize_line" | awk '{print $2}')
+        fi
+        vmhwm_line=$(grep "^VmHWM:" "/proc/$pid/status" 2>/dev/null)
+        if [ -n "$vmhwm_line" ]; then
+            vmhwm_kb=$(echo "$vmhwm_line" | awk '{print $2}')
+        fi
+        rssanon_line=$(grep "^RssAnon:" "/proc/$pid/status" 2>/dev/null)
+        if [ -n "$rssanon_line" ]; then
+            rssanon_kb=$(echo "$rssanon_line" | awk '{print $2}')
+        fi
+        vmswap_line=$(grep "^VmSwap:" "/proc/$pid/status" 2>/dev/null)
+        if [ -n "$vmswap_line" ]; then
+            vmswap_kb=$(echo "$vmswap_line" | awk '{print $2}')
         fi
     fi
     local mem_mb=$(echo "$mem_kb" | awk '{printf "%.2f", $1/1024}')
     local data_mb=$(echo "$data_kb" | awk '{printf "%.2f", $1/1024}')
+    local vmpeak_mb=$(echo "$vmpeak_kb" | awk '{printf "%.2f", $1/1024}')
+    local vmsize_mb=$(echo "$vmsize_kb" | awk '{printf "%.2f", $1/1024}')
+    local vmhwm_mb=$(echo "$vmhwm_kb" | awk '{printf "%.2f", $1/1024}')
+    local rssanon_mb=$(echo "$rssanon_kb" | awk '{printf "%.2f", $1/1024}')
+    local vmswap_mb=$(echo "$vmswap_kb" | awk '{printf "%.2f", $1/1024}')
 
     # CPU - 简化，嵌入式只用awk内完成所有计算，减少子shell问题
     local cpu_pct="0.00"
@@ -814,8 +871,8 @@ collect_single_pid_metrics() {
         done
     fi
 
-    # 用printf严格控制输出，避免任何额外字符
-    printf "%s,%.2f,%.2f,%s,%d,%d\n" "$sys_time" "$mem_mb" "$data_mb" "$cpu_pct" "$fd_num" "$sock_num"
+    # 用printf严格控制输出，避免任何额外字符（顺序与表头一致）
+    printf "%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s,%d,%d\n" "$sys_time" "$mem_mb" "$data_mb" "$vmpeak_mb" "$vmsize_mb" "$vmhwm_mb" "$rssanon_mb" "$vmswap_mb" "$cpu_pct" "$fd_num" "$sock_num"
 }
 
 # ---------------------- 系统指标采集 ----------------------

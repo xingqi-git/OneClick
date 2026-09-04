@@ -69,6 +69,20 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         super().__init__(parent) # 调用父类QMainWindow，实例化了self为QMainWindow
         self.setupUi(self) # 现在self是个窗口，self直接调用，相当于MainWindow.Ui_MainWindow的setupUi
 
+        # 设置窗口图标（任务栏和标题栏显示）
+        import os
+        import sys
+        from PyQt5.QtGui import QIcon
+        if getattr(sys, 'frozen', False):
+            # PyInstaller 打包后：优先 exe 同目录，其次打包进 exe 的资源
+            icon_path = os.path.join(os.path.dirname(sys.executable), "app.ico")
+            if not os.path.exists(icon_path):
+                icon_path = os.path.join(sys._MEIPASS, "app.ico")
+        else:
+            icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+
         # 创建菜单栏选项与弹出的编辑窗口关系
         self.send_cmd_action.triggered.connect(self.cmd1_dialog)  # 发送cmd的编辑框
         self.send_cmd2_action.triggered.connect(self.cmd2_dialog)  # 发送cmd并接收回显的编辑框

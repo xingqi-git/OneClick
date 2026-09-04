@@ -129,11 +129,13 @@ class Worker(QtCore.QObject):
         """
         根据菜单项名称创建绘图标签页
         :param action_name: 菜单项名称（如"系统-内存"、"top-CPU"）
+        :param time_start: 开始时间字符串（%Y-%m-%d %H:%M:%S），None表示不过滤
+        :param time_end: 结束时间字符串（%Y-%m-%d %H:%M:%S），None表示不过滤
         """
         try:
             self.canceled_flag = False
             self.message.emit("正在绘图，请稍后...")
-            # 解析菜单项名称，获取数据分类和指标 self.data = [self.data_dic, action_name]
+            # 解析菜单项名称，获取数据分类和指标 self.data = [self.data_dic, action_name, time_start, time_end]
             # 用rsplit从右往左只分割1次，兼容进程名中包含'-'的情况(如0-1_405-进程RSS)
             parts = self.data[1].rsplit('-', 1)
             if len(parts) < 2:
@@ -142,6 +144,22 @@ class Worker(QtCore.QObject):
                 return
             data_category = parts[0]  # 数据分类 (系统/top)
             data_indicator = parts[1]  # 监控指标（内存/CPU/文件描述符等）
+
+            # 取出时间范围参数（第3、4个元素，可选）
+            time_start = self.data[2] if len(self.data) > 2 else None
+            time_end = self.data[3] if len(self.data) > 3 else None
+
+            # 解析时间范围
+            t_start = None
+            t_end = None
+            try:
+                if time_start:
+                    t_start = datetime.datetime.strptime(time_start, '%Y-%m-%d %H:%M:%S')
+                if time_end:
+                    t_end = datetime.datetime.strptime(time_end, '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                t_start = None
+                t_end = None
 
             # self.data[0]的key = 系统,top_123,top_587,top等
             has_matched = any(key == data_category or key.startswith(data_category) for key in self.data[0])
@@ -177,7 +195,7 @@ class Worker(QtCore.QObject):
                     time_list = []
                     value_list = []
                     try:
-                        for t in time_str_list:
+                        for idx, t in enumerate(time_str_list):
                             # 线程对象访问防护
                             thread_obj = self.thread()
                             if thread_obj is not None and thread_obj.isInterruptionRequested():
@@ -185,7 +203,16 @@ class Worker(QtCore.QObject):
                                 self.canceled.emit()
                                 return
                             # 将时间字符串解析为datetime对象（匹配时间格式：%Y-%m-%d %H:%M:%S）
-                            time_list.append(datetime.datetime.strptime(t, '%Y-%m-%d %H:%M:%S'))
+                            t_dt = datetime.datetime.strptime(t, '%Y-%m-%d %H:%M:%S')
+                            # 时间范围过滤
+                            if t_start is not None and t_dt < t_start:
+                                data_count += 1
+                                continue
+                            if t_end is not None and t_dt > t_end:
+                                data_count += 1
+                                continue
+                            time_list.append(t_dt)
+                            value_list.append(float(value_raw_list[idx]))
                             # 进度更新逻辑
                             data_count += 1
                             current_progress = int(100 * data_count / data_total)
@@ -195,27 +222,6 @@ class Worker(QtCore.QObject):
                                 last_emitted_progress = current_progress
                     except ValueError as e:
                         error = ("错误", f"{self.data[1]}时间格式解析失败：{e}")
-                        self.finished.emit((error[0], error[1]))
-                        return
-
-                    # 数据格式转换（字符串→数值，方便绘图）
-                    try:
-                        for v in value_raw_list:
-                            thread_obj = self.thread()
-                            if thread_obj is not None and thread_obj.isInterruptionRequested():
-                                self.canceled_flag = True
-                                self.canceled.emit()
-                                return
-                            value_list.append(float(v))
-                            # 进度更新逻辑
-                            data_count += 1
-                            current_progress = int(100 * data_count / data_total)
-                            # 只有当进度增加了至少 1% 时才 emit，防止 UI 卡顿
-                            if current_progress > last_emitted_progress:
-                                self.progress.emit(current_progress)
-                                last_emitted_progress = current_progress
-                    except ValueError:
-                        error = ("数据错误", f"【{self.data[1]}】的监控数据格式错误，无法转换为数值")
                         self.finished.emit((error[0], error[1]))
                         return
 

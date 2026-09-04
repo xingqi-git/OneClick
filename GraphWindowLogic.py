@@ -2,6 +2,7 @@ from UI import GraphMainWindow
 import os
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtWidgets import QMessageBox, QMainWindow
+import datetime
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
@@ -22,13 +23,54 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         self.threads = {} # data_load: sys_fig:
         self.workers = {}
 
+        # 创建时间筛选栏
+        self.filter_widget = QtWidgets.QWidget(self.centralwidget)
+        filter_layout = QtWidgets.QHBoxLayout(self.filter_widget)
+        filter_layout.setContentsMargins(8, 4, 8, 4)
+
+        self.start_label = QtWidgets.QLabel("开始时间：")
+        self.start_dateTimeEdit = QtWidgets.QDateTimeEdit()
+        self.start_dateTimeEdit.setCalendarPopup(True)
+        self.start_dateTimeEdit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+
+        self.end_label = QtWidgets.QLabel("结束时间：")
+        self.end_dateTimeEdit = QtWidgets.QDateTimeEdit()
+        self.end_dateTimeEdit.setCalendarPopup(True)
+        self.end_dateTimeEdit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+
+        self.apply_filter_btn = QtWidgets.QPushButton("应用筛选")
+        self.apply_filter_btn.clicked.connect(self.apply_time_filter)
+        self.reset_filter_btn = QtWidgets.QPushButton("重置")
+        self.reset_filter_btn.clicked.connect(self.reset_time_filter)
+
+        filter_layout.addWidget(self.start_label)
+        filter_layout.addWidget(self.start_dateTimeEdit)
+        filter_layout.addSpacing(20)
+        filter_layout.addWidget(self.end_label)
+        filter_layout.addWidget(self.end_dateTimeEdit)
+        filter_layout.addSpacing(20)
+        filter_layout.addWidget(self.apply_filter_btn)
+        filter_layout.addWidget(self.reset_filter_btn)
+        filter_layout.addStretch()
+
+        # 默认禁用，等数据加载完再启用
+        self.filter_widget.setEnabled(False)
+
+        # 存储当前筛选的时间范围（None表示未筛选）
+        self.current_time_start = None
+        self.current_time_end = None
+        # 存储全局最早/最晚时间
+        self.global_min_time = None
+        self.global_max_time = None
+
         # 创建标签页控件（用于显示多个绘图窗口）
         self.tab_widget = QtWidgets.QTabWidget(self.centralwidget)
         self.tab_widget.setObjectName("tab_widget")
         self.tab_widget.setTabsClosable(True)  # 启用标签页关闭按钮
         self.tab_widget.tabCloseRequested.connect(self.on_tab_close_requested)  # 连接关闭信号
-        # 设置中心窗口的布局，将标签页放入
+        # 设置中心窗口的布局，将筛选栏和标签页放入
         central_layout = QtWidgets.QVBoxLayout(self.centralwidget)
+        central_layout.addWidget(self.filter_widget)
         central_layout.addWidget(self.tab_widget)
         self.centralwidget.setLayout(central_layout)
         # 存储菜单项与标签页的映射（键：菜单项名称，值：标签页索引）
@@ -189,6 +231,10 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             self.threads.pop('数据读取')
             self.workers.pop('数据读取')
 
+            # 计算全局最早/最晚时间，填充时间筛选栏
+            self._update_global_time_range()
+            self.filter_widget.setEnabled(True)
+
             # 2秒后自动关闭
             def update_button(remaining):
                 progress_dialog.setCancelButtonText(f"确定({remaining}秒)")
@@ -219,7 +265,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         """
         if checked:
             # self.data_dic={"系统"：{"系统时间":[],"已用内存":[],"CPU使用率%":[]...},"top_123"：{}}
-            data_for_fig = [self.data_dic, action_name]
+            data_for_fig = [self.data_dic, action_name, self.current_time_start, self.current_time_end]
             # 勾选状态：创建绘图工作对象和线程
             worker = Worker(data_for_fig)
             thread = QtCore.QThread()
@@ -378,6 +424,90 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             else:
                 new_action_tab_map[name] = idx
         self.action_tab_map = new_action_tab_map
+
+    def _update_global_time_range(self):
+        """计算所有数据源中的最早和最晚时间，并填充到时间选择框"""
+        min_time = None
+        max_time = None
+        for key in self.data_dic:
+            time_list = self.data_dic[key].get("系统时间", [])
+            if not time_list:
+                continue
+            for t_str in time_list:
+                try:
+                    t = datetime.datetime.strptime(t_str, '%Y-%m-%d %H:%M:%S')
+                    if min_time is None or t < min_time:
+                        min_time = t
+                    if max_time is None or t > max_time:
+                        max_time = t
+                except ValueError:
+                    continue
+        if min_time and max_time:
+            self.global_min_time = min_time
+            self.global_max_time = max_time
+            qt_min = QtCore.QDateTime(min_time.year, min_time.month, min_time.day,
+                                       min_time.hour, min_time.minute, min_time.second)
+            qt_max = QtCore.QDateTime(max_time.year, max_time.month, max_time.day,
+                                       max_time.hour, max_time.minute, max_time.second)
+            # 默认填充数据的最早/最晚时间，但不限制可选范围，用户可自由修改
+            self.start_dateTimeEdit.setDateTime(qt_min)
+            self.end_dateTimeEdit.setDateTime(qt_max)
+            self.current_time_start = min_time.strftime('%Y-%m-%d %H:%M:%S')
+            self.current_time_end = max_time.strftime('%Y-%m-%d %H:%M:%S')
+
+    def apply_time_filter(self):
+        """应用时间筛选，重绘所有已打开的图表"""
+        start_dt = self.start_dateTimeEdit.dateTime().toPyDateTime()
+        end_dt = self.end_dateTimeEdit.dateTime().toPyDateTime()
+        if start_dt > end_dt:
+            QMessageBox.warning(self, "提示", "开始时间不能晚于结束时间")
+            return
+        self.current_time_start = start_dt.strftime('%Y-%m-%d %H:%M:%S')
+        self.current_time_end = end_dt.strftime('%Y-%m-%d %H:%M:%S')
+
+        # 获取当前所有已勾选的菜单项（需要重绘的）
+        actions_to_redraw = list(self.action_tab_map.keys())
+        if not actions_to_redraw:
+            return
+
+        # 关闭所有现有标签页
+        for action_name in list(actions_to_redraw):
+            self.remove_plot_tab(action_name)
+
+        # 重新绘制
+        for action_name in actions_to_redraw:
+            found = False
+            for menu_action in self.menu.actions():
+                sub_menu = menu_action.menu()
+                if sub_menu:
+                    for action in sub_menu.actions():
+                        menu_title = sub_menu.title()
+                        action_text = action.text()
+                        full_name = f"{menu_title}-{action_text}"
+                        if full_name == action_name:
+                            # 手动发射triggered信号触发重绘（菜单项已处于勾选状态）
+                            action.triggered.emit(True)
+                            found = True
+                            break
+                    if found:
+                        break
+
+    def reset_time_filter(self):
+        """重置时间范围为全部数据"""
+        if self.global_min_time and self.global_max_time:
+            qt_min = QtCore.QDateTime(self.global_min_time.year, self.global_min_time.month,
+                                       self.global_min_time.day, self.global_min_time.hour,
+                                       self.global_min_time.minute, self.global_min_time.second)
+            qt_max = QtCore.QDateTime(self.global_max_time.year, self.global_max_time.month,
+                                       self.global_max_time.day, self.global_max_time.hour,
+                                       self.global_max_time.minute, self.global_max_time.second)
+            self.start_dateTimeEdit.setDateTime(qt_min)
+            self.end_dateTimeEdit.setDateTime(qt_max)
+            self.current_time_start = self.global_min_time.strftime('%Y-%m-%d %H:%M:%S')
+            self.current_time_end = self.global_max_time.strftime('%Y-%m-%d %H:%M:%S')
+            # 如果有已打开的图表，自动重绘
+            if self.action_tab_map:
+                self.apply_time_filter()
 
 if __name__ == '__main__':
     pass

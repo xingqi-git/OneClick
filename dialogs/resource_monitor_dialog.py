@@ -61,14 +61,23 @@ class ResourceMonitorDialog1(SendCMDDialog):
         self.sc_cfg['用户名'] = self.username_lineEdit.text()
         self.sc_cfg['密码'] = self.passwd_lineEdit.text()
         self.sc_cfg['端口'] = self.sshport_lineEdit.text()
-        self.sc_cfg['进程'] = ""
-        self.sc_cfg['采样频率'] = ""
         self.sc_cfg['指令名称'] = self.sc_name_lineEdit.text()
         # 保存文件暂存路径，本机情况下为空
         if self.server_comboBox.currentData() == '本机':
             self.sc_cfg['文件暂存路径'] = ""
         else:
             self.sc_cfg['文件暂存路径'] = self.work_dir_lineEdit.text().strip()
+
+        # 编辑模式下，保留原有配置中不在此UI里的字段（进程、采样频率、监控时长等）
+        if hasattr(self, 'button_id'):
+            old_cfg = self.parent.sc_buttons[self.button_id]['config']
+            for key in ('进程', '采样频率', '监控时长', '监控时长单位', '嵌入式'):
+                if key in old_cfg and key not in self.sc_cfg:
+                    self.sc_cfg[key] = old_cfg[key]
+        # 新建模式下，初始化这些字段为空默认值
+        else:
+            self.sc_cfg['进程'] = ""
+            self.sc_cfg['采样频率'] = ""
 
         # 将快捷方式的配置内容传递给主窗口，区分编辑模式还是添加模式
         if self.parent:
@@ -210,7 +219,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         else:
             # 服务器监控
             self.sys_plainTextEdit.setPlainText("已用内存(MB)\nCPU使用率(%)\n磁盘读(KB/s)\n磁盘写(KB/s)\n文件描述符\nSocket描述符\n进程数")
-            self.process_plainTextEdit.setPlainText("进程RSS(MB)\n堆内存VmData(MB)\n进程CPU(%)\n进程FD数\n进程Socket数")
+            self.process_plainTextEdit.setPlainText("VmRSS(MB)\nVmData(MB)\nVmPeak(MB)\nVmSize(MB)\nVmHWM(MB)\nRssAnon(MB)\nVmSwap(MB)\nCPU(%)\nFD数\nSocket数")
         
         # 回显嵌入式勾选状态
         self.embedded_checkBox.setChecked(self.parent.sc_buttons[button_id]['config'].get('嵌入式', False))
