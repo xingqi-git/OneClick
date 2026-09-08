@@ -599,34 +599,39 @@ function Main-Monitor {
                     $procData.Data | Out-File -FilePath $procLog -Encoding utf8 -Append
                     Write-Log "进程$realProcName(PID:$($procData.PID))数据已写入：$procLog"
                 }
-                # 汇总当前进程名的所有子进程数据
-                $totalMemMB = 0    # 内存总和
-                $totalCpu = 0      # CPU总和
-                $totalHandle = 0   # 句柄总和
-
-                # 遍历单个进程数据，累加求和
+                # 按真实进程名分组汇总（用户输入的是模糊匹配词，真实进程名可能不同）
+                $procGroups = @{}
                 foreach ($procData in $procDataList) {
+                    $name = $procData.RealProcName
+                    if (-not $procGroups.ContainsKey($name)) {
+                        $procGroups[$name] = @{ MemMB = 0.0; Cpu = 0.0; Handle = 0 }
+                    }
                     # 拆分单个进程的Data，提取数值（格式：时间,内存,CPU,句柄）
                     $dataParts = $procData.Data -split ','
                     if ($dataParts.Count -eq 4) {
-                        $totalMemMB += [double ]$dataParts[1]    # 累加内存
-                        $totalCpu += [double]$dataParts[2]      # 累加CPU
-                        $totalHandle += [int]$dataParts[3]   # 累加句柄
+                        $procGroups[$name].MemMB += [double]$dataParts[1]
+                        $procGroups[$name].Cpu += [double]$dataParts[2]
+                        $procGroups[$name].Handle += [int]$dataParts[3]
                     }
                 }
 
-                # 写入汇总日志
-                $summaryLog = Join-Path $OUTPUT_DIR "${singleP}.log"
-                # 初始化汇总表头（首次写入时）
-                if (-not (Test-Path $summaryLog)) {
-                    Generate-ProcessSummaryHeader -ProcName $singleP | Out-File -FilePath $summaryLog -Encoding utf8
+                # 每个真实进程名写入一个汇总日志
+                foreach ($realName in $procGroups.Keys) {
+                    # 只取进程名中/后面的部分，避免路径异常
+                    $safeName = if ($realName -contains '/') { $realName -split '/' | Select-Object -Last 1 } else { $realName }
+                    $summaryLog = Join-Path $OUTPUT_DIR "${safeName}.log"
+                    # 初始化汇总表头（首次写入时）
+                    if (-not (Test-Path $summaryLog)) {
+                        Generate-ProcessSummaryHeader -ProcName $safeName | Out-File -FilePath $summaryLog -Encoding utf8
+                    }
+                    # 组装汇总数据行
+                    $g = $procGroups[$realName]
+                    $summaryData = "$($sysResult.Time),$($g.MemMB.ToString('0.00')),$($g.Cpu.ToString('0.0')),$($g.Handle)"
+                    # 写入汇总日志
+                    $summaryData | Out-File -FilePath $summaryLog -Encoding utf8 -Append
+                    # 输出汇总日志提示
+                    Write-Log "进程${realName}汇总数据已写入：$summaryLog"
                 }
-                # 组装汇总数据行
-                $summaryData = "$($sysResult.Time),$($totalMemMB.ToString('0.00')),$($totalCpu.ToString('0.0')),$totalHandle"
-                # 写入汇总日志
-                $summaryData | Out-File -FilePath $summaryLog -Encoding utf8 -Append
-                # 输出汇总日志提示
-                Write-Log "进程$p汇总数据已写入：$summaryLog"
             }
         }
 

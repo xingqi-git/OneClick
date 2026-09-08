@@ -225,11 +225,9 @@ class Worker(QtCore.QObject):
                         self.finished.emit((error[0], error[1]))
                         return
 
-                    # 校验数据有效性
+                    # 校验数据有效性：无数据则跳过该PID，继续处理其他PID
                     if not time_list or len(value_list) == 0:
-                        error = ("数据缺失", f"【{self.data[1]}】无可用的监控数据")
-                        self.finished.emit((error[0], error[1]))
-                        return
+                        continue
 
                     # 分配颜色 + 保存折线对象
                     line = ax.plot(time_list, value_list, label=f"{key}:{data_indicator}",

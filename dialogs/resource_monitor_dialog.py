@@ -10,7 +10,9 @@ from PyQt5.QtCore import QThread, QTimer
 from PyQt5.QtWidgets import QDialog, QMessageBox
 from UI import resource_monitor_dlg
 from utils import ssh_tools, qthread_worker
+from utils import log_cleaner
 from .base_dialog import SendCMDDialog, sc_class2str
+from .clean_range_dialog import CleanRangeDialog
 
 
 class ResourceMonitorDialog1(SendCMDDialog):
@@ -918,112 +920,172 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             thread.finished.connect(on_thread_finished)
             thread.start()
 
+    def _clean_local_with_progress(self, clean_mode, start_time, end_time, on_finished=None):
+        """
+        在子线程中执行本地清理，并显示进度条
+        :param clean_mode: 'all' 或 'range'
+        :param start_time: datetime，range 模式下的开始时间
+        :param end_time: datetime，range 模式下的结束时间
+        :param on_finished: 回调函数 callback(success, message)，清理完成后调用
+        """
+        local_monitor_path = self.monitor_data_path + "/Monitor"
+        from PyQt5.QtWidgets import QProgressDialog
+        progress_dialog = QProgressDialog("准备中...", "取消", 0, 100, self)
+        progress_dialog.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+        progress_dialog.setWindowTitle("清理本地数据")
+        progress_dialog.setMinimumDuration(0)
+        progress_dialog.setAutoReset(False)
+        progress_dialog.setAutoClose(False)
+        progress_dialog.setValue(0)
+        progress_dialog.show()
+
+        def do_clean():
+            import os
+            try:
+                if clean_mode == 'all':
+                    # 全部清除：直接 rmtree
+                    import shutil
+                    if os.path.isdir(local_monitor_path):
+                        shutil.rmtree(local_monitor_path)
+                    return True, "本机监控数据已清除"
+                else:
+                    # 按时间范围清理，通过 info_signal 传递进度
+                    def progress_cb(current, total):
+                        worker.info_signal.emit(('progress', current, total))
+
+                    deleted, trimmed, errors = log_cleaner.clean_local_logs(
+                        local_monitor_path, start_time, end_time,
+                        progress_cb=progress_cb
+                    )
+                    total_count = deleted + trimmed
+                    if total_count == 0 and not errors:
+                        return True, "本地没有符合条件的监控数据"
+                    msg = f"清理完成：删除 {deleted} 个文件，裁剪 {trimmed} 个文件"
+                    if errors:
+                        msg += f"\n（{len(errors)} 个文件处理失败）"
+                    return True, msg
+            except FileNotFoundError:
+                return True, "没有本机监控数据，无需删除"
+            except Exception as e:
+                return False, f"删除本地数据出错：{str(e)}"
+
+        def on_info(data):
+            """接收子线程传来的进度等信息，切到主线程更新 UI"""
+            if isinstance(data, tuple) and len(data) >= 1:
+                if data[0] == 'progress':
+                    current, total = data[1], data[2]
+                    if total > 0:
+                        def _update_progress():
+                            progress_dialog.setMaximum(total)
+                            progress_dialog.setValue(current)
+                            progress_dialog.setLabelText(f"清理中... {current}/{total}")
+                        QtCore.QTimer.singleShot(0, _update_progress)
+
+        def on_clean_finished(result):
+            success, msg = result if isinstance(result, tuple) and len(result) == 2 else (True, str(result))
+            def _update_ui():
+                progress_dialog.close()
+                if success:
+                    self.log_textBrowser.clear()
+                    self._last_log_content = ""
+                    self._log(msg)
+                # 如果有后续回调（如服务器清理），不单独弹提示，统一由最后一步弹
+                if not on_finished:
+                    AutoCloseMessageBox("提示", msg, 3000 if success else 2000, self).exec_()
+                thread.quit()
+                if on_finished:
+                    on_finished(success, msg)
+            QtCore.QTimer.singleShot(0, _update_ui)
+
+        def on_thread_finished():
+            thread.deleteLater()
+            if thread_id in self.parent.sc_threads:
+                self.parent.sc_threads.pop(thread_id)
+            if self.work_thread_id == thread_id:
+                self.work_thread_id = None
+
+        worker = qthread_worker.OneClickWorker(do_clean)
+        thread = QThread()
+
+        self.parent.thread_count += 1
+        thread_id = f'sc_thread_{self.parent.thread_count}'
+        self.work_thread_id = thread_id
+        self.parent.sc_threads[thread_id] = {
+            'worker': worker,
+            'thread': thread
+        }
+
+        worker.moveToThread(thread)
+        worker.log_signal.connect(self._log)
+        worker.info_signal.connect(on_info)
+        worker.finished.connect(on_clean_finished)
+        worker.finished.connect(worker.deleteLater)
+        thread.started.connect(worker.run_task)
+        thread.finished.connect(on_thread_finished)
+        thread.start()
+
     def clean_data(self):
         self._operation_running = True  # 开始操作，禁止状态检查线程更新按钮
         self.set_all_buttons_enable(False)
         
-        # 本机监控直接清除本地数据
+        # 本机监控
         if self.data_dir_name == 'local':
-            dialog = QMessageBox()
-            dialog.setIcon(QMessageBox.Icon.Question)
-            dialog.setWindowTitle("确认")
-            dialog.setText("是否要清空本机所有历史监控数据，清空后无法恢复？")
-            dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            dialog.setDefaultButton(QMessageBox.StandardButton.No)
-            result = dialog.exec_()
-            
-            if result == QMessageBox.StandardButton.Yes:
-                try:
-                    local_monitor_path = self.monitor_data_path + "/Monitor"
-                    shutil.rmtree(local_monitor_path)
-                    self._log(f"本机监控数据已删除{local_monitor_path}")
-                    self.log_textBrowser.clear()
-                    self._last_log_content = ""  # 同步清空缓存
-                    AutoCloseMessageBox("提示", "本机监控数据已清除", 2000, self).exec_()
-                except FileNotFoundError:
-                    AutoCloseMessageBox("提示", "没有本机监控数据，无需删除", 2000, self).exec_()
-                except Exception as e:
-                    AutoCloseMessageBox("提示", f"删除本地数据出错：{str(e)}", 2000, self).exec_()
-            else:
+            dialog = CleanRangeDialog(self, has_remote=False)
+            if dialog.exec_() != QDialog.DialogCode.Accepted:
                 # 用户取消，手动启用按钮
                 self._operation_running = False
                 self.set_all_buttons_enable()
+                return
+
+            clean_mode = dialog.get_clean_mode()
+            start_time, end_time = dialog.get_time_range()
+            self._clean_local_with_progress(clean_mode, start_time, end_time)
             return
         
         ssh_status = self.ssh_stutas_label.text()
         monitor_status = self.monitor_stutas_label.text()
         is_connected = (ssh_status == '已连接')
         
-        if not is_connected or monitor_status in ('未知', '监控中'):
+        # 监控中或状态未知时，只能清本地，强制范围=local
+        force_local_only = (not is_connected) or (monitor_status in ('未知', '监控中'))
+
+        if force_local_only:
             # 未连接、监控状态未知、监控中：仅清除本地
-            dialog = QMessageBox()
-            dialog.setIcon(QMessageBox.Icon.Question)
-            dialog.setWindowTitle("确认")
             if is_connected and monitor_status == '监控中':
-                dialog.setText("监控中，仅可以清除本地数据，是否继续？")
+                hint = "监控中，仅可以清除本地数据"
             elif is_connected:
-                dialog.setText("监控状态未知，仅可以清除本地数据，是否继续？")
+                hint = "监控状态未知，仅可以清除本地数据"
             else:
-                dialog.setText("未连接服务器，是否仅清除本地监控数据？")
-            dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            dialog.setDefaultButton(QMessageBox.StandardButton.No)
-            result = dialog.exec_()
-            
-            if result == QMessageBox.StandardButton.Yes:
-                try:
-                    local_monitor_path = self.monitor_data_path + "/Monitor"
-                    shutil.rmtree(local_monitor_path)
-                    self._log(f"本机监控数据已删除{local_monitor_path}")
-                    self.log_textBrowser.clear()
-                    self._last_log_content = ""  # 同步清空缓存
-                    AutoCloseMessageBox("提示", "本地监控数据已清除", 2000, self).exec_()
-                except FileNotFoundError:
-                    AutoCloseMessageBox("提示", "没有本机监控数据，无需删除", 2000, self).exec_()
-                except Exception as e:
-                    AutoCloseMessageBox("提示", f"删除本地数据出错：{str(e)}", 2000, self).exec_()
-            else:
-                # 用户取消，手动启用按钮
-                self._operation_running = False
-                self.set_all_buttons_enable()
-        else:
-            # 已连接且监控状态已知（无监控）：四选项对话框
-            dialog = QMessageBox()
-            dialog.setIcon(QMessageBox.Icon.Question)
-            dialog.setWindowTitle("选择清除范围")
-            dialog.setText("请选择要清除的监控数据范围")
-            btn_local = dialog.addButton("仅清除本地", QMessageBox.ButtonRole.ActionRole)
-            btn_server = dialog.addButton("仅清除服务器", QMessageBox.ButtonRole.ActionRole)
-            btn_all = dialog.addButton("全部清除", QMessageBox.ButtonRole.ActionRole)
-            btn_cancel = dialog.addButton("取消", QMessageBox.ButtonRole.RejectRole)
-            dialog.setDefaultButton(btn_cancel)
-            result = dialog.exec_()
-            
-            clicked_btn = dialog.clickedButton()
-            if clicked_btn == btn_cancel or clicked_btn is None:
+                hint = "未连接服务器，仅可清除本地数据"
+            dialog = CleanRangeDialog(self, has_remote=False)
+            # 复用对话框，但是改一下标题提示
+            dialog.setWindowTitle(f"清理监控数据（{hint}）")
+            if dialog.exec_() != QDialog.DialogCode.Accepted:
                 self._operation_running = False
                 self.set_all_buttons_enable()
                 return
-            
-            # 确定清除范围
-            clean_local = (clicked_btn == btn_local) or (clicked_btn == btn_all)
-            clean_server = (clicked_btn == btn_server) or (clicked_btn == btn_all)
-            
-            # 清除本地数据
-            if clean_local:
-                try:
-                    local_monitor_path = self.monitor_data_path + "/Monitor"
-                    shutil.rmtree(local_monitor_path)
-                    self._log(f"本机监控数据已删除{local_monitor_path}")
-                    self.log_textBrowser.clear()
-                    self._last_log_content = ""  # 同步清空缓存
-                except FileNotFoundError:
-                    pass
-                except Exception as e:
-                    AutoCloseMessageBox("提示", f"删除本地数据出错：{str(e)}", 2000, self).exec_()
-                    return
-            
-            # 清除服务器数据
-            if clean_server:
+
+            clean_mode = dialog.get_clean_mode()
+            start_time, end_time = dialog.get_time_range()
+            self._clean_local_with_progress(clean_mode, start_time, end_time)
+        else:
+            # 已连接且监控状态已知（无监控）：可选本地/服务器/全部 + 时间范围
+            dialog = CleanRangeDialog(self, has_remote=True)
+            if dialog.exec_() != QDialog.DialogCode.Accepted:
+                self._operation_running = False
+                self.set_all_buttons_enable()
+                return
+
+            clean_mode = dialog.get_clean_mode()
+            scope = dialog.get_scope()
+            start_time, end_time = dialog.get_time_range()
+
+            clean_local = scope in ('local', 'all')
+            clean_server = scope in ('server', 'all')
+
+            # 定义：服务器清理完成后的统一处理
+            def do_server_clean(local_success=True, local_result_msg=""):
+                """执行服务器清理：生成脚本 → 上传 → 执行(实时读进度) → 删脚本"""
                 try:
                     ip = self.parent.sc_buttons[self.button_id]['config']['IP']
                     port = self.parent.sc_buttons[self.button_id]['config']['端口']
@@ -1037,70 +1099,196 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 except Exception as e:
                     AutoCloseMessageBox("提示", f"请检查服务器配置{e}", 2000, self).exec_()
                     return
-                
+
                 work_dir = self.parent.sc_buttons[self.button_id]['config']['文件暂存路径']
                 user_path = f"{work_dir}/OneClick/Monitor"
-                clean_cmd = f"rm -rf {user_path}"
-                
+
+                from PyQt5.QtWidgets import QProgressDialog
+                progress_dialog = QProgressDialog("准备中...", None, 0, 100, self)
+                progress_dialog.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+                progress_dialog.setWindowTitle("清理服务器数据")
+                progress_dialog.setMinimumDuration(0)
+                progress_dialog.setAutoReset(False)
+                progress_dialog.setAutoClose(False)
+                progress_dialog.setCancelButton(None)
+                progress_dialog.show()
+
                 def do_clean_cmd():
+                    import os
+                    import tempfile
                     connect_result = ssh_client.connect()
                     if not connect_result:
-                        return False
+                        return False, "连接失败"
                     try:
-                        stdin, stdout, stderr = ssh_client.ssh.exec_command(clean_cmd)
-                        err = stderr.read().decode().strip()
-                        ssh_client.disconnect()
-                        if err:
-                            return False
-                        return True
-                    except Exception as e:
-                        ssh_client.disconnect()
-                        return False
-                
-                def on_clean_cmd_finished(result):
-                    if clean_local and clean_server:
-                        self.log_textBrowser.clear()
-                        self._last_log_content = ""  # 同步清空缓存
-                        AutoCloseMessageBox("提示", "本地和服务器监控数据已清除", 2000, self).exec_()
-                    elif clean_local:
-                        AutoCloseMessageBox("提示", "本地监控数据已清除", 2000, self).exec_()
-                    elif clean_server:
-                        if result:
-                            self.log_textBrowser.clear()
-                            self._last_log_content = ""  # 同步清空缓存
-                            AutoCloseMessageBox("提示", f"{ip}服务器监控数据已清除", 2000, self).exec_()
-                            self._log(f"{ip}监控数据已清空")
+                        if clean_mode == 'all':
+                            # 全部清除：直接 rm -rf
+                            worker.info_signal.emit(('label', "正在清理服务器数据..."))
+                            stdin, stdout, stderr = ssh_client.ssh.exec_command(f"rm -rf {user_path}")
+                            out = stdout.read().decode().strip()
+                            err = stderr.read().decode().strip()
+                            if err:
+                                return False, err
+                            return True, "ALL_DONE"
                         else:
-                            AutoCloseMessageBox("提示", "清除服务器数据失败", 2000, self).exec_()
-                    # 所有情况都由 AutoCloseMessageBox.accept() 启用按钮
-                    thread.quit()
-                
+                            # 按时间范围清理
+                            # 1. 生成本地脚本文件
+                            worker.info_signal.emit(('label', "生成清理脚本..."))
+                            tmp_dir = tempfile.gettempdir()
+                            local_script = os.path.join(tmp_dir, "oneclick_clean.sh")
+                            start_str = start_time.strftime('%Y-%m-%d %H:%M:%S')
+                            end_str = end_time.strftime('%Y-%m-%d %H:%M:%S')
+                            log_cleaner.write_remote_linux_clean_script(user_path, start_str, end_str, local_script)
+
+                            # 2. 上传脚本到服务器
+                            worker.info_signal.emit(('label', "上传清理脚本..."))
+                            remote_script = f"{work_dir}/oneclick_clean.sh"
+                            sftp = ssh_client.ssh.open_sftp()
+                            sftp.put(local_script, remote_script)
+                            sftp.close()
+
+                            # 3. 执行脚本，实时读取进度
+                            worker.info_signal.emit(('label', "执行清理中..."))
+                            stdin, stdout, stderr = ssh_client.ssh.exec_command(f"bash {remote_script}")
+
+                            result_line = ""
+                            for line in stdout:
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                if line.startswith("TOTAL:"):
+                                    try:
+                                        total = int(line.split(":")[1])
+                                        worker.info_signal.emit(('total', total))
+                                    except:
+                                        pass
+                                elif line.startswith("PROGRESS:"):
+                                    # PROGRESS:3/26
+                                    try:
+                                        prog_str = line.split(":")[1]
+                                        cur, tot = prog_str.split("/")
+                                        worker.info_signal.emit(('progress', int(cur), int(tot)))
+                                    except:
+                                        pass
+                                elif line.startswith("RESULT:"):
+                                    result_line = line
+
+                            err = stderr.read().decode().strip()
+
+                            # 4. 清理脚本
+                            try:
+                                ssh_client.ssh.exec_command(f"rm -f {remote_script}")
+                            except:
+                                pass
+
+                            # 5. 清理本地临时脚本
+                            try:
+                                os.remove(local_script)
+                            except:
+                                pass
+
+                            if err and not result_line:
+                                return False, err
+                            return True, result_line if result_line else err
+                    except Exception as e:
+                        return False, str(e)
+                    finally:
+                        try:
+                            ssh_client.disconnect()
+                        except:
+                            pass
+
+                def on_info(data):
+                    """接收子线程传来的进度/状态信息，切到主线程更新 UI"""
+                    if isinstance(data, tuple) and len(data) >= 1:
+                        if data[0] == 'label':
+                            text = data[1]
+                            def _set_label():
+                                progress_dialog.setLabelText(text)
+                            QtCore.QTimer.singleShot(0, _set_label)
+                        elif data[0] == 'total':
+                            total_val = data[1]
+                            def _set_total():
+                                progress_dialog.setMaximum(total_val)
+                                progress_dialog.setValue(0)
+                            QtCore.QTimer.singleShot(0, _set_total)
+                        elif data[0] == 'progress':
+                            current, total = data[1], data[2]
+                            def _update_progress():
+                                progress_dialog.setMaximum(total)
+                                progress_dialog.setValue(current)
+                                progress_dialog.setLabelText(f"清理中... {current}/{total}")
+                            QtCore.QTimer.singleShot(0, _update_progress)
+
+                def on_clean_cmd_finished(result):
+                    success, output = result if isinstance(result, tuple) and len(result) == 2 else (result, "")
+                    def _update_ui():
+                        progress_dialog.close()
+
+                        msg_parts = []
+                        if clean_local:
+                            msg_parts.append(local_result_msg if local_result_msg else "本地清理完成")
+                        if clean_server:
+                            if success:
+                                server_msg = "服务器清理完成"
+                                if output == "ALL_DONE":
+                                    server_msg = "服务器数据已全部清除"
+                                elif output and output.startswith("RESULT:"):
+                                    import re
+                                    m = re.search(r'deleted=(\d+):trimmed=(\d+)', output)
+                                    if m:
+                                        server_msg = f"服务器删除{m.group(1)}个文件，裁剪{m.group(2)}个文件"
+                                msg_parts.append(server_msg)
+                                self._log(f"{ip}服务器监控数据已清理")
+                            else:
+                                msg_parts.append(f"服务器清理失败: {output}")
+
+                        full_msg = "，".join(msg_parts) if msg_parts else "清理完成"
+                        if clean_local and success:
+                            self.log_textBrowser.clear()
+                            self._last_log_content = ""
+                        AutoCloseMessageBox("提示", full_msg, 3000, self).exec_()
+                        thread.quit()
+                    QtCore.QTimer.singleShot(0, _update_ui)
+
                 def on_thread_finished():
                     thread.deleteLater()
-                    self.parent.sc_threads.pop(self.work_thread_id)
-                    self.work_thread_id = None
-                
+                    if s_thread_id in self.parent.sc_threads:
+                        self.parent.sc_threads.pop(s_thread_id)
+                    if self.work_thread_id == s_thread_id:
+                        self.work_thread_id = None
+
                 worker = qthread_worker.OneClickWorker(do_clean_cmd)
                 thread = QThread()
-                
+
                 self.parent.thread_count += 1
-                self.work_thread_id = f'sc_thread_{self.parent.thread_count}'
-                self.parent.sc_threads[self.work_thread_id] = {
+                s_thread_id = f'sc_thread_{self.parent.thread_count}'
+                self.work_thread_id = s_thread_id
+                self.parent.sc_threads[s_thread_id] = {
                     'worker': worker,
                     'thread': thread
                 }
-                
+
                 worker.moveToThread(thread)
                 worker.log_signal.connect(self._log)
+                worker.info_signal.connect(on_info)
                 worker.finished.connect(on_clean_cmd_finished)
                 worker.finished.connect(worker.deleteLater)
                 thread.started.connect(worker.run_task)
                 thread.finished.connect(on_thread_finished)
                 thread.start()
-            else:
-                # 只清除了本地，直接提示完成
-                AutoCloseMessageBox("提示", "本地监控数据已清除", 2000, self).exec_()
-                # 由 AutoCloseMessageBox.accept() 启用按钮
+
+            # 执行流程
+            if clean_local and clean_server:
+                # 先清本地，再清服务器
+                def on_local_done(success, msg):
+                    do_server_clean(success, msg)
+                self._clean_local_with_progress(clean_mode, start_time, end_time, on_finished=on_local_done)
+            elif clean_local:
+                # 只清本地
+                self._clean_local_with_progress(clean_mode, start_time, end_time)
+            elif clean_server:
+                # 只清服务器
+                do_server_clean()
 
     def download_data(self):
         """
