@@ -11,7 +11,8 @@
     python -m PyQt5.uic.pyuic ./UI/resource_monitor_dlg.ui -o ./UI/resource_monitor_dlg.py
     python -m PyQt5.uic.pyuic ./UI/GraphMainWindow.ui -o ./UI/GraphMainWindow.py
 
-    打包命令：pyinstaller -F -w OneClick.py -i app.ico --add-data "app.ico"
+    打包命令：
+    pyinstaller -F -w OneClick.py -i app.ico --add-data "app.ico;."
     参数说明：
     -F 或 --onefile：将所有文件打包成一个单独的可执行文件
     -w 或 --windowed、--noconsole：打包成不带控制台窗口的程序

@@ -18,6 +18,7 @@ class SSHTools(object):
         self.sudo = False
         self.transfer_stat = 0
         self._last_progress = -1
+        self._download_progress_cb = None
         self.transport = None
 
         self.win_tool = WindowsTools()
@@ -393,7 +394,7 @@ class SSHTools(object):
 
         return tree_list
 
-    def send_files(self, local_path, remote_path, mtime=float('inf'), filename='', work_dir=None):
+    def send_files(self, local_path, remote_path, mtime=float('inf'), filename='', work_dir=None, progress_cb=None):
         """
         SSH上传文件
         流程：本地筛选 -> 复制到临时目录 -> 打包 -> SCP上传 -> 服务器端解包 -> 移动到目标目录 -> 清理临时文件
@@ -403,6 +404,11 @@ class SSHTools(object):
             remote_path: 远程目标路径，只能是文件夹
             mtime: 筛选修改时间（秒），只上传在此时间内修改的文件，默认无限大即不限制
             filename: 筛选文件名包含该字符串，默认空字符串即不限制
+            progress_cb: 可选的进度回调函数 progress_cb(phase, current, total, extra)
+                phase: 'find' | 'upload' | 'move'
+                find: current=0, total=文件数, extra=描述
+                upload: current=已传字节, total=总字节, extra=cur_name|cur_size|cur_sent|file_idx|total_files
+                move: current=0, total=0, extra=描述
         返回：
             成功返回True，失败返回False
         中断支持：
@@ -472,6 +478,16 @@ class SSHTools(object):
             return True
 
         print(f"找到{len(dir_list)}个目录, {len(file_list)}个文件")
+        if progress_cb:
+            progress_cb('find', 0, len(file_list), f'找到{len(file_list)}个文件')
+
+        # 计算总大小（用于总进度）
+        total_size = 0
+        for f in file_list:
+            try:
+                total_size += os.path.getsize(f)
+            except OSError:
+                pass
 
         # 提取源路径的基础名，用于保持原目录结构
         local_base = os.path.basename(local_path)
@@ -542,6 +558,34 @@ class SSHTools(object):
         print(f"开始上传文件到服务器临时目录，共{file_count}个文件")
 
         up_count = 0
+        # 上传进度状态（用于累计字节数）
+        _upload_state = {'accumulated': 0, 'cur_index': 0, 'last_name': '', 'last_cb_pct': -1}
+
+        def _scp_upload_progress(name, size, sent):
+            """SCP上传进度回调，维护累计字节数并调用progress_cb（节流）"""
+            if progress_cb is None:
+                return
+            name_str = name.decode() if isinstance(name, bytes) else name
+            file_changed = False
+            if name_str != _upload_state['last_name']:
+                if _upload_state['last_name']:
+                    # 上一个文件传完，累加到累计
+                    try:
+                        prev_size = os.path.getsize(file_list[_upload_state['cur_index']])
+                        _upload_state['accumulated'] += prev_size
+                    except (OSError, IndexError):
+                        pass
+                _upload_state['cur_index'] = up_count - 1
+                _upload_state['last_name'] = name_str
+                file_changed = True
+            total_sent = _upload_state['accumulated'] + sent
+            # 节流：文件变化 或 总进度变化>=1% 才回调
+            cur_pct = int(total_sent * 100 / total_size) if total_size > 0 else 0
+            if file_changed or cur_pct != _upload_state['last_cb_pct']:
+                _upload_state['last_cb_pct'] = cur_pct
+                extra = f"{name_str}|{size}|{sent}|{up_count}|{file_count}"
+                progress_cb('upload', total_sent, total_size, extra)
+
         for f_path in file_list:
             if self.transfer_stat == 0:
                 print('上传被中止！')
@@ -561,12 +605,22 @@ class SSHTools(object):
                 file_size = os.path.getsize(f_path)
                 if file_size < 100 * 1024 * 1024:
                     # 不打印进度上传
-                    with SCPClient(self.transport) as client:
-                        self._last_progress = -1
-                        client.put(f_path, dst_path)
+                    if progress_cb and file_count <= 10:
+                        with SCPClient(self.transport, progress=lambda n, s, se, fp=f_path: _scp_upload_progress(os.path.basename(fp), s, se)) as client:
+                            self._last_progress = -1
+                            client.put(f_path, dst_path)
+                    else:
+                        with SCPClient(self.transport) as client:
+                            self._last_progress = -1
+                            client.put(f_path, dst_path)
+                    if progress_cb and file_count > 10:
+                        # 大于10个文件时按文件粒度更新进度，小文件不逐字节回调节省开销
+                        _upload_state['accumulated'] += file_size
+                        extra = f"{os.path.basename(f_path)}|{file_size}|{file_size}|{up_count}|{file_count}"
+                        progress_cb('upload', _upload_state['accumulated'], total_size, extra)
                 else:
                     print(f"大文件上传: {file_size} 字节")
-                    with SCPClient(self.transport, progress=lambda name, size, sent: self._print_progress(sent, file_size)) as client:
+                    with SCPClient(self.transport, progress=lambda n, s, se, fp=f_path: _scp_upload_progress(os.path.basename(fp), s, se)) as client:
                         if self.transfer_stat == 0:
                             print("上传被中止")
                             rm_cmd = f"rm -rf \"{temp_remote_dir}\""
@@ -591,6 +645,8 @@ class SSHTools(object):
         stderr.read()
 
         print("上传完成，开始移动文件到目标目录...")
+        if progress_cb:
+            progress_cb('move', 0, 0, '移动文件到目标目录...')
 
         target_path = f"{remote_path}/{local_base}"
         if self.username != 'root':
@@ -622,7 +678,7 @@ class SSHTools(object):
         self.transfer_stat = 0
         return True
 
-    def get_files(self, remote_path, local_path, mtime=float('inf'), filename='', work_dir=None):
+    def get_files(self, remote_path, local_path, mtime=float('inf'), filename='', work_dir=None, progress_cb=None):
         """
         SSH下载文件
         流程：服务器端find筛选 -> 复制到临时目录 -> SCP下载 -> 清理临时文件
@@ -633,6 +689,10 @@ class SSHTools(object):
             local_path: 本地目标路径，只能是文件夹
             mtime: 筛选修改时间（秒），只下载在此时间内修改的文件，默认无限大即不限制
             filename: 筛选文件名包含该字符串，默认空字符串即不限制
+            progress_cb: 可选的进度回调函数 progress_cb(phase, current, total, extra)
+                phase: 'find' | 'copy' | 'download'
+                current/total: 进度数值
+                extra: 附加信息字符串
         返回：
             成功返回True，失败返回False
         中断支持：
@@ -753,6 +813,8 @@ class SSHTools(object):
             return True
 
         print(f"找到{len(dir_list)}个目录, {len(file_list)}个文件")
+        if progress_cb:
+            progress_cb('find', 0, len(file_list), f'找到{len(file_list)}个文件')
 
         # 清洗完整路径：所有目录名和文件名中的Windows不支持字符都替换为 -
         def sanitize_path_for_windows(path):
@@ -852,6 +914,8 @@ class SSHTools(object):
                 print(f"复制到临时目录失败 {cp_count}/{file_count}: {file_path} -> {dst_path},原因: {cp_err}")
             else:
                 print(f"已复制到临时目录 {cp_count}/{file_count}: {file_path} -> {dst_path}")
+                if progress_cb:
+                    progress_cb('copy', cp_count, file_count, os.path.basename(file_path))
 
         if self.transfer_stat == 0:
             print('下载被中止！')
@@ -902,7 +966,48 @@ class SSHTools(object):
             print(f"开始下载（无法获取大小）")
 
         try:
-            with SCPClient(self.transport, progress=lambda name, size, sent: self._print_progress(sent, dst_size)) as client:
+            # 跟踪下载进度的累计状态（SCP回调的sent是当前文件的，需要自行累计）
+            _download_state = {
+                'accumulated': 0,       # 已完成文件累计字节数
+                'last_name': '',        # 上一个文件名
+                'last_size': 0,         # 上一个文件大小
+                'file_index': 0,        # 已完成文件数
+                'total_files': len(file_list),
+                'last_cb_pct': -1,      # 上次回调时的总进度百分比（节流用）
+            }
+
+            # 把外部progress_cb包装成下载阶段专用回调
+            if progress_cb:
+                def _dl_progress(total_sent, total_size, cur_name, cur_size, cur_sent, file_idx, total_files):
+                    progress_cb('download', total_sent, total_size,
+                                f"{cur_name}|{cur_size}|{cur_sent}|{file_idx}|{total_files}")
+                self._download_progress_cb = _dl_progress
+            else:
+                self._download_progress_cb = None
+
+            def _scp_progress(name, size, sent):
+                """SCP进度回调：维护总累计字节，支持总进度平滑增长"""
+                # 检测到新文件开始：上一个文件已传完，累加到累计
+                file_changed = False
+                if _download_state['last_name'] and name != _download_state['last_name']:
+                    _download_state['accumulated'] += _download_state['last_size']
+                    _download_state['file_index'] += 1
+                    file_changed = True
+                _download_state['last_name'] = name
+                _download_state['last_size'] = size
+
+                total_sent = _download_state['accumulated'] + sent
+                # 调用原始的打印进度（只按百分比打印，用总大小）
+                self._print_progress(total_sent, dst_size)
+                # 外部回调（节流：文件变化 或 总进度变化>=1% 才回调）
+                if hasattr(self, '_download_progress_cb') and self._download_progress_cb:
+                    cur_pct = int(total_sent * 100 / dst_size) if dst_size > 0 else 0
+                    if file_changed or cur_pct != _download_state['last_cb_pct']:
+                        _download_state['last_cb_pct'] = cur_pct
+                        self._download_progress_cb(total_sent, dst_size, name, size, sent,
+                                                   _download_state['file_index'], _download_state['total_files'])
+
+            with SCPClient(self.transport, progress=_scp_progress) as client:
                 if self.transfer_stat == 0:
                     raise Exception("下载被中止")
                 self._last_progress = -1
@@ -918,6 +1023,7 @@ class SSHTools(object):
             stdout.read()
             stderr.read()
             self.transfer_stat = 0
+            self._download_progress_cb = None
             return False
 
         rm_cmd = f"rm -rf \"{temp_remote_path}\""
@@ -927,6 +1033,7 @@ class SSHTools(object):
         print("远程临时目录已删除")
         print(f"下载完毕！文件已保存到: {local_path}/{remote_base}")
         self.transfer_stat = 0
+        self._download_progress_cb = None
         return True
 
     def _print_progress(self, sent, total):

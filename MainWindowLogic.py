@@ -234,14 +234,15 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         self.showMaximized()
 
-        # 创建默认分组
-        self.add_group_tab("默认分组")
-
         # 如果有默认配置文件，则获取
         if os.path.exists(self.default_config_path):
             self.update_run_info('存在默认配置文件，开始添加服务器和快捷按钮')
             self.load_server_config(self.default_config_path)
             self.load_sc_config(self.default_config_path)
+
+        # 如果没有任何分组，则创建默认分组
+        if not self._groups:
+            self.add_group_tab("默认分组")
         # 主界面服务器选择下拉表
         self.server_comboBox.setCurrentIndex(-1)
         self.update_server_combobox()
@@ -1069,7 +1070,11 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if not c_result:
                 return False
 
-            s_result = ssh_tool.send_files(local_path, remote_path, mtime, filename, work_dir)
+            def send_progress_cb(phase, current, total, extra=''):
+                if hasattr(worker, 'info_signal'):
+                    worker.info_signal.emit(('progress', phase, current, total, extra or ''))
+
+            s_result = ssh_tool.send_files(local_path, remote_path, mtime, filename, work_dir, progress_cb=send_progress_cb)
 
             ssh_tool.disconnect()
 
@@ -1082,6 +1087,39 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 self.update_run_info(f'<{button_name}> 执行失败', 'ERROR')
             self.set_button_executing(button_id, False)
             thread.quit()
+
+        def on_progress(info):
+            if len(info) < 4:
+                return
+            phase = info[1]
+            current = info[2]
+            total = info[3]
+            extra = info[4] if len(info) > 4 else ''
+            msg = None
+            if phase == 'find':
+                msg = f'<{button_name}> 查找中... 找到{total}个文件'
+            elif phase == 'upload':
+                if total > 0:
+                    pct = int(current * 100 / total)
+                    total_mb = total / 1048576
+                    # extra格式：cur_name|cur_size|cur_sent|file_idx|total_files
+                    parts = extra.split('|') if extra else []
+                    if len(parts) >= 5:
+                        file_idx = int(parts[3]) if parts[3].isdigit() else 0
+                        total_files = int(parts[4]) if parts[4].isdigit() else 0
+                        cur_name = os.path.basename(parts[0])
+                        cur_size = int(parts[1]) if parts[1].isdigit() else 0
+                        cur_sent = int(parts[2]) if parts[2].isdigit() else 0
+                        cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
+                        cur_mb = cur_size / 1048576
+                        msg = (f'<{button_name}> 上传中... 总进度{pct}% (共{total_mb:.1f}MB)  '
+                               f'文件{file_idx}/{total_files}: {cur_name} {cur_pct}% ({cur_mb:.1f}MB)')
+                    else:
+                        msg = f'<{button_name}> 上传中... {pct}% (共{total_mb:.1f}MB)'
+            elif phase == 'move':
+                msg = f'<{button_name}> 移动中... {extra}'
+            if msg:
+                self.update_run_info_progress(button_id, msg)
 
         def on_thread_finished():
             thread.deleteLater()
@@ -1097,10 +1135,31 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         worker.moveToThread(thread)
 
         # 绑定worker信号槽
-        log_wrapper = self._make_log_wrapper(button_name)
-        worker.log_signal.connect(log_wrapper)
+        # 过滤刷屏日志（已上传到临时目录、开始上传文件等由progress展示）
+        skip_phrases = [
+            '已上传到临时目录',
+            '开始上传文件到服务器临时目录，共',
+            '开始查找符合条件的文件',
+            '上传完成，开始移动文件到目标目录',
+            '开始创建服务器临时目录',
+            '大文件上传:',
+            '临时目录已删除',
+            '上传完毕！',
+            '个目录, ',
+        ]
+
+        def send_log_wrapper(text, level='INFO'):
+            for p in skip_phrases:
+                if p in text:
+                    return
+            log_wrapper2 = self._make_log_wrapper(button_name)
+            log_wrapper2(text, level)
+
+        worker.log_signal.connect(send_log_wrapper)
         worker.finished.connect(on_worker_finished)
         worker.finished.connect(worker.deleteLater)
+        if hasattr(worker, 'info_signal'):
+            worker.info_signal.connect(on_progress)
 
         # 绑定线程信号槽
         thread.started.connect(worker.run_task)
@@ -1168,11 +1227,68 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if not c_result:
                 return False
 
-            g_result = ssh_tool.get_files(remote_path, local_path, mtime, filename, work_dir)
+            def progress_cb(phase, current, total, extra):
+                """进度回调：通过info_signal发到主线程"""
+                if worker:
+                    worker.info_signal.emit(('progress', phase, current, total, extra))
+
+            g_result = ssh_tool.get_files(remote_path, local_path, mtime, filename, work_dir, progress_cb=progress_cb)
 
             ssh_tool.disconnect()
 
             return g_result
+
+        def on_progress(data):
+            """处理进度信号，实时刷新最后一行（不刷屏）"""
+            if isinstance(data, tuple) and len(data) >= 5 and data[0] == 'progress':
+                _, phase, current, total, extra = data
+                msg = ''
+                if phase == 'find':
+                    msg = f'<{button_name}> 查找中... 找到{total}个文件'
+                elif phase == 'copy':
+                    if total > 0:
+                        cur_name = extra.split('/')[-1] if '/' in (extra or '') else (extra or '')
+                        msg = f'<{button_name}> 复制中... {current}/{total} ({int(current*100/total)}%)  {cur_name}'
+                elif phase == 'download':
+                    if total > 0:
+                        pct = int(current * 100 / total)
+                        total_mb = total / 1048576
+                        # extra格式：cur_name|cur_size|cur_sent|file_idx|total_files
+                        parts = extra.split('|') if extra else []
+                        if len(parts) >= 5:
+                            file_idx = int(parts[3]) if parts[3].isdigit() else 0
+                            total_files = int(parts[4]) if parts[4].isdigit() else 0
+                            cur_name = os.path.basename(parts[0])
+                            cur_size = int(parts[1]) if parts[1].isdigit() else 0
+                            cur_sent = int(parts[2]) if parts[2].isdigit() else 0
+                            cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
+                            cur_mb = cur_size / 1048576
+                            msg = (f'<{button_name}> 下载中... 总进度{pct}% ({total_mb:.1f}MB) '
+                                   f'文件{file_idx + 1}/{total_files}: {cur_name} {cur_pct}% ({cur_mb:.1f}MB)')
+                        else:
+                            msg = f'<{button_name}> 下载中... {pct}% ({total_mb:.1f}MB)'
+                if msg:
+                    self.update_run_info_progress(button_id, msg)
+
+        def on_log_message(text, level='INFO'):
+            """过滤刷屏的日志，只保留关键信息"""
+            skip_patterns = [
+                '已复制到临时目录',
+                '复制到临时目录失败',
+                '传输进度:',
+                '开始复制文件到远程临时目录',
+                '开始查找符合条件的文件',
+                '找到.*个目录',
+                '开始创建目录',
+                '开始下载',
+                '远程临时目录已删除',
+            ]
+            import re
+            for pat in skip_patterns:
+                if re.search(pat, text):
+                    return
+            # 正常日志走追加
+            log_wrapper(text, level)
 
         def on_worker_finished(result):
             if result:
@@ -1197,7 +1313,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         # 绑定worker信号槽
         log_wrapper = self._make_log_wrapper(button_name)
-        worker.log_signal.connect(log_wrapper)
+        worker.info_signal.connect(on_progress)
+        worker.log_signal.connect(on_log_message)
         worker.finished.connect(on_worker_finished)
         worker.finished.connect(worker.deleteLater)
 
@@ -1430,6 +1547,64 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         )
 
         # 3. 发给logger（如果开启了文件日志，会写入文件）
+        if hasattr(self, 'logger'):
+            level_upper = level.upper()
+            if level_upper == 'WARNING':
+                self.logger.warning(text)
+            elif level_upper == 'ERROR':
+                self.logger.error(text)
+            else:
+                self.logger.info(text)
+
+    def update_run_info_progress(self, progress_key, text, level='INFO'):
+        """更新运行信息中指定的进度行（用于进度等实时刷新的内容，不刷屏）
+
+        Args:
+            progress_key: 进度的唯一标识（如button_id），多个并行任务互不干扰
+            text: 要显示的文本
+            level: 日志级别
+        """
+        color_map = {
+            'INFO': '#000000',
+            'WARNING': '#FF8C00',
+            'ERROR': '#FF0000',
+        }
+        color = color_map.get(level.upper(), '#000000')
+        html_text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        formatted_datetime = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        html = f'<span style="color: {color}">{formatted_datetime} {html_text}</span>'
+
+        if not hasattr(self, '_progress_blocks'):
+            self._progress_blocks = {}
+
+        doc = self.run_info_browser.document()
+        cursor = self.run_info_browser.textCursor()
+
+        if progress_key in self._progress_blocks:
+            # 已有进度块：定位到那个块，替换内容
+            block_pos = self._progress_blocks[progress_key]
+            block = doc.findBlock(block_pos)
+            if block.isValid():
+                cursor.setPosition(block.position())
+                cursor.movePosition(cursor.MoveOperation.EndOfBlock, cursor.MoveMode.KeepAnchor)
+                cursor.insertHtml(html)
+            else:
+                # 块失效了（比如被外部清掉了），重新追加
+                self.run_info_browser.append(html)
+                new_block = doc.lastBlock()
+                self._progress_blocks[progress_key] = new_block.position()
+        else:
+            # 新进度：追加一行，并记录块位置
+            self.run_info_browser.append(html)
+            new_block = doc.lastBlock()
+            self._progress_blocks[progress_key] = new_block.position()
+
+        # 滚动条置底
+        self.run_info_browser.verticalScrollBar().setValue(
+            self.run_info_browser.verticalScrollBar().maximum()
+        )
+
+        # 写logger文件（和普通日志一致）
         if hasattr(self, 'logger'):
             level_upper = level.upper()
             if level_upper == 'WARNING':
