@@ -649,7 +649,7 @@ HELP_HTML = '''<!DOCTYPE html>
     <p>A: Windows 7 需要安装 <span class="highlight">SP1 服务包</span> 和相关系统补丁后才能正常运行。</p>
 
     <div class="footer">
-        <p>OneClick V2.0 | 一键式服务器运维管理工具</p>
+        <p>OneClick V2.1 | 一键式服务器运维管理工具</p>
         <p>如有问题，请联系技术支持</p>
     </div>
 </body>
