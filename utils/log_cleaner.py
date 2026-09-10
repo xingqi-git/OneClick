@@ -307,6 +307,134 @@ def clean_local_logs(dir_path, start_time, end_time, progress_cb=None):
     return deleted_files, trimmed_files, errors
 
 
+def keep_local_logs_in_range(dir_path, start_time, end_time, progress_cb=None):
+    """
+    保留本地目录下指定时间范围内的监控数据（删除区间外的数据）
+    :param dir_path: Monitor 目录路径
+    :param start_time: datetime，区间开始（包含）
+    :param end_time: datetime，区间结束（包含）
+    :param progress_cb: 进度回调函数 callback(file_count, total_count)
+    :return: (deleted_files, trimmed_files, errors)
+    """
+    deleted_files = 0
+    trimmed_files = 0
+    errors = []
+
+    if not os.path.isdir(dir_path):
+        return deleted_files, trimmed_files, errors
+
+    # 收集所有 .log 文件
+    log_files = []
+    for name in os.listdir(dir_path):
+        if not name.endswith('.log'):
+            continue
+        if name in EXCLUDE_FILES:
+            continue
+        full_path = os.path.join(dir_path, name)
+        if os.path.isfile(full_path):
+            log_files.append(full_path)
+
+    total = len(log_files)
+    for idx, filepath in enumerate(log_files):
+        if progress_cb:
+            try:
+                progress_cb(idx + 1, total)
+            except Exception:
+                pass
+
+        first_time, last_time = get_log_time_range(filepath)
+        if first_time is None or last_time is None:
+            # 没有有效数据，直接删除
+            try:
+                os.remove(filepath)
+                deleted_files += 1
+            except OSError as e:
+                errors.append(f"{os.path.basename(filepath)}: {e}")
+            continue
+
+        # 完全在区间外，直接删文件
+        if last_time < start_time or first_time > end_time:
+            try:
+                os.remove(filepath)
+                deleted_files += 1
+            except OSError as e:
+                errors.append(f"{os.path.basename(filepath)}: {e}")
+            continue
+
+        # 完全在区间内，保留不动
+        if first_time >= start_time and last_time <= end_time:
+            continue
+
+        # 部分重叠：用二分法找区间边界，再裁剪
+        # 我们需要：保留 [start_time, end_time] 区间内的数据
+        # 即删除：[表头之后, first_in_range)  和  (first_after_range, 末尾]
+        del_start, del_end = binary_search_delete_range(filepath, start_time, end_time)
+        if del_start is None:
+            # 没有落在区间内的数据，整个文件删掉
+            try:
+                os.remove(filepath)
+                deleted_files += 1
+            except OSError as e:
+                errors.append(f"{os.path.basename(filepath)}: {e}")
+            continue
+
+        # del_start: 第一条在区间内的行号（保留起始）
+        # del_end: 第一条在区间外的行号（保留结束 + 1）
+        # 保留区间：[del_start, del_end)，也就是表头 + 这段数据
+        # 等价于：删除 [2, del_start) 和 [del_end, 末尾]
+        # 用 trim_local_log_by_lines 分段保留：
+        # keep_before_line = del_start  -> 保留 [1, del_start) 不对，我们要保留 [del_start, del_end)
+        # 所以需要改造：直接保留表头 + 从 del_start 到 del_end - 1
+
+        # 为了不改动现有 trim_local_log_by_lines 接口，这里直接做行级裁剪
+        import shutil
+        tmp_path = filepath + '.tmp'
+        data_line_count = 0
+        try:
+            with open(filepath, 'r', encoding='utf-8', newline='') as src, \
+                 open(tmp_path, 'w', encoding='utf-8', newline='') as dst:
+                line_num = 0
+                for line in src:
+                    line_num += 1
+                    # 第 1 行（表头）直接写
+                    if line_num == 1:
+                        dst.write(line)
+                        continue
+                    # 在保留区间 [del_start, del_end) 内的行写入
+                    if del_start <= line_num < del_end:
+                        dst.write(line)
+                        data_line_count += 1
+
+            # 裁剪后没有数据行（只有表头），删除整个文件
+            if data_line_count <= 0:
+                try:
+                    os.remove(tmp_path)
+                    os.remove(filepath)
+                    deleted_files += 1
+                except OSError as e:
+                    errors.append(f"{os.path.basename(filepath)}: {e}")
+                continue
+
+            # 原子替换
+            shutil.move(tmp_path, filepath)
+            trimmed_files += 1
+        except Exception as e:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+            errors.append(f"{os.path.basename(filepath)}: {e}")
+
+    if progress_cb:
+        try:
+            progress_cb(total, total)
+        except Exception:
+            pass
+
+    return deleted_files, trimmed_files, errors
+
+
 def build_remote_linux_clean_cmd(remote_dir, start_str, end_str):
     """
     构造 Linux 远程清理的 shell 命令（bash 脚本，按时间字符串比较，不用解析日期）
@@ -398,6 +526,116 @@ def write_remote_linux_clean_script(remote_dir, start_str, end_str, local_path):
     :param local_path: 本地保存路径
     """
     script = build_remote_linux_clean_cmd(remote_dir, start_str, end_str)
+    with open(local_path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(script)
+
+
+def build_remote_linux_filter_cmd(remote_dir, out_dir, start_str, end_str):
+    """
+    构造 Linux 远程按时间范围筛选的 bash 脚本（保留区间内的数据，不动原文件）
+    流程：
+      1. 创建输出目录
+      2. 遍历原目录每个 log 文件
+      3. 首尾行快速判断：完全在区间内→复制；完全在区间外→跳过；部分重叠→awk裁剪后复制
+      4. 输出进度信息
+    因为时间格式是 ISO 风格 (YYYY-MM-DD HH:MM:SS)，字符串比较与时间比较一致
+    """
+    script = f'''
+src_dir="{remote_dir}"
+out_dir="{out_dir}"
+start_ts="{start_str}"
+end_ts="{end_str}"
+copied=0
+trimmed=0
+skipped=0
+
+if [ ! -d "$src_dir" ]; then
+    echo "DIR_NOT_FOUND"
+    exit 0
+fi
+
+mkdir -p "$out_dir"
+
+# 先统计总文件数（排除 OneClickMonitor.log）
+total=0
+for f in "$src_dir"/*.log; do
+    [ -f "$f" ] || continue
+    base=$(basename "$f")
+    case "$base" in
+        OneClickMonitor.log) ;;
+        *) total=$((total + 1)) ;;
+    esac
+done
+echo "TOTAL:$total"
+
+if [ "$total" -eq 0 ]; then
+    echo "RESULT:copied=0:trimmed=0:skipped=0"
+    exit 0
+fi
+
+index=0
+for f in "$src_dir"/*.log; do
+    [ -f "$f" ] || continue
+    base=$(basename "$f")
+    case "$base" in
+        OneClickMonitor.log) continue ;;
+    esac
+    index=$((index + 1))
+    echo "PROGRESS:$index/$total"
+
+    # 取首行数据时间（第2行，跳过表头）
+    first_time=$(sed -n '2p' "$f" | cut -d',' -f1)
+    # 取末行时间
+    last_time=$(tail -n1 "$f" | cut -d',' -f1)
+
+    [ -z "$first_time" ] && continue
+    [ -z "$last_time" ] && continue
+
+    # 完全在区间之前或之后，跳过
+    if [[ "$last_time" < "$start_ts" ]] || [[ "$first_time" > "$end_ts" ]]; then
+        skipped=$((skipped + 1))
+        continue
+    fi
+
+    # 完全在区间内，直接复制
+    if [[ "$first_time" > "$start_ts" || "$first_time" == "$start_ts" ]] && [[ "$last_time" < "$end_ts" || "$last_time" == "$end_ts" ]]; then
+        cp "$f" "$out_dir/"
+        copied=$((copied + 1))
+        continue
+    fi
+
+    # 部分重叠，用 awk 按时间裁剪（保留表头 + 区间内的数据行），输出到 out_dir
+    out_f="$out_dir/$base"
+    awk -F',' -v s="$start_ts" -v e="$end_ts" '
+        NR == 1 {{ print; next }}
+        $1 >= s && $1 <= e {{ print }}
+    ' "$f" > "$out_f"
+
+    # 检查裁剪后是否还有数据行
+    line_count=$(wc -l < "$out_f")
+    if [ "$line_count" -le 1 ]; then
+        rm -f "$out_f"
+        skipped=$((skipped + 1))
+    else
+        trimmed=$((trimmed + 1))
+    fi
+done
+
+echo "RESULT:copied=$copied:trimmed=$trimmed:skipped=$skipped"
+'''
+    return script
+
+
+def write_remote_linux_filter_script(remote_dir, out_dir, start_str, end_str, local_path):
+    """
+    生成 Linux 远程按时间范围筛选脚本到本地文件，方便上传到服务器执行
+    :param remote_dir: 服务器上的 Monitor 目录路径（源）
+    :param out_dir: 服务器上的输出目录路径（筛选后的数据放这里）
+    :param start_str: 起始时间字符串
+    :param end_str: 结束时间字符串
+    :param local_path: 本地保存路径
+    """
+    script = build_remote_linux_filter_cmd(remote_dir, out_dir, start_str, end_str)
     with open(local_path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(script)
 

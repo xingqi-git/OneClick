@@ -13,6 +13,7 @@ from utils import ssh_tools, qthread_worker
 from utils import log_cleaner
 from .base_dialog import SendCMDDialog, sc_class2str
 from .clean_range_dialog import CleanRangeDialog
+from .download_range_dialog import DownloadRangeDialog
 
 
 class ResourceMonitorDialog1(SendCMDDialog):
@@ -1293,13 +1294,21 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
     def download_data(self):
         """
         从服务器下载监控数据，如果没有，弹窗提示
-        如果有，下载
+        如果有，下载。支持按时间范围下载（服务器端筛选后再下载）
         :return:
         """
         ssh_status = self.ssh_stutas_label.text()
         if ssh_status != '已连接':
             AutoCloseMessageBox("提示", "请等待服务器连接", 2000, self).exec_()
             return
+
+        # 弹出下载范围选择对话框
+        dialog = DownloadRangeDialog(self)
+        if dialog.exec_() != QDialog.DialogCode.Accepted:
+            return
+
+        download_mode = dialog.get_download_mode()
+        start_time, end_time = dialog.get_time_range()
 
         try:
             ip = self.parent.sc_buttons[self.button_id]['config']['IP']
@@ -1330,8 +1339,11 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         progress_dialog.setAutoClose(True)
         progress_dialog.setAutoReset(True)
 
-        # 本地保存路径
+        # 按时间范围下载时用到的服务器临时目录
+        filter_tmp_dir = f"{work_dir}/OneClick/Monitor_filter_tmp"
+
         def do_download_data():
+            import tempfile
             connect_result = ssh_client.connect()
             if not connect_result:
                 return (False, "连接服务器失败")
@@ -1339,67 +1351,214 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 # 如果本地没有ip文件夹，则创建
                 os.makedirs(self.monitor_data_path, mode=0o777, exist_ok=True)
 
+                # 下载源路径（默认是完整的 Monitor 目录）
+                remote_download_path = user_path
+
+                # 按时间范围下载：先在服务器端筛选到临时目录
+                if download_mode == 'range' and start_time and end_time:
+                    worker.info_signal.emit(('filter_phase', 'prepare'))
+                    start_str = start_time.strftime('%Y-%m-%d %H:%M:%S')
+                    end_str = end_time.strftime('%Y-%m-%d %H:%M:%S')
+
+                    # 1. 生成本地脚本文件
+                    tmp_dir_local = tempfile.gettempdir()
+                    local_script = os.path.join(tmp_dir_local, "oneclick_filter.sh")
+                    log_cleaner.write_remote_linux_filter_script(
+                        user_path, filter_tmp_dir, start_str, end_str, local_script
+                    )
+
+                    # 2. 上传脚本到服务器
+                    worker.info_signal.emit(('filter_phase', 'upload'))
+                    remote_script = f"{work_dir}/oneclick_filter.sh"
+                    sftp = ssh_client.ssh.open_sftp()
+                    sftp.put(local_script, remote_script)
+                    sftp.close()
+
+                    # 3. 执行脚本，实时读取进度
+                    worker.info_signal.emit(('filter_phase', 'running'))
+                    stdin, stdout, stderr = ssh_client.ssh.exec_command(f"bash {remote_script}")
+
+                    result_line = ""
+                    for line in stdout:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        if line.startswith("TOTAL:"):
+                            try:
+                                total = int(line.split(":")[1])
+                                worker.info_signal.emit(('filter_total', total))
+                            except:
+                                pass
+                        elif line.startswith("PROGRESS:"):
+                            try:
+                                prog_str = line.split(":")[1]
+                                cur, tot = prog_str.split("/")
+                                worker.info_signal.emit(('filter_progress', int(cur), int(tot)))
+                            except:
+                                pass
+                        elif line.startswith("DIR_NOT_FOUND"):
+                            result_line = line
+                        elif line.startswith("RESULT:"):
+                            result_line = line
+
+                    err = stderr.read().decode().strip()
+
+                    # 4. 清理本地临时脚本
+                    try:
+                        os.remove(local_script)
+                    except:
+                        pass
+
+                    # 5. 清理服务器脚本（临时目录等下删）
+                    try:
+                        ssh_client.ssh.exec_command(f"rm -f {remote_script}")
+                    except:
+                        pass
+
+                    if err:
+                        # 清理服务器临时目录
+                        try:
+                            ssh_client.ssh.exec_command(f"rm -rf {filter_tmp_dir}")
+                        except:
+                            pass
+                        return (False, f"服务器筛选失败：{err}")
+
+                    if result_line == "DIR_NOT_FOUND":
+                        return (False, "服务器上没有监控数据")
+
+                    # 筛选后下载临时目录
+                    remote_download_path = filter_tmp_dir
+
+                # 下载（共用的下载逻辑）
                 def progress_cb(phase, current, total, extra):
                     """进度回调，在子线程里通过 info_signal 发到主线程"""
                     if worker:
                         worker.info_signal.emit(('progress', phase, current, total, extra))
 
-                get_result = ssh_client.get_files(user_path, self.monitor_data_path, float('inf'), '', work_dir, progress_cb=progress_cb)
-                ssh_client.disconnect()
+                get_result = ssh_client.get_files(
+                    remote_download_path, self.monitor_data_path,
+                    float('inf'), '', work_dir, progress_cb=progress_cb
+                )
                 if not get_result:
+                    # 失败时顺便清理服务器临时目录
+                    if download_mode == 'range':
+                        try:
+                            ssh_client.ssh.exec_command(f"rm -rf {filter_tmp_dir}")
+                        except:
+                            pass
+                    ssh_client.disconnect()
                     return (False, "获取数据失败")
+
+                # 清理服务器临时目录
+                if download_mode == 'range':
+                    try:
+                        ssh_client.ssh.exec_command(f"rm -rf {filter_tmp_dir}")
+                    except:
+                        pass
+
+                    # 本地重命名：Monitor_filter_tmp -> Monitor
+                    tmp_local_dir = os.path.join(self.monitor_data_path, 'Monitor_filter_tmp')
+                    target_local_dir = os.path.join(self.monitor_data_path, 'Monitor')
+                    if os.path.isdir(tmp_local_dir):
+                        # 如果目标已存在，先删掉旧的
+                        if os.path.exists(target_local_dir):
+                            if os.path.isdir(target_local_dir):
+                                shutil.rmtree(target_local_dir)
+                            else:
+                                os.remove(target_local_dir)
+                        os.rename(tmp_local_dir, target_local_dir)
+
+                ssh_client.disconnect()
+
             except Exception as e:
+                # 异常时也清理服务器临时目录
+                if download_mode == 'range':
+                    try:
+                        ssh_client.ssh.exec_command(f"rm -rf {filter_tmp_dir}")
+                    except:
+                        pass
                 ssh_client.disconnect()
                 return (False, f"{e}")
             return (True, "")
 
         def on_info(data):
             """接收子线程传来的进度信息，切到主线程更新进度条"""
-            if isinstance(data, tuple) and len(data) >= 5 and data[0] == 'progress':
-                _, phase, current, total, extra = data
-                def _update():
-                    if phase == 'find':
-                        progress_dialog.setLabelText(f"找到{total}个文件，准备复制...")
-                        progress_dialog.setRange(0, 0)  # 不确定进度
-                    elif phase == 'copy':
-                        if total > 0:
-                            progress_dialog.setRange(0, total)
-                            progress_dialog.setValue(current)
-                            progress_dialog.setLabelText(f"复制中... {current}/{total}")
-                    elif phase == 'download':
-                        if total > 0:
-                            progress_dialog.setRange(0, 100)
-                            pct = int(current * 100 / total)
-                            progress_dialog.setValue(pct)
-                            total_mb = total / 1048576
-                            # extra格式：cur_name|cur_size|cur_sent|file_idx|total_files
-                            parts = extra.split('|') if extra else []
-                            if len(parts) >= 5:
-                                cur_name = parts[0]
-                                cur_size = int(parts[1]) if parts[1].isdigit() else 0
-                                cur_sent = int(parts[2]) if parts[2].isdigit() else 0
-                                file_idx = int(parts[3]) if parts[3].isdigit() else 0
-                                total_files = int(parts[4]) if parts[4].isdigit() else 0
-                                cur_mb = cur_size / 1048576
-                                cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
-                                short_name = cur_name.split('/')[-1] if '/' in cur_name else cur_name
-                                progress_dialog.setLabelText(
-                                    f"下载中... {pct}% (共{total_mb:.1f}MB)\n"
-                                    f"文件 {file_idx + 1}/{total_files}: {short_name} ({cur_pct}%, {cur_mb:.1f}MB)"
-                                )
-                            else:
-                                progress_dialog.setLabelText(f"下载中... {pct}% ({total_mb:.1f}MB)")
-                QtCore.QTimer.singleShot(0, _update)
+            if isinstance(data, tuple) and len(data) >= 1:
+                msg_type = data[0]
+                if msg_type == 'filter_phase' and len(data) >= 2:
+                    phase = data[1]
+                    def _update():
+                        if phase == 'prepare':
+                            progress_dialog.setLabelText("正在生成筛选脚本...")
+                            progress_dialog.setRange(0, 0)
+                        elif phase == 'upload':
+                            progress_dialog.setLabelText("正在上传筛选脚本...")
+                            progress_dialog.setRange(0, 0)
+                        elif phase == 'running':
+                            progress_dialog.setLabelText("正在服务器端筛选数据...")
+                            progress_dialog.setRange(0, 0)
+                    QtCore.QTimer.singleShot(0, _update)
+                elif msg_type == 'filter_total' and len(data) >= 2:
+                    total = data[1]
+                    def _update():
+                        progress_dialog.setRange(0, total)
+                        progress_dialog.setValue(0)
+                        progress_dialog.setLabelText(f"筛选中... 0/{total}")
+                    QtCore.QTimer.singleShot(0, _update)
+                elif msg_type == 'filter_progress' and len(data) >= 3:
+                    _, cur, total = data
+                    def _update():
+                        progress_dialog.setRange(0, total)
+                        progress_dialog.setValue(cur)
+                        progress_dialog.setLabelText(f"筛选中... {cur}/{total}")
+                    QtCore.QTimer.singleShot(0, _update)
+                elif msg_type == 'progress' and len(data) >= 5:
+                    _, phase, current, total, extra = data
+                    def _update():
+                        if phase == 'find':
+                            progress_dialog.setLabelText(f"找到{total}个文件，准备复制...")
+                            progress_dialog.setRange(0, 0)
+                        elif phase == 'copy':
+                            if total > 0:
+                                progress_dialog.setRange(0, total)
+                                progress_dialog.setValue(current)
+                                progress_dialog.setLabelText(f"复制中... {current}/{total}")
+                        elif phase == 'download':
+                            if total > 0:
+                                progress_dialog.setRange(0, 100)
+                                pct = int(current * 100 / total)
+                                progress_dialog.setValue(pct)
+                                total_mb = total / 1048576
+                                parts = extra.split('|') if extra else []
+                                if len(parts) >= 5:
+                                    cur_name = parts[0]
+                                    cur_size = int(parts[1]) if parts[1].isdigit() else 0
+                                    cur_sent = int(parts[2]) if parts[2].isdigit() else 0
+                                    file_idx = int(parts[3]) if parts[3].isdigit() else 0
+                                    total_files = int(parts[4]) if parts[4].isdigit() else 0
+                                    cur_mb = cur_size / 1048576
+                                    cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
+                                    short_name = cur_name.split('/')[-1] if '/' in cur_name else cur_name
+                                    progress_dialog.setLabelText(
+                                        f"下载中... {pct}% (共{total_mb:.1f}MB)\n"
+                                        f"文件 {file_idx + 1}/{total_files}: {short_name} ({cur_pct}%, {cur_mb:.1f}MB)"
+                                    )
+                                else:
+                                    progress_dialog.setLabelText(f"下载中... {pct}% ({total_mb:.1f}MB)")
+                    QtCore.QTimer.singleShot(0, _update)
 
         def on_download_data_finished(result):
             success, err_msg = result
             def _update_ui():
                 progress_dialog.close()
                 if success:
-                    AutoCloseMessageBox("提示", f"监控数据已下载到{self.monitor_data_path}/Monitor", 2000, self).exec_()
-                    self._log(f"监控数据已下载到{self.monitor_data_path}/Monitor")
+                    if download_mode == 'range':
+                        AutoCloseMessageBox("提示", f"监控数据已按时间范围筛选并下载到{self.monitor_data_path}/Monitor", 2000, self).exec_()
+                        self._log(f"监控数据已按时间范围筛选并下载到{self.monitor_data_path}/Monitor")
+                    else:
+                        AutoCloseMessageBox("提示", f"监控数据已下载到{self.monitor_data_path}/Monitor", 2000, self).exec_()
+                        self._log(f"监控数据已下载到{self.monitor_data_path}/Monitor")
                 else:
-                    # 失败显示提示
                     AutoCloseMessageBox("提示", f"下载数据失败，原因：{err_msg}", 2000, self).exec_()
                 thread.quit()
             QtCore.QTimer.singleShot(0, _update_ui)
@@ -1527,16 +1686,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         except:
             return False
 
-    def _show_graph_window(self):
-        """显示绘图窗口"""
-        data_path = self.monitor_data_path + '/Monitor'
-        g_window = GraphWindowLogic.GraphWindow(data_path, self)
-        g_window.destroyed.connect(
-            lambda obj: self.remove_window_from_list(obj)
-        )
-        self.g_windows.append(g_window)
-        g_window.show()
-
     def _log(self, text, level='INFO'):
         """带按钮名称前缀的日志输出"""
         if text.startswith(f'<{self.button_name}>'):
@@ -1544,154 +1693,28 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         else:
             self.parent.update_run_info(f'<{self.button_name}> {text}', level)
 
-    def _show_local_data_graph(self):
-        """展示本地数据（检查是否有数据，无数据则提示，有数据直接打开）"""
-        if not self._has_monitor_data():
-            AutoCloseMessageBox("提示", "没有检测到监控数据", 2000, self).exec_()
-            return
-        self._show_graph_window()
-
     def display_resource(self):
-        if self.data_dir_name == 'local':
-            # 本机监控
-            self._show_local_data_graph()
-        else:
-            ssh_status = self.ssh_stutas_label.text()
-            if ssh_status != '已连接':
-                # 连接中，未知：直接展示本地数据
-                self._show_local_data_graph()
-            else:
-                # 已连接：二选一对话框
-                dialog = QMessageBox()
-                dialog.setIcon(QMessageBox.Icon.Question)
-                dialog.setWindowTitle("选择展示方式")
-                dialog.setText("请选择展示方式")
-                btn_local = dialog.addButton("本地数据绘图", QMessageBox.ButtonRole.ActionRole)
-                btn_download = dialog.addButton("下载最新数据绘图", QMessageBox.ButtonRole.ActionRole)
-                btn_cancel = dialog.addButton("取消", QMessageBox.ButtonRole.RejectRole)
-                dialog.exec_()
+        """打开监控绘图窗口（直接打开，按需加载数据）"""
+        data_path = self.monitor_data_path + '/Monitor'
 
-                clicked_btn = dialog.clickedButton()
-                if clicked_btn == btn_local:
-                    self._show_local_data_graph()
-                elif clicked_btn == btn_download:
-                    # 先下载最新数据再展示
-                    try:
-                        ip = self.parent.sc_buttons[self.button_id]['config']['IP']
-                        port = self.parent.sc_buttons[self.button_id]['config']['端口']
-                        username = self.parent.sc_buttons[self.button_id]['config']['用户名']
-                        password = self.parent.sc_buttons[self.button_id]['config']['密码']
+        # 服务器模式下传服务器配置，用于增量更新
+        server_config = None
+        if self.data_dir_name != 'local' and self.button_id in self.parent.sc_buttons:
+            cfg = self.parent.sc_buttons[self.button_id].get('config', {})
+            server_config = {
+                'IP': cfg.get('IP'),
+                '端口': cfg.get('端口'),
+                '用户名': cfg.get('用户名'),
+                '密码': cfg.get('密码'),
+                '文件暂存路径': cfg.get('文件暂存路径'),
+            }
 
-                        ssh_client = ssh_tools.SSHTools()
-                        ssh_client.ip = ip
-                        ssh_client.port = port
-                        ssh_client.username = username
-                        ssh_client.password = password
-                    except Exception as e:
-                        self.message_info_box(("提示", f"请检查服务器配置{e}"))
-                        return
-
-                    self._operation_running = True
-                    self.set_all_buttons_enable(False)
-                    work_dir = self.parent.sc_buttons[self.button_id]['config']['文件暂存路径']
-                    user_path = f"{work_dir}/OneClick/Monitor"
-
-                    # 进度条对话框
-                    progress_dialog = QProgressDialog("正在准备下载...", "取消", 0, 100, self)
-                    progress_dialog.setWindowTitle("下载数据")
-                    progress_dialog.setWindowModality(QtCore.Qt.ApplicationModal)
-                    progress_dialog.setMinimumDuration(0)
-                    progress_dialog.setAutoClose(True)
-                    progress_dialog.setAutoReset(True)
-
-                    def do_download():
-                        connect_result = ssh_client.connect()
-                        if not connect_result:
-                            return False
-                        try:
-                            os.makedirs(self.monitor_data_path, mode=0o777, exist_ok=True)
-
-                            def progress_cb(phase, current, total, extra):
-                                if worker:
-                                    worker.info_signal.emit(('progress', phase, current, total, extra))
-
-                            get_result = ssh_client.get_files(user_path, self.monitor_data_path, float('inf'), '', work_dir, progress_cb=progress_cb)
-                            ssh_client.disconnect()
-                            if not get_result:
-                                return False
-                        except Exception as e:
-                            ssh_client.disconnect()
-                            return False
-                        return True
-
-                    def on_info(data):
-                        if isinstance(data, tuple) and len(data) >= 5 and data[0] == 'progress':
-                            _, phase, current, total, extra = data
-                            def _update():
-                                if phase == 'find':
-                                    progress_dialog.setLabelText(f"找到{total}个文件，准备复制...")
-                                    progress_dialog.setRange(0, 0)
-                                elif phase == 'copy':
-                                    if total > 0:
-                                        progress_dialog.setRange(0, total)
-                                        progress_dialog.setValue(current)
-                                        progress_dialog.setLabelText(f"复制中... {current}/{total}")
-                                elif phase == 'download':
-                                    if total > 0:
-                                        progress_dialog.setRange(0, 100)
-                                        pct = int(current * 100 / total)
-                                        progress_dialog.setValue(pct)
-                                        total_mb = total / 1048576
-                                        parts = extra.split('|') if extra else []
-                                        if len(parts) >= 5:
-                                            cur_name = parts[0]
-                                            cur_size = int(parts[1]) if parts[1].isdigit() else 0
-                                            cur_sent = int(parts[2]) if parts[2].isdigit() else 0
-                                            file_idx = int(parts[3]) if parts[3].isdigit() else 0
-                                            total_files = int(parts[4]) if parts[4].isdigit() else 0
-                                            cur_mb = cur_size / 1048576
-                                            cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
-                                            short_name = cur_name.split('/')[-1] if '/' in cur_name else cur_name
-                                            progress_dialog.setLabelText(
-                                                f"下载中... {pct}% (共{total_mb:.1f}MB)\n"
-                                                f"文件 {file_idx + 1}/{total_files}: {short_name} ({cur_pct}%, {cur_mb:.1f}MB)"
-                                            )
-                                        else:
-                                            progress_dialog.setLabelText(f"下载中... {pct}% ({total_mb:.1f}MB)")
-                            QtCore.QTimer.singleShot(0, _update)
-
-                    def on_download_finished(success):
-                        def _update_ui():
-                            progress_dialog.close()
-                            # 下载完成后直接调用展示本地数据逻辑（不提示成功/失败）
-                            self._operation_running = False
-                            self.set_all_buttons_enable()
-                            self._show_local_data_graph()
-                            thread.quit()
-                        QtCore.QTimer.singleShot(0, _update_ui)
-
-                    def on_thread_finished():
-                        thread.deleteLater()
-                        self.parent.sc_threads.pop(self.work_thread_id)
-                        self.work_thread_id = None
-
-                    worker = qthread_worker.OneClickWorker(do_download)
-                    thread = QThread()
-
-                    self.parent.thread_count += 1
-                    self.work_thread_id = f'sc_thread_{self.parent.thread_count}'
-                    self.parent.sc_threads[self.work_thread_id] = {
-                        'worker': worker,
-                        'thread': thread
-                    }
-
-                    worker.moveToThread(thread)
-                    worker.info_signal.connect(on_info)
-                    worker.finished.connect(on_download_finished)
-                    worker.finished.connect(worker.deleteLater)
-                    thread.started.connect(worker.run_task)
-                    thread.finished.connect(on_thread_finished)
-                    thread.start()
+        g_window = GraphWindowLogic.GraphWindow(data_path, self, server_config=server_config)
+        g_window.destroyed.connect(
+            lambda obj: self.remove_window_from_list(obj)
+        )
+        self.g_windows.append(g_window)
+        g_window.show()
 
     def remove_window_from_list(self, window):
         """从列表中移除已关闭的窗口"""
