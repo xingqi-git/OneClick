@@ -1,16 +1,4 @@
 ﻿r"""
-    启动qtdesigner
-    .\.venv\Lib\site-packages\qt5_applications\Qt\bin\designer.exe
-    更新UI命令
-    python -m PyQt5.uic.pyuic ./UI/MainWindow.ui -o ./UI/MainWindow.py
-    python -m PyQt5.uic.pyuic ./UI/send_cmd_dlg.ui -o ./UI/send_cmd_dlg.py
-    python -m PyQt5.uic.pyuic ./UI/send_files_dlg.ui -o ./UI/send_files_dlg.py
-    python -m PyQt5.uic.pyuic ./UI/get_files_dlg.ui -o ./UI/get_files_dlg.py
-    python -m PyQt5.uic.pyuic ./UI/copy_local_files_dlg.ui -o ./UI/copy_local_files_dlg.py
-    python -m PyQt5.uic.pyuic ./UI/edit_servers_dlg.ui -o ./UI/edit_servers_dlg.py
-    python -m PyQt5.uic.pyuic ./UI/resource_monitor_dlg.ui -o ./UI/resource_monitor_dlg.py
-    python -m PyQt5.uic.pyuic ./UI/GraphMainWindow.ui -o ./UI/GraphMainWindow.py
-
     打包命令：
     pyinstaller -F -w OneClick.py -i app.ico --add-data "app.ico;."
     参数说明：

@@ -1,18 +1,15 @@
-import os
-import sys
 import subprocess
 import platform
 import time
 from datetime import datetime
 from PyQt5 import QtCore
-from PyQt5.QtCore import QThread, QObject, Qt
+from PyQt5.QtCore import QThread
 from PyQt5.QtWidgets import (QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QTableWidgetItem, QHeaderView, QMessageBox, QCheckBox,
                              QComboBox, QSpinBox, QLineEdit, QAbstractItemView)
 from UI import server_check_run_dlg
 from utils import qthread_worker
 import paramiko
-import socket
 
 
 class ServerCheckRunDialog(QDialog, server_check_run_dlg.Ui_Dialog):

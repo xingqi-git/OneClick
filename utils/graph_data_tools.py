@@ -1,10 +1,8 @@
 from PyQt5 import QtCore
 import os
-import datetime
 import matplotlib.pyplot as plt
 from matplotlib.dates import AutoDateLocator, DateFormatter
 import pandas as pd
-import numpy as np
 
 
 def make_plot_figure(data_dic, action_name, time_start=None, time_end=None, filter_pids=None):
@@ -179,10 +177,8 @@ def make_plot_figure(data_dic, action_name, time_start=None, time_end=None, filt
 
 class Worker(QtCore.QObject):
     """工作对象，包含耗时函数"""
-    progress = QtCore.pyqtSignal(int)
     message = QtCore.pyqtSignal(str)
     finished = QtCore.pyqtSignal(object)
-    canceled = QtCore.pyqtSignal()
 
     def __init__(self, data):
         super().__init__()
@@ -232,12 +228,11 @@ class Worker(QtCore.QObject):
                     df = self._load_and_merge_files(paths, proc_name)
                     if df is not None and len(df) > 0:
                         self.data_dic[proc_name] = df
-                    self.progress.emit(int(100 * (idx + 1) / total_groups))
                 except Exception as e:
                     self.message.emit(f"加载 {proc_name} 失败: {e}")
 
             if self.canceled_flag:
-                self.canceled.emit()
+                self.finished.emit(("错误", "加载已取消"))
             else:
                 self.finished.emit(self.data_dic)
         except Exception as e:
@@ -326,91 +321,3 @@ class Worker(QtCore.QObject):
             self.canceled_flag = True
             return True
         return False
-
-    def create_plot_tab(self):
-        """
-        根据指标名创建绘图标签页（调用纯函数 make_plot_figure）
-        self.data = [data_dic, action_name, time_start, time_end, pids(可选)]
-        """
-        try:
-            self.canceled_flag = False
-            self.message.emit("正在绘图，请稍后...")
-
-            data_dic = self.data[0]
-            action_name = self.data[1]
-            time_start = self.data[2] if len(self.data) > 2 else None
-            time_end = self.data[3] if len(self.data) > 3 else None
-            filter_pids = self.data[4] if len(self.data) > 4 else None
-
-            result = make_plot_figure(data_dic, action_name, time_start, time_end, filter_pids)
-            self.finished.emit(result)
-        except Exception as e:
-            self.finished.emit(("错误", f"绘图过程中发生异常：{str(e)}"))
-
-    def extract_pid_series(self):
-        """
-        提取单个PID单个指标的曲线数据（用于原图动态增删曲线）
-        self.data = [data_dic, proc_name, ind_name, pid, time_start, time_end]
-        返回 (label, x_list, y_list)，数据不存在返回 None
-        """
-        try:
-            data_dic = self.data[0]
-            proc_name = self.data[1]
-            ind_name = self.data[2]
-            pid = str(self.data[3])
-            time_start = self.data[4] if len(self.data) > 4 else None
-            time_end = self.data[5] if len(self.data) > 5 else None
-
-            df = data_dic.get(proc_name)
-            if df is None or len(df) == 0 or ind_name not in df.columns:
-                self.finished.emit(None)
-                return
-
-            time_col = None
-            for c in df.columns:
-                if '时间' in c:
-                    time_col = c
-                    break
-            if time_col is None:
-                self.finished.emit(None)
-                return
-
-            if '_pid' in df.columns:
-                group = df[df['_pid'] == pid]
-            else:
-                group = df
-            if len(group) == 0:
-                self.finished.emit(None)
-                return
-
-            ts = group[time_col]
-            vs = group[ind_name]
-
-            # 时间过滤
-            t_start = pd.Timestamp(time_start) if time_start else None
-            t_end = pd.Timestamp(time_end) if time_end else None
-            if t_start is not None or t_end is not None:
-                mask = pd.Series(True, index=ts.index)
-                if t_start is not None:
-                    mask &= ts >= t_start
-                if t_end is not None:
-                    mask &= ts <= t_end
-                ts = ts[mask]
-                vs = vs[mask]
-
-            if len(ts) == 0:
-                self.finished.emit(None)
-                return
-
-            # 降采样
-            max_points = 5000
-            if len(ts) > max_points:
-                step = max(1, len(ts) // max_points)
-                ts = ts.iloc[::step]
-                vs = vs.iloc[::step]
-
-            label = f"{proc_name}_{pid}" if '_pid' in df.columns else proc_name
-            self.finished.emit((label, list(ts.values), list(vs.values)))
-        except Exception as e:
-            print(f"提取PID曲线失败: {e}")
-            self.finished.emit(None)

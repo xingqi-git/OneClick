@@ -4,7 +4,6 @@
 
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtWidgets import QDialog, QMessageBox
-import datetime
 
 
 class CleanRangeDialog(QDialog):

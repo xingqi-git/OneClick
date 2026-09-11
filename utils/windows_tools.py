@@ -1,4 +1,4 @@
-﻿import os
+import os
 import time
 import shutil
 
@@ -155,5 +155,3 @@ class WindowsTools(object):
             for item in dir_list:
                 self.clean_empty_dir(path + '/' + item, f_name)
 
-if __name__ == '__main__':
-    pass

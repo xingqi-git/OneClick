@@ -1,4 +1,4 @@
-import os.path
+import os
 import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import QThread, QTimer
@@ -13,7 +13,7 @@ import datetime
 from utils.logger import setup_logging, get_logger
 from dialogs import (SendCMDDialog, SendCMD2Dialog, SendFilesDialog, GetFilesDialog, CopyFilesDialog,
                      SetServerDialog, ResourceMonitorDialog1, ResourceMonitorDialog2,
-                     WeakNetDialog1, WeakNetControlDialog, HelpDialog, sc_class2str, ServerCheckDialog, ServerCheckRunDialog)
+                     WeakNetDialog1, WeakNetControlDialog, HelpDialog, ServerCheckDialog, ServerCheckRunDialog)
 
 
 class DraggableButton(QPushButton):

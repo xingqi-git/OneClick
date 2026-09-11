@@ -580,7 +580,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             worker.moveToThread(thread)
 
             # 连接信号和槽
-            # worker.log_signal.connect(lambda: None)
             worker.log_signal.connect(self._log)
             worker.info_signal.connect(self.message_info_box)
             worker.finished.connect(on_local_worker_finished)
@@ -816,7 +815,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
             worker.moveToThread(thread)
 
-            # worker.log_signal.connect(lambda : None) # 屏蔽日志输出
             worker.log_signal.connect(self._log)
             worker.info_signal.connect(self.message_info_box)
             worker.finished.connect(on_worker_finished)
@@ -911,7 +909,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
             worker.moveToThread(thread)
 
-            # worker.log_signal.connect(lambda : None) # 屏蔽日志输出
             worker.log_signal.connect(self._log)
             worker.info_signal.connect(self.message_info_box)
             worker.finished.connect(on_stop_monitor_finished)
@@ -930,7 +927,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         :param on_finished: 回调函数 callback(success, message)，清理完成后调用
         """
         local_monitor_path = self.monitor_data_path + "/Monitor"
-        from PyQt5.QtWidgets import QProgressDialog
         progress_dialog = QProgressDialog("准备中...", "取消", 0, 100, self)
         progress_dialog.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
         progress_dialog.setWindowTitle("清理本地数据")
@@ -1104,7 +1100,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 work_dir = self.parent.sc_buttons[self.button_id]['config']['文件暂存路径']
                 user_path = f"{work_dir}/OneClick/Monitor"
 
-                from PyQt5.QtWidgets import QProgressDialog
                 progress_dialog = QProgressDialog("准备中...", None, 0, 100, self)
                 progress_dialog.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
                 progress_dialog.setWindowTitle("清理服务器数据")
@@ -1673,18 +1668,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 self.clean_pushButton.setEnabled(False)
             else:
                 self.clean_pushButton.setEnabled(True)
-
-    def _has_monitor_data(self):
-        """检查是否有监控数据（.log文件）"""
-        data_path = self.monitor_data_path + '/Monitor'
-        if not os.path.exists(data_path):
-            return False
-        # 检查是否有 .log 文件
-        try:
-            files = os.listdir(data_path)
-            return any(f.lower().endswith('.log') for f in files)
-        except:
-            return False
 
     def _log(self, text, level='INFO'):
         """带按钮名称前缀的日志输出"""

@@ -6,8 +6,8 @@ paramiko==2.10.4
 scp==0.14.4
 matplotlib==3.4.3
 psutil==5.9.0
-pyinstaller==4.10
-pyinstaller-hooks-contrib==2022.8
-pywin32==306
+pandas
 cryptography==3.4.8
 bcrypt==3.2.2
+pyinstaller==4.10
+pyinstaller-hooks-contrib==2022.8

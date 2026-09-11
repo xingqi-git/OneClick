@@ -1,8 +1,7 @@
 from UI import GraphMainWindow
 import os
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtWidgets import QMainWindow, QFileDialog, QTreeWidgetItem
-import datetime
 import pandas as pd
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -1202,9 +1201,6 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         if self.parent() and hasattr(self.parent(), 'ssh_stutas_label'):
             return self.parent().ssh_stutas_label.text() == '已连接'
         return True
-
-    def info_message(self, message):
-        QtWidgets.QMessageBox.information(self, "提示", message)
 
 
 if __name__ == '__main__':

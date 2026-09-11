@@ -1063,31 +1063,6 @@ class SSHTools(object):
             if progress == 10:
                 print()
 
-    def compress_file(self, source_path):
-        if self.is_connected():
-            source_path = source_path.replace('\\', '/')
-            source_path = source_path.rstrip('/')
-            # 构建压缩命令，使用tar创建gz压缩包
-            # -czf 表示创建压缩文件、使用gzip压缩、指定文件名
-            # 建立sftp通道协议
-            try:
-                sftp = self.ssh.open_sftp()
-            except Exception as e:
-                print(f"sftp出错：{e}")
-                return
-            # 首先判断远端路径是否存在，不存在直接返回
-            try:
-                sftp.stat(source_path)
-            except FileNotFoundError:
-                print("远端路径不存在，请检查")
-                return
-            target_tar = source_path
-            command = f"tar -zcvPf {target_tar}.tar.gz -C {source_path[::-1].replace('/', ' ', 1)[::-1]}"
-            self.send_command(command)
-            print(f'压缩完成{source_path} -> {target_tar}.tar.gz')
-        else:
-            print("未连接到服务器，请先连接")
-
     def clean_empty_dir(self, sftp, path, f_name=''):
         """将linux目录中的空文件夹删除，如果文件夹的名字包含f_name则不删除，注意需要传入一个已经open的sftp"""
         try:
@@ -1130,5 +1105,3 @@ class SSHTools(object):
             return False
         return True
 
-if __name__ == '__main__':
-    pass

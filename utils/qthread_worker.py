@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 from io import StringIO
 import threading
 from PyQt5.QtCore import pyqtSignal, QObject
@@ -80,6 +80,3 @@ class OneClickWorker(QObject):
         finally:
             _router.unregister_worker()
 
-
-if __name__ == "__main__":
-    pass
