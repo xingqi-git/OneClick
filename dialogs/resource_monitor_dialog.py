@@ -239,6 +239,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         self._can_close = True  # 用于阻止关闭窗口
         self.stop_flag = False  # 用于停止定时获取监控状态
         self._operation_running = False  # 标记是否正在执行操作，有操作时不更新按钮状态
+        self._active_ssh_clients = []  # 当前活跃的 SSH 客户端列表，关闭窗口时主动断开
 
         # 用于保存数据的根目录名称 本机或IP
         if self.parent.sc_buttons[button_id]['config']['IP'] == '':
@@ -413,52 +414,61 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         ssh_client.port = port
         ssh_client.username = username
         ssh_client.password = password
+        # 注册到活跃连接列表，便于关闭窗口时主动断开
+        self._active_ssh_clients.append(ssh_client)
 
         def do_ssh_monitor_check():
-            while True:
-                if self.stop_flag:
-                    return
-                time.sleep(1)
-                # 检查是否有连接
-                if not ssh_client.is_connected():
-                    result = ssh_client.connect()
-                    if not result:
+            try:
+                while True:
+                    if self.stop_flag:
+                        return
+                    time.sleep(1)
+                    # 检查是否有连接
+                    if not ssh_client.is_connected():
+                        result = ssh_client.connect()
+                        if not result:
+                            worker.info_signal.emit(("连接中...", "未知", ""))
+                            continue
+                    try:
+                        # 检查是否有监控 - 用基础ps命令，兼容嵌入式BusyBox
+                        cmd = "ps | grep OneClickMonitor | grep -v grep | wc -l"
+                        stdin, stdout, stderr = ssh_client.ssh.exec_command(cmd)
+                        if stderr.read():
+                            worker.info_signal.emit(("已连接", "未知", ""))
+                            continue
+                        monitor_count = stdout.read().decode('utf-8').strip()
+                        if not monitor_count:
+                            worker.info_signal.emit(("已连接", "未知", ""))
+                            continue
+                    
+                        # ============ 1. 判断脚本状态 ============
+                        if monitor_count[-1] == "0":
+                            script_status = "无监控"
+                        else:
+                            script_status = "监控中"
+
+                        # ============ 2. 读取运行日志（取最近10000行，控制流量） ============
+                        log_content = ""
+                        if work_dir:
+                            try:
+                                remote_log_path = f"{work_dir}/OneClick/Monitor/OneClickMonitor.log"
+                                stdin, stdout, stderr = ssh_client.ssh.exec_command(f"tail -n 10000 {remote_log_path} 2>/dev/null")
+                                log_content = stdout.read().decode('utf-8').strip()
+                            except Exception:
+                                pass  # 日志读取失败不影响
+                    
+                        # 发送信号更新 UI
+                        worker.info_signal.emit(("已连接", script_status, log_content))
+                    except Exception as e:
+                        worker.log_signal.emit(f'检查监控状态失败: {e}')
                         worker.info_signal.emit(("连接中...", "未知", ""))
                         continue
+            finally:
+                # 线程退出时从活跃列表移除
                 try:
-                    # 检查是否有监控 - 用基础ps命令，兼容嵌入式BusyBox
-                    cmd = "ps | grep OneClickMonitor | grep -v grep | wc -l"
-                    stdin, stdout, stderr = ssh_client.ssh.exec_command(cmd)
-                    if stderr.read():
-                        worker.info_signal.emit(("已连接", "未知", ""))
-                        continue
-                    monitor_count = stdout.read().decode('utf-8').strip()
-                    if not monitor_count:
-                        worker.info_signal.emit(("已连接", "未知", ""))
-                        continue
-                    
-                    # ============ 1. 判断脚本状态 ============
-                    if monitor_count[-1] == "0":
-                        script_status = "无监控"
-                    else:
-                        script_status = "监控中"
-
-                    # ============ 2. 读取运行日志（取最近10000行，控制流量） ============
-                    log_content = ""
-                    if work_dir:
-                        try:
-                            remote_log_path = f"{work_dir}/OneClick/Monitor/OneClickMonitor.log"
-                            stdin, stdout, stderr = ssh_client.ssh.exec_command(f"tail -n 10000 {remote_log_path} 2>/dev/null")
-                            log_content = stdout.read().decode('utf-8').strip()
-                        except Exception:
-                            pass  # 日志读取失败不影响
-                    
-                    # 发送信号更新 UI
-                    worker.info_signal.emit(("已连接", script_status, log_content))
-                except Exception as e:
-                    worker.log_signal.emit(f'检查监控状态失败: {e}')
-                    worker.info_signal.emit(("连接中...", "未知", ""))
-                    continue
+                    self._active_ssh_clients.remove(ssh_client)
+                except ValueError:
+                    pass
 
         def on_thread_finished():
             thread.deleteLater()
@@ -620,6 +630,8 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 ssh_client.port = port
                 ssh_client.username = username
                 ssh_client.password = password
+                # 注册到活跃连接列表，便于关闭窗口时主动断开
+                self._active_ssh_clients.append(ssh_client)
             except Exception as e:
                 self.message_info_box(("提示", f"请检查服务器配置{e}"))
                 self.set_all_buttons_enable()
@@ -698,6 +710,12 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     worker.info_signal.emit(("提示", f"执行指令失败{e}"))
                     ssh_client.disconnect()
                     return False
+                finally:
+                    # 从活跃列表移除
+                    try:
+                        self._active_ssh_clients.remove(ssh_client)
+                    except ValueError:
+                        pass
 
             def on_ssh_worker_finished(result):
                 if result:
@@ -841,45 +859,54 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 ssh_client.port = port
                 ssh_client.username = username
                 ssh_client.password = password
+                # 注册到活跃连接列表，便于关闭窗口时主动断开
+                self._active_ssh_clients.append(ssh_client)
             except Exception as e:
                 self.message_info_box(("提示", f"请检查服务器配置{e}"))
                 self.set_all_buttons_enable()
                 return
 
             def do_stop_monitor():
-                connect_result = ssh_client.connect()
-                if not connect_result:
-                    worker.info_signal.emit(("提示", f"停止监控失败，原因：连接服务器失败"))
-                    return False
                 try:
-                    # 用基础命令查找PID，兼容嵌入式（避免pkill -f不支持）
-                    find_pid_cmd = "ps | grep OneClickMonitor | grep -v grep | awk '{print $1}'"
-                    stdin, stdout, stderr = ssh_client.ssh.exec_command(find_pid_cmd)
-                    pids = stdout.read().decode().strip().split()
-                    err = stderr.read().decode().strip()
-                    
-                    # 遍历kill所有PID
-                    for pid in pids:
-                        if pid.isdigit():
-                            ssh_client.ssh.exec_command(f"kill -9 {pid}")
-                    
-                    # 写入停止日志
-                    work_dir = self.parent.sc_buttons[self.button_id]['config'].get('文件暂存路径', '')
-                    if work_dir:
-                        remote_log_path = f"{work_dir}/OneClick/Monitor/OneClickMonitor.log"
-                        ssh_client.ssh.exec_command(
-                            f'echo "[$(date "+%Y-%m-%d %H:%M:%S")] 资源监控脚本已终止" >> {remote_log_path}'
-                        )
-                    
-                    ssh_client.disconnect()
-                    if err:
-                        worker.info_signal.emit(("提示", f"停止监控失败{err}"))
+                    connect_result = ssh_client.connect()
+                    if not connect_result:
+                        worker.info_signal.emit(("提示", f"停止监控失败，原因：连接服务器失败"))
                         return False
-                    return True
-                except Exception as e:
-                    worker.info_signal.emit(("提示", f"停止监控失败{e}"))
-                    ssh_client.disconnect()
-                    return False
+                    try:
+                        # 用基础命令查找PID，兼容嵌入式（避免pkill -f不支持）
+                        find_pid_cmd = "ps | grep OneClickMonitor | grep -v grep | awk '{print $1}'"
+                        stdin, stdout, stderr = ssh_client.ssh.exec_command(find_pid_cmd)
+                        pids = stdout.read().decode().strip().split()
+                        err = stderr.read().decode().strip()
+                        
+                        # 遍历kill所有PID
+                        for pid in pids:
+                            if pid.isdigit():
+                                ssh_client.ssh.exec_command(f"kill -9 {pid}")
+                        
+                        # 写入停止日志
+                        work_dir = self.parent.sc_buttons[self.button_id]['config'].get('文件暂存路径', '')
+                        if work_dir:
+                            remote_log_path = f"{work_dir}/OneClick/Monitor/OneClickMonitor.log"
+                            ssh_client.ssh.exec_command(
+                                f'echo "[$(date "+%Y-%m-%d %H:%M:%S")] 资源监控脚本已终止" >> {remote_log_path}'
+                            )
+                        
+                        ssh_client.disconnect()
+                        if err:
+                            worker.info_signal.emit(("提示", f"停止监控失败{err}"))
+                            return False
+                        return True
+                    except Exception as e:
+                        worker.info_signal.emit(("提示", f"停止监控失败{e}"))
+                        ssh_client.disconnect()
+                        return False
+                finally:
+                    # 从活跃列表移除
+                    try:
+                        self._active_ssh_clients.remove(ssh_client)
+                    except ValueError:
+                        pass
 
             def on_stop_monitor_finished(result):
                 if result:
@@ -1093,6 +1120,8 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     ssh_client.port = port
                     ssh_client.username = username
                     ssh_client.password = password
+                    # 注册到活跃连接列表，便于关闭窗口时主动断开
+                    self._active_ssh_clients.append(ssh_client)
                 except Exception as e:
                     AutoCloseMessageBox("提示", f"请检查服务器配置{e}", 2000, self).exec_()
                     return
@@ -1110,87 +1139,93 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 progress_dialog.show()
 
                 def do_clean_cmd():
-                    import os
-                    import tempfile
-                    connect_result = ssh_client.connect()
-                    if not connect_result:
-                        return False, "连接失败"
                     try:
-                        if clean_mode == 'all':
-                            # 全部清除：直接 rm -rf
-                            worker.info_signal.emit(('label', "正在清理服务器数据..."))
-                            stdin, stdout, stderr = ssh_client.ssh.exec_command(f"rm -rf {user_path}")
-                            out = stdout.read().decode().strip()
-                            err = stderr.read().decode().strip()
-                            if err:
-                                return False, err
-                            return True, "ALL_DONE"
-                        else:
-                            # 按时间范围清理
-                            # 1. 生成本地脚本文件
-                            worker.info_signal.emit(('label', "生成清理脚本..."))
-                            tmp_dir = tempfile.gettempdir()
-                            local_script = os.path.join(tmp_dir, "oneclick_clean.sh")
-                            start_str = start_time.strftime('%Y-%m-%d %H:%M:%S')
-                            end_str = end_time.strftime('%Y-%m-%d %H:%M:%S')
-                            log_cleaner.write_remote_linux_clean_script(user_path, start_str, end_str, local_script)
+                        import os
+                        import tempfile
+                        connect_result = ssh_client.connect()
+                        if not connect_result:
+                            return False, "连接失败"
+                        try:
+                            if clean_mode == 'all':
+                                # 全部清除：直接 rm -rf
+                                worker.info_signal.emit(('label', "正在清理服务器数据..."))
+                                stdin, stdout, stderr = ssh_client.ssh.exec_command(f"rm -rf {user_path}")
+                                out = stdout.read().decode().strip()
+                                err = stderr.read().decode().strip()
+                                if err:
+                                    return False, err
+                                return True, "ALL_DONE"
+                            else:
+                                # 按时间范围清理
+                                # 1. 生成本地脚本文件
+                                worker.info_signal.emit(('label', "生成清理脚本..."))
+                                tmp_dir = tempfile.gettempdir()
+                                local_script = os.path.join(tmp_dir, "oneclick_clean.sh")
+                                start_str = start_time.strftime('%Y-%m-%d %H:%M:%S')
+                                end_str = end_time.strftime('%Y-%m-%d %H:%M:%S')
+                                log_cleaner.write_remote_linux_clean_script(user_path, start_str, end_str, local_script)
 
-                            # 2. 上传脚本到服务器
-                            worker.info_signal.emit(('label', "上传清理脚本..."))
-                            remote_script = f"{work_dir}/oneclick_clean.sh"
-                            sftp = ssh_client.ssh.open_sftp()
-                            sftp.put(local_script, remote_script)
-                            sftp.close()
+                                # 2. 上传脚本到服务器
+                                worker.info_signal.emit(('label', "上传清理脚本..."))
+                                remote_script = f"{work_dir}/oneclick_clean.sh"
+                                sftp = ssh_client.ssh.open_sftp()
+                                sftp.put(local_script, remote_script)
+                                sftp.close()
 
-                            # 3. 执行脚本，实时读取进度
-                            worker.info_signal.emit(('label', "执行清理中..."))
-                            stdin, stdout, stderr = ssh_client.ssh.exec_command(f"bash {remote_script}")
+                                # 3. 执行脚本，实时读取进度
+                                worker.info_signal.emit(('label', "执行清理中..."))
+                                stdin, stdout, stderr = ssh_client.ssh.exec_command(f"bash {remote_script}")
 
-                            result_line = ""
-                            for line in stdout:
-                                line = line.strip()
-                                if not line:
-                                    continue
-                                if line.startswith("TOTAL:"):
-                                    try:
-                                        total = int(line.split(":")[1])
-                                        worker.info_signal.emit(('total', total))
-                                    except:
-                                        pass
-                                elif line.startswith("PROGRESS:"):
-                                    # PROGRESS:3/26
-                                    try:
-                                        prog_str = line.split(":")[1]
-                                        cur, tot = prog_str.split("/")
-                                        worker.info_signal.emit(('progress', int(cur), int(tot)))
-                                    except:
-                                        pass
-                                elif line.startswith("RESULT:"):
-                                    result_line = line
+                                result_line = ""
+                                for line in stdout:
+                                    line = line.strip()
+                                    if not line:
+                                        continue
+                                    if line.startswith("TOTAL:"):
+                                        try:
+                                            total = int(line.split(":")[1])
+                                            worker.info_signal.emit(('total', total))
+                                        except:
+                                            pass
+                                    elif line.startswith("PROGRESS:"):
+                                        # PROGRESS:3/26
+                                        try:
+                                            prog_str = line.split(":")[1]
+                                            cur, tot = prog_str.split("/")
+                                            worker.info_signal.emit(('progress', int(cur), int(tot)))
+                                        except:
+                                            pass
+                                    elif line.startswith("RESULT:"):
+                                        result_line = line
 
-                            err = stderr.read().decode().strip()
+                                err = stderr.read().decode().strip()
 
-                            # 4. 清理脚本
+                                # 4. 清理脚本
+                                try:
+                                    ssh_client.ssh.exec_command(f"rm -f {remote_script}")
+                                except:
+                                    pass
+
+                                # 5. 清理本地临时脚本
+                                try:
+                                    os.remove(local_script)
+                                except:
+                                    pass
+
+                                if err and not result_line:
+                                    return False, err
+                                return True, result_line if result_line else err
+                        except Exception as e:
+                            return False, str(e)
+                        finally:
                             try:
-                                ssh_client.ssh.exec_command(f"rm -f {remote_script}")
+                                ssh_client.disconnect()
                             except:
                                 pass
-
-                            # 5. 清理本地临时脚本
-                            try:
-                                os.remove(local_script)
-                            except:
-                                pass
-
-                            if err and not result_line:
-                                return False, err
-                            return True, result_line if result_line else err
-                    except Exception as e:
-                        return False, str(e)
                     finally:
                         try:
-                            ssh_client.disconnect()
-                        except:
+                            self._active_ssh_clients.remove(ssh_client)
+                        except ValueError:
                             pass
 
                 def on_info(data):
@@ -1316,6 +1351,8 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             ssh_client.port = port
             ssh_client.username = username
             ssh_client.password = password
+            # 注册到活跃连接列表，便于关闭窗口时主动断开
+            self._active_ssh_clients.append(ssh_client)
         except Exception as e:
             self.message_info_box(("提示", f"请检查服务器配置{e}"))
             return
@@ -1338,143 +1375,149 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         filter_tmp_dir = f"{work_dir}/OneClick/Monitor_filter_tmp"
 
         def do_download_data():
-            import tempfile
-            connect_result = ssh_client.connect()
-            if not connect_result:
-                return (False, "连接服务器失败")
             try:
-                # 如果本地没有ip文件夹，则创建
-                os.makedirs(self.monitor_data_path, mode=0o777, exist_ok=True)
+                import tempfile
+                connect_result = ssh_client.connect()
+                if not connect_result:
+                    return (False, "连接服务器失败")
+                try:
+                    # 如果本地没有ip文件夹，则创建
+                    os.makedirs(self.monitor_data_path, mode=0o777, exist_ok=True)
 
-                # 下载源路径（默认是完整的 Monitor 目录）
-                remote_download_path = user_path
+                    # 下载源路径（默认是完整的 Monitor 目录）
+                    remote_download_path = user_path
 
-                # 按时间范围下载：先在服务器端筛选到临时目录
-                if download_mode == 'range' and start_time and end_time:
-                    worker.info_signal.emit(('filter_phase', 'prepare'))
-                    start_str = start_time.strftime('%Y-%m-%d %H:%M:%S')
-                    end_str = end_time.strftime('%Y-%m-%d %H:%M:%S')
+                    # 按时间范围下载：先在服务器端筛选到临时目录
+                    if download_mode == 'range' and start_time and end_time:
+                        worker.info_signal.emit(('filter_phase', 'prepare'))
+                        start_str = start_time.strftime('%Y-%m-%d %H:%M:%S')
+                        end_str = end_time.strftime('%Y-%m-%d %H:%M:%S')
 
-                    # 1. 生成本地脚本文件
-                    tmp_dir_local = tempfile.gettempdir()
-                    local_script = os.path.join(tmp_dir_local, "oneclick_filter.sh")
-                    log_cleaner.write_remote_linux_filter_script(
-                        user_path, filter_tmp_dir, start_str, end_str, local_script
+                        # 1. 生成本地脚本文件
+                        tmp_dir_local = tempfile.gettempdir()
+                        local_script = os.path.join(tmp_dir_local, "oneclick_filter.sh")
+                        log_cleaner.write_remote_linux_filter_script(
+                            user_path, filter_tmp_dir, start_str, end_str, local_script
+                        )
+
+                        # 2. 上传脚本到服务器
+                        worker.info_signal.emit(('filter_phase', 'upload'))
+                        remote_script = f"{work_dir}/oneclick_filter.sh"
+                        sftp = ssh_client.ssh.open_sftp()
+                        sftp.put(local_script, remote_script)
+                        sftp.close()
+
+                        # 3. 执行脚本，实时读取进度
+                        worker.info_signal.emit(('filter_phase', 'running'))
+                        stdin, stdout, stderr = ssh_client.ssh.exec_command(f"bash {remote_script}")
+
+                        result_line = ""
+                        for line in stdout:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            if line.startswith("TOTAL:"):
+                                try:
+                                    total = int(line.split(":")[1])
+                                    worker.info_signal.emit(('filter_total', total))
+                                except:
+                                    pass
+                            elif line.startswith("PROGRESS:"):
+                                try:
+                                    prog_str = line.split(":")[1]
+                                    cur, tot = prog_str.split("/")
+                                    worker.info_signal.emit(('filter_progress', int(cur), int(tot)))
+                                except:
+                                    pass
+                            elif line.startswith("DIR_NOT_FOUND"):
+                                result_line = line
+                            elif line.startswith("RESULT:"):
+                                result_line = line
+
+                        err = stderr.read().decode().strip()
+
+                        # 4. 清理本地临时脚本
+                        try:
+                            os.remove(local_script)
+                        except:
+                            pass
+
+                        # 5. 清理服务器脚本（临时目录等下删）
+                        try:
+                            ssh_client.ssh.exec_command(f"rm -f {remote_script}")
+                        except:
+                            pass
+
+                        if err:
+                            # 清理服务器临时目录
+                            try:
+                                ssh_client.ssh.exec_command(f"rm -rf {filter_tmp_dir}")
+                            except:
+                                pass
+                            return (False, f"服务器筛选失败：{err}")
+
+                        if result_line == "DIR_NOT_FOUND":
+                            return (False, "服务器上没有监控数据")
+
+                        # 筛选后下载临时目录
+                        remote_download_path = filter_tmp_dir
+
+                    # 下载（共用的下载逻辑）
+                    def progress_cb(phase, current, total, extra):
+                        """进度回调，在子线程里通过 info_signal 发到主线程"""
+                        if worker:
+                            worker.info_signal.emit(('progress', phase, current, total, extra))
+
+                    get_result = ssh_client.get_files(
+                        remote_download_path, self.monitor_data_path,
+                        float('inf'), '', work_dir, progress_cb=progress_cb
                     )
-
-                    # 2. 上传脚本到服务器
-                    worker.info_signal.emit(('filter_phase', 'upload'))
-                    remote_script = f"{work_dir}/oneclick_filter.sh"
-                    sftp = ssh_client.ssh.open_sftp()
-                    sftp.put(local_script, remote_script)
-                    sftp.close()
-
-                    # 3. 执行脚本，实时读取进度
-                    worker.info_signal.emit(('filter_phase', 'running'))
-                    stdin, stdout, stderr = ssh_client.ssh.exec_command(f"bash {remote_script}")
-
-                    result_line = ""
-                    for line in stdout:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        if line.startswith("TOTAL:"):
+                    if not get_result:
+                        # 失败时顺便清理服务器临时目录
+                        if download_mode == 'range':
                             try:
-                                total = int(line.split(":")[1])
-                                worker.info_signal.emit(('filter_total', total))
+                                ssh_client.ssh.exec_command(f"rm -rf {filter_tmp_dir}")
                             except:
                                 pass
-                        elif line.startswith("PROGRESS:"):
-                            try:
-                                prog_str = line.split(":")[1]
-                                cur, tot = prog_str.split("/")
-                                worker.info_signal.emit(('filter_progress', int(cur), int(tot)))
-                            except:
-                                pass
-                        elif line.startswith("DIR_NOT_FOUND"):
-                            result_line = line
-                        elif line.startswith("RESULT:"):
-                            result_line = line
+                        ssh_client.disconnect()
+                        return (False, "获取数据失败")
 
-                    err = stderr.read().decode().strip()
-
-                    # 4. 清理本地临时脚本
-                    try:
-                        os.remove(local_script)
-                    except:
-                        pass
-
-                    # 5. 清理服务器脚本（临时目录等下删）
-                    try:
-                        ssh_client.ssh.exec_command(f"rm -f {remote_script}")
-                    except:
-                        pass
-
-                    if err:
-                        # 清理服务器临时目录
+                    # 清理服务器临时目录
+                    if download_mode == 'range':
                         try:
                             ssh_client.ssh.exec_command(f"rm -rf {filter_tmp_dir}")
                         except:
                             pass
-                        return (False, f"服务器筛选失败：{err}")
 
-                    if result_line == "DIR_NOT_FOUND":
-                        return (False, "服务器上没有监控数据")
+                        # 本地重命名：Monitor_filter_tmp -> Monitor
+                        tmp_local_dir = os.path.join(self.monitor_data_path, 'Monitor_filter_tmp')
+                        target_local_dir = os.path.join(self.monitor_data_path, 'Monitor')
+                        if os.path.isdir(tmp_local_dir):
+                            # 如果目标已存在，先删掉旧的
+                            if os.path.exists(target_local_dir):
+                                if os.path.isdir(target_local_dir):
+                                    shutil.rmtree(target_local_dir)
+                                else:
+                                    os.remove(target_local_dir)
+                            os.rename(tmp_local_dir, target_local_dir)
 
-                    # 筛选后下载临时目录
-                    remote_download_path = filter_tmp_dir
+                    ssh_client.disconnect()
 
-                # 下载（共用的下载逻辑）
-                def progress_cb(phase, current, total, extra):
-                    """进度回调，在子线程里通过 info_signal 发到主线程"""
-                    if worker:
-                        worker.info_signal.emit(('progress', phase, current, total, extra))
-
-                get_result = ssh_client.get_files(
-                    remote_download_path, self.monitor_data_path,
-                    float('inf'), '', work_dir, progress_cb=progress_cb
-                )
-                if not get_result:
-                    # 失败时顺便清理服务器临时目录
+                except Exception as e:
+                    # 异常时也清理服务器临时目录
                     if download_mode == 'range':
                         try:
                             ssh_client.ssh.exec_command(f"rm -rf {filter_tmp_dir}")
                         except:
                             pass
                     ssh_client.disconnect()
-                    return (False, "获取数据失败")
-
-                # 清理服务器临时目录
-                if download_mode == 'range':
-                    try:
-                        ssh_client.ssh.exec_command(f"rm -rf {filter_tmp_dir}")
-                    except:
-                        pass
-
-                    # 本地重命名：Monitor_filter_tmp -> Monitor
-                    tmp_local_dir = os.path.join(self.monitor_data_path, 'Monitor_filter_tmp')
-                    target_local_dir = os.path.join(self.monitor_data_path, 'Monitor')
-                    if os.path.isdir(tmp_local_dir):
-                        # 如果目标已存在，先删掉旧的
-                        if os.path.exists(target_local_dir):
-                            if os.path.isdir(target_local_dir):
-                                shutil.rmtree(target_local_dir)
-                            else:
-                                os.remove(target_local_dir)
-                        os.rename(tmp_local_dir, target_local_dir)
-
-                ssh_client.disconnect()
-
-            except Exception as e:
-                # 异常时也清理服务器临时目录
-                if download_mode == 'range':
-                    try:
-                        ssh_client.ssh.exec_command(f"rm -rf {filter_tmp_dir}")
-                    except:
-                        pass
-                ssh_client.disconnect()
-                return (False, f"{e}")
-            return (True, "")
+                    return (False, f"{e}")
+                return (True, "")
+            finally:
+                try:
+                    self._active_ssh_clients.remove(ssh_client)
+                except ValueError:
+                    pass
 
         def on_info(data):
             """接收子线程传来的进度信息，切到主线程更新进度条"""
@@ -1710,9 +1753,18 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
     def on_close_event(self, event):
         if not self._can_close:
-            event.ignore()  # 忽略关闭事件
-            self.message_info_box(("提示", "操作中，请稍后"))
-            return
+            # 操作中：弹确认框，用户确认则强制断开 SSH 并关闭
+            reply = QMessageBox.question(
+                self, "确认关闭",
+                "当前有操作正在进行，确定要关闭吗？\n关闭后正在进行的操作会被中断。",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+            # 用户确认关闭：主动断开所有 SSH 连接，解除线程阻塞
+            self._force_disconnect_all_ssh()
 
         # 保存数据到配置文件，下次打开自动填入
         self.parent.sc_buttons[self.button_id]['config']['进程'] = self.process_input_plainTextEdit.toPlainText()
@@ -1738,6 +1790,15 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             thread_data['thread'].quit()
 
         event.accept()
+
+    def _force_disconnect_all_ssh(self):
+        """强制断开所有活跃 SSH 连接，用于关闭窗口时解除线程阻塞"""
+        for ssh_client in list(self._active_ssh_clients):
+            try:
+                ssh_client.disconnect()
+            except Exception:
+                pass
+        self._active_ssh_clients.clear()
 
 
 class AutoCloseMessageBox(QMessageBox):

@@ -193,7 +193,8 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             if pid and pid not in self.pid_map[proc_name]:
                 self.pid_map[proc_name].append(pid)
 
-        # 读每个进程第一个文件的表头
+        # 读每个进程第一个文件的表头，并校验格式
+        valid_procs = []
         for proc_name, files in self.file_map.items():
             files_sorted = sorted(files, key=len, reverse=True)
             first_file = files_sorted[0]
@@ -201,13 +202,22 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             try:
                 with open(filepath, 'r', encoding='utf-8') as f:
                     header_line = f.readline()
-                    if header_line:
-                        import re
-                        keys = [k.replace('\ufeff', '').strip() for k in header_line.split(',')]
-                        indicators = [k for k in keys if '时间' not in k]
-                        self.indicator_map[proc_name] = indicators
+                    if not header_line:
+                        continue
+                    import re
+                    keys = [k.replace('\ufeff', '').strip() for k in header_line.split(',')]
+                    # 格式校验：表头第一列必须是"系统时间"，否则跳过（非监控数据文件）
+                    if not keys or keys[0] != '系统时间':
+                        continue
+                    indicators = [k for k in keys if '时间' not in k]
+                    self.indicator_map[proc_name] = indicators
+                    valid_procs.append(proc_name)
             except Exception:
-                self.indicator_map[proc_name] = []
+                continue
+
+        # 只保留格式校验通过的进程
+        self.file_map = {p: self.file_map[p] for p in valid_procs}
+        self.pid_map = {p: self.pid_map[p] for p in valid_procs if p in self.pid_map}
 
         # PID 排序
         for proc_name in self.pid_map:

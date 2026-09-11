@@ -30,6 +30,5 @@ var/
 .venv
 .envrc
 *.log
-*.spec
 config.json
 OneClick.log

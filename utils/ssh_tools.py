@@ -23,11 +23,12 @@ class SSHTools(object):
 
         self.win_tool = WindowsTools()
 
-    def connect(self):
+    def connect(self, timeout=10):
         try:
             self.ssh = paramiko.SSHClient()
             self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            self.ssh.connect(self.ip, self.port, self.username, self.password)
+            self.ssh.connect(self.ip, self.port, self.username, self.password,
+                             timeout=timeout, banner_timeout=timeout, auth_timeout=timeout)
 
             # 打开一个通道用于传输数据
             self.channel = self.ssh.invoke_shell()

@@ -1,12 +1,19 @@
 ﻿r"""
-    打包命令：
+    打包命令（推荐，体积优化版）：
+    pyinstaller OneClick.spec --clean
+
+    原始命令（直接打，不做排除）：
     pyinstaller -F -w OneClick.py -i app.ico --add-data "app.ico;."
+
     参数说明：
     -F 或 --onefile：将所有文件打包成一个单独的可执行文件
     -w 或 --windowed、--noconsole：打包成不带控制台窗口的程序
     -i 或 --icon：指定程序的图标.ico
     --upx-dir 打包压缩，参数指定 UPX 所在目录--upx-dir "path/to/upx" my_script.py
-    --noupx 不适用upx
+    --noupx 不使用upx
+
+    OneClick.spec 中已配置排除未用的 Qt 模块（Qml/Quick/Multimedia/WebEngine 等）
+    以及 tkinter、IPython 等，可在原基础上进一步减小体积。
 """
 
 
@@ -34,13 +41,13 @@ if __name__ == '__main__':
         # Windows 任务栏需要设置 AppUserModelID，否则可能显示默认图标且不与窗口图标关联
         try:
             import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('OneClick.V2.1')
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('OneClick.V2.2')
         except Exception:
             pass
 
         app = QApplication(sys.argv)
         app.setApplicationName("OneClick")
-        app.setApplicationVersion("V2.1")
+        app.setApplicationVersion("V2.2")
 
         # 设置应用程序图标（任务栏显示）
         icon_path = resource_path("app.ico")
