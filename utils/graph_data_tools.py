@@ -1,8 +1,11 @@
 from PyQt5 import QtCore
 import os
+import logging
 import matplotlib.pyplot as plt
 from matplotlib.dates import AutoDateLocator, DateFormatter
 import pandas as pd
+
+logger = logging.getLogger('graph_data_tools')
 
 
 def make_plot_figure(data_dic, action_name, time_start=None, time_end=None, filter_pids=None):
@@ -10,6 +13,7 @@ def make_plot_figure(data_dic, action_name, time_start=None, time_end=None, filt
     纯函数：根据数据生成 matplotlib 图表（直接调用，不经过线程）
     返回 fig 对象 或 (title, msg) 错误元组
     """
+    logger.debug("make_plot_figure 开始: action=%s, filter_pids=%s", action_name, (len(filter_pids) if filter_pids else 0 if filter_pids is not None else 'None'))
     try:
         # 用 rsplit 从右往左只分割1次，兼容进程名中包含'-'的情况
         parts = action_name.rsplit('-', 1)
@@ -171,6 +175,7 @@ def make_plot_figure(data_dic, action_name, time_start=None, time_end=None, filt
     except Exception as e:
         import traceback
         error_msg = f"绘图失败：{str(e)}\n{traceback.format_exc()}"
+        logger.error("make_plot_figure 异常: action=%s, error=%s", action_name, e, exc_info=True)
         print(error_msg)
         return ("错误", f"绘图过程中发生异常：{str(e)}")
 
@@ -188,6 +193,7 @@ class Worker(QtCore.QObject):
 
     def data_process(self):
         """数据处理主函数 - 用 pandas 加载 CSV 文件并按进程名合并"""
+        logger.debug("Worker.data_process 开始，文件数: %d", len(self.data) if self.data else 0)
         try:
             self.canceled_flag = False
             file_paths = self.data  # 所有log数据文件的路径
@@ -232,12 +238,16 @@ class Worker(QtCore.QObject):
                     self.message.emit(f"加载 {proc_name} 失败: {e}")
 
             if self.canceled_flag:
+                logger.debug("Worker.data_process 被取消")
                 self.finished.emit(("错误", "加载已取消"))
             else:
+                total_rows = sum(len(df) for df in self.data_dic.values())
+                logger.info("Worker.data_process 完成，进程数=%d, 总行数=%d", len(self.data_dic), total_rows)
                 self.finished.emit(self.data_dic)
         except Exception as e:
             import traceback
             error_msg = f"数据处理失败：{str(e)}\n{traceback.format_exc()}"
+            logger.error("Worker.data_process 异常: %s", e, exc_info=True)
             print(error_msg)
             self.finished.emit(("错误", f"数据处理失败：{str(e)}"))
 

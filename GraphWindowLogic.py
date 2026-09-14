@@ -3,6 +3,7 @@ import os
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtWidgets import QMainWindow, QFileDialog, QTreeWidgetItem
 import pandas as pd
+import logging
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
@@ -11,6 +12,8 @@ from utils.graph_data_tools import Worker
 
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
+
+logger = logging.getLogger('GraphWindow')
 
 
 class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
@@ -45,8 +48,11 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         self.global_max_time = None
 
         self._build_ui()
+        logger.info("开始扫描数据文件: %s", self.data_path)
         self._scan_files()
+        logger.info("文件扫描完成，进程数: %d", len(self.file_map))
         self._build_tree()
+        logger.info("树形结构构建完成")
         self.showMaximized()
 
     def _build_ui(self):
@@ -311,6 +317,8 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             return
 
         node_type = data[0]
+        checked = item.checkState(0) == QtCore.Qt.CheckState.Checked
+        logger.debug("勾选变化: node_type=%s, data=%s, checked=%s", node_type, data, checked)
 
         if node_type == 'process':
             # 进程节点勾选：同步所有指标子节点的勾选状态 + 更新 selected_indicators
@@ -446,6 +454,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         """指标或PID选择变化时，更新对应的图表"""
         indicators = self.selected_indicators.get(proc_name, set())
         pids = self.selected_pids.get(proc_name, set())
+        logger.debug("选择变化: proc=%s, indicators=%d, pids=%d", proc_name, len(indicators), len(pids))
         is_system_or_single = (proc_name == '系统' or len(self.pid_map.get(proc_name, [])) == 0)
 
         # 系统类或单PID进程：有指标选中就加载（一次加载全部）
@@ -524,8 +533,10 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         file_paths = [os.path.join(self.data_path, f) for f in files]
         load_key = f'load_{proc_name}'
         if load_key in self.threads:
+            logger.debug("加载已在进行中，跳过: %s", proc_name)
             return  # 已经在加载了
 
+        logger.info("开始加载进程数据: %s (%d 个文件)", proc_name, len(files))
         worker = Worker(file_paths)
         thread = QtCore.QThread()
         self.workers[load_key] = worker
@@ -534,6 +545,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
 
         def on_finished_wrap(data=None):
             if isinstance(data, tuple) and len(data) >= 2 and data[0] == '错误':
+                logger.error("加载进程数据失败: %s, 错误: %s", proc_name, data[1])
                 QtWidgets.QMessageBox.warning(self, "提示", f"加载{proc_name}数据失败：{data[1]}")
                 if on_finished:
                     on_finished(False)
@@ -551,6 +563,8 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                 self._update_global_time_range()
                 for w in self._filter_widgets:
                     w.setEnabled(True)
+                row_count = len(df) if df is not None else 0
+                logger.info("进程数据加载完成: %s, 行数: %d", proc_name, row_count)
                 if on_finished:
                     on_finished(True)
 
@@ -591,8 +605,10 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         file_paths = [os.path.join(self.data_path, f) for f in files_to_load]
         load_key = f'load_{proc_name}_pid_{"_".join(sorted(pids))}'
         if load_key in self.threads:
+            logger.debug("PID加载已在进行中，跳过: %s, pids=%s", proc_name, sorted(pids))
             return
 
+        logger.info("开始增量加载PID: %s, pid数=%d, 文件数=%d", proc_name, len(pids), len(files_to_load))
         worker = Worker(file_paths)
         thread = QtCore.QThread()
         self.workers[load_key] = worker
@@ -601,6 +617,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
 
         def on_finished_wrap(data=None):
             if isinstance(data, tuple) and len(data) >= 2 and data[0] == '错误':
+                logger.error("增量加载PID失败: %s, 错误: %s", proc_name, data[1])
                 QtWidgets.QMessageBox.warning(self, "提示", f"加载{proc_name}数据失败：{data[1]}")
                 if on_finished:
                     on_finished(False)
@@ -624,9 +641,11 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                         if time_col:
                             combined = combined.sort_values(time_col).reset_index(drop=True)
                         self.data_dic[proc_name] = combined
+                        logger.debug("数据合并完成: %s, 合并后行数=%d", proc_name, len(combined))
                     else:
                         self.data_dic[proc_name] = new_df
                         self.loaded_processes.add(proc_name)
+                        logger.debug("新进程数据加载完成: %s, 行数=%d", proc_name, len(new_df))
 
                     # 记录已加载的PID
                     if proc_name not in self.loaded_pids:
@@ -637,6 +656,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                 self._update_global_time_range()
                 for w in self._filter_widgets:
                     w.setEnabled(True)
+                logger.info("增量加载PID完成: %s, 已加载PID数=%d", proc_name, len(self.loaded_pids.get(proc_name, set())))
                 if on_finished:
                     on_finished(True)
 
@@ -657,6 +677,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         if action_name in self.action_tab_map:
             return
 
+        logger.info("开始绘图: %s, pids=%s", action_name, (len(pids) if pids else 0 if pids is not None else '全部'))
         from utils.graph_data_tools import make_plot_figure
 
         filter_pids = set(str(p) for p in pids) if pids is not None else None
@@ -665,6 +686,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                                   filter_pids)
 
         if isinstance(result, tuple):
+            logger.warning("绘图失败(数据问题): %s, %s", action_name, result)
             QtWidgets.QMessageBox.information(self, result[0], result[1])
             # 出错，取消勾选
             self._sync_check_from_action(action_name, False)
@@ -672,6 +694,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
 
         fig = result
         ax = fig.axes[0] if fig.axes else None
+        logger.debug("创建 FigureCanvas: %s", action_name)
         canvas = FigureCanvas(fig)
         toolbar = NavigationToolbar(canvas, self.centralwidget)
         tab_content = QtWidgets.QWidget()
@@ -702,6 +725,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             'lines': lines,
             'color_idx': len(lines),
         }
+        logger.info("绘图完成: %s, 曲线数=%d", action_name, len(lines))
 
     def _update_plot_pids(self, action_name, new_pids):
         """在原图上动态增删PID曲线，不重建图
@@ -724,6 +748,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             line = lines.pop(pid, None)
             if line is not None:
                 line.remove()
+        logger.debug("动态更新曲线: %s, 删除PID=%d个, 剩余=%d个", action_name, len(pids_to_remove), len(lines))
 
         # 需要新增的PID
         pids_to_add = new_pid_set - current_pid_set
@@ -760,6 +785,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                 if text.get_text() == "请在左侧勾选要查看的 PID":
                     text.remove()
 
+        logger.debug("开始新增PID曲线: %s, 新增=%d个", action_name, len(pids_to_add))
         for pid in sorted(pids_to_add):
             if '_pid' in df.columns:
                 group = df[df['_pid'] == pid]
@@ -799,6 +825,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             lines[pid] = line
 
         # 更新图例
+        logger.debug("更新图例: %s, 总曲线数=%d", action_name, len(lines))
         if lines:
             # 如果是从空变有，重新建图例；否则更新图例
             line_list = list(lines.values())
@@ -821,7 +848,9 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         # 自动调整坐标轴范围
         ax.relim()
         ax.autoscale_view()
+        logger.debug("触发重绘: %s", action_name)
         canvas.draw_idle()
+        logger.debug("动态更新曲线完成: %s", action_name)
 
     def _sync_check_from_action(self, action_name, checked):
         """根据 action_name 同步树节点勾选状态 + 更新 selected_indicators"""
@@ -867,6 +896,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
     def remove_plot_tab(self, action_name):
         if action_name not in self.action_tab_map:
             return
+        logger.info("移除图表: %s", action_name)
         tab_index = self.action_tab_map[action_name]
         self.tab_widget.removeTab(tab_index)
         del self.action_tab_map[action_name]
@@ -876,8 +906,9 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             import matplotlib.pyplot as plt
             try:
                 plt.close(info['fig'])
-            except Exception:
-                pass
+                logger.debug("已关闭 figure: %s", action_name)
+            except Exception as e:
+                logger.warning("关闭 figure 异常: %s, %s", action_name, e)
         new_map = {}
         for name, idx in self.action_tab_map.items():
             new_map[name] = idx - 1 if idx > tab_index else idx
@@ -977,6 +1008,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         self._switch_data_source(folder)
 
     def _switch_data_source(self, new_path):
+        logger.info("切换数据源: %s -> %s", self.data_path, new_path)
         for action_name in list(self.action_tab_map.keys()):
             self.remove_plot_tab(action_name)
         for key in list(self.threads.keys()):
@@ -997,6 +1029,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             w.setEnabled(False)
 
         self._scan_files()
+        logger.info("切换后文件扫描完成，进程数: %d", len(self.file_map))
         self._build_tree()
 
     def on_update_data(self):
