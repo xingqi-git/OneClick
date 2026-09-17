@@ -1037,6 +1037,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             return
 
         if os.path.normpath(self.data_path) != os.path.normpath(self.original_data_path):
+            logger.debug("更新数据被拒：数据源不是原始路径")
             QtWidgets.QMessageBox.information(
                 self, "提示",
                 "当前数据源不是服务器的监控目录，无法更新数据。\n"
@@ -1045,9 +1046,11 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             return
 
         if not self._is_ssh_connected():
+            logger.debug("更新数据被拒：服务器未连接")
             QtWidgets.QMessageBox.information(self, "提示", "服务器未连接，无法更新数据")
             return
 
+        logger.info("开始更新数据: ip=%s, 本地路径=%s", self.server_config.get('IP'), self.data_path)
         from utils import ssh_tools
         from utils import qthread_worker
 
@@ -1076,6 +1079,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         def do_update():
             connect_result = ssh_client.connect()
             if not connect_result:
+                logger.warning("更新数据失败：连接服务器失败")
                 return (False, "连接服务器失败")
             try:
                 local_files = {}
@@ -1106,6 +1110,8 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                             pass
                 stderr.read()
 
+                logger.debug("更新数据：本地文件=%d, 服务器文件=%d", len(local_files), len(server_files))
+
                 to_download = []
                 for fname, ssize in server_files.items():
                     lsize = local_files.get(fname)
@@ -1114,8 +1120,10 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
 
                 if not to_download:
                     ssh_client.disconnect()
+                    logger.info("更新数据完成：已是最新，无需更新")
                     return (True, "已是最新，无需更新")
 
+                logger.info("更新数据：需下载 %d 个文件", len(to_download))
                 os.makedirs(self.data_path, exist_ok=True)
 
                 total = len(to_download)
@@ -1132,9 +1140,11 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                         sftp.close()
                     except Exception as e:
                         ssh_client.disconnect()
+                        logger.error("更新数据失败：下载 %s 出错: %s", fname, e)
                         return (False, f"下载{fname}失败：{e}")
 
                 ssh_client.disconnect()
+                logger.info("更新数据完成：已更新 %d 个文件", len(to_download))
                 return (True, f"已更新 {len(to_download)} 个文件")
 
             except Exception as e:
@@ -1142,6 +1152,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                     ssh_client.disconnect()
                 except Exception:
                     pass
+                logger.error("更新数据异常: %s", e, exc_info=True)
                 return (False, f"{e}")
 
         worker_obj = qthread_worker.OneClickWorker(do_update)
@@ -1180,6 +1191,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         thread_obj.start()
 
     def _refresh_after_update(self):
+        logger.info("更新数据后刷新界面...")
         # 先保存当前选中状态
         saved_indicators = dict(self.selected_indicators)
         saved_pids = dict(self.selected_pids)
