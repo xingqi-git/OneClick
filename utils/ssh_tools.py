@@ -2,6 +2,7 @@ import paramiko
 import time
 import os
 import re
+import shutil
 from utils.windows_tools import WindowsTools
 from scp import SCPClient
 
@@ -803,17 +804,127 @@ class SSHTools(object):
         self.transfer_stat = 0
         return True
 
-    def get_files(self, remote_path, local_path, mtime=float('inf'), filename='', work_dir=None, progress_cb=None):
+    def _filter_remote_source(self, remote_path, mtime_seconds, include_keywords, include_logic,
+                              exclude_keywords, exclude_logic, server_now, sudo_prefix):
         """
-        SSH下载文件
+        对单个远程源路径进行筛选，返回 (dir_list, file_list)
+        规则：
+        - 如果源路径是文件，不参与筛选，直接加入 file_list
+        - 如果源路径是文件夹，文件夹本身不参与筛选（总是加入 dir_list），
+          其下的子目录和子文件才参与筛选
+        - 服务器端先用 find + mmin + 第一个关键词粗筛，Python端再精细过滤名称
+        """
+        dir_list = []
+        file_list = []
+
+        remote_path = remote_path.replace('\\', '/').rstrip('/')
+
+        # 判断源路径类型
+        if self.username != 'root':
+            check_cmd = f"{sudo_prefix}bash -c 'test -f \"{remote_path}\" && echo file || (test -d \"{remote_path}\" && echo dir || echo none)'"
+        else:
+            check_cmd = f"bash -c 'test -f \"{remote_path}\" && echo file || (test -d \"{remote_path}\" && echo dir || echo none)'"
+        stdin, stdout, stderr = self.ssh.exec_command(check_cmd)
+        check_result = stdout.read().decode('utf-8').strip()
+        stderr.read()
+        exit_status = stdout.channel.recv_exit_status()
+        if exit_status != 0 or check_result == 'none':
+            return dir_list, file_list
+
+        if check_result == 'file':
+            # 源路径是文件，不筛选，直接传
+            file_list.append(remote_path)
+            return dir_list, file_list
+
+        # 源路径是文件夹，文件夹本身直接加入目录列表
+        dir_list.append(remote_path)
+
+        # 计算mmin（分钟）
+        mtime_minutes = int(mtime_seconds / 60) if mtime_seconds != float('inf') else 0
+
+        # 粗筛策略：
+        # - 包含逻辑为"和"时，可以用第一个关键词做 find -name 粗筛（因为"和"要求全有，
+        #   第一个关键词不满足的一定不匹配）
+        # - 包含逻辑为"或"时，不能用单个关键词粗筛，否则会漏掉含其他关键词的文件
+        if include_keywords and include_logic == '和':
+            first_kw = include_keywords[0]
+        else:
+            first_kw = ''
+
+        # 构造find命令（只按时间 + 第一个关键词粗筛）
+        if mtime_seconds == float('inf') and not first_kw:
+            dir_find_cmd = f'{sudo_prefix}find "{remote_path}" -type d -not -path "{remote_path}"'
+            file_find_cmd = f'{sudo_prefix}find "{remote_path}" -type f'
+        elif mtime_seconds == float('inf'):
+            dir_find_cmd = f'{sudo_prefix}find "{remote_path}" -type d -not -path "{remote_path}" -name "*{first_kw}*"'
+            file_find_cmd = f'{sudo_prefix}find "{remote_path}" -type f -name "*{first_kw}*"'
+        elif not first_kw:
+            dir_find_cmd = f'{sudo_prefix}find "{remote_path}" -type d -not -path "{remote_path}" -mmin -{mtime_minutes}'
+            file_find_cmd = f'{sudo_prefix}find "{remote_path}" -type f -mmin -{mtime_minutes}'
+        else:
+            dir_find_cmd = f'{sudo_prefix}find "{remote_path}" -type d -not -path "{remote_path}" -name "*{first_kw}*" -mmin -{mtime_minutes}'
+            file_find_cmd = f'{sudo_prefix}find "{remote_path}" -type f -name "*{first_kw}*" -mmin -{mtime_minutes}'
+
+        # 执行目录查找
+        stdin, stdout, stderr = self.ssh.exec_command(dir_find_cmd)
+        dir_result = stdout.read().decode('utf-8').strip()
+        dir_err = stderr.read().decode('utf-8').strip()
+        exit_status = stdout.channel.recv_exit_status()
+        if exit_status != 0:
+            print(f"查找目录失败: {dir_err}")
+            return dir_list, file_list
+
+        # 执行文件查找
+        stdin, stdout, stderr = self.ssh.exec_command(file_find_cmd)
+        file_result = stdout.read().decode('utf-8').strip()
+        file_err = stderr.read().decode('utf-8').strip()
+        exit_status = stdout.channel.recv_exit_status()
+        if exit_status != 0:
+            print(f"查找文件失败: {file_err}")
+            return dir_list, file_list
+
+        # Python端精细过滤名称（多关键词和/或逻辑）
+        if dir_result:
+            for line in dir_result.split('\n'):
+                if self.transfer_stat == 0:
+                    return dir_list, file_list
+                line = line.strip()
+                if not line or not line.startswith('/'):
+                    continue
+                name = os.path.basename(line)
+                if self._match_filename(name, include_keywords, include_logic,
+                                        exclude_keywords, exclude_logic):
+                    dir_list.append(line)
+
+        if file_result:
+            for line in file_result.split('\n'):
+                if self.transfer_stat == 0:
+                    return dir_list, file_list
+                line = line.strip()
+                if not line or not line.startswith('/'):
+                    continue
+                name = os.path.basename(line)
+                if self._match_filename(name, include_keywords, include_logic,
+                                        exclude_keywords, exclude_logic):
+                    file_list.append(line)
+
+        return dir_list, file_list
+
+    def get_files(self, source_items, local_path, work_dir=None, progress_cb=None):
+        """
+        SSH下载文件（支持多源路径，每条独立筛选）
         流程：服务器端find筛选 -> 复制到临时目录 -> SCP下载 -> 清理临时文件
-        性能优化：使用find命令直接在服务器端完成筛选和信息获取，仅需1次exec_command调用
+        性能优化：使用find命令在服务器端完成时间粗筛，Python端完成名称精细过滤
         参数：
-            remote_path: 远程源路径，可以是文件或文件夹
-            work_dir: 服务器端临时目录所在路径，默认为 /home/{username}
+            source_items: 源路径列表，每项为 dict：
+                {
+                    '路径': '远程路径',
+                    '修改时间': '全部'/'最近30分钟'/'最近1小时'/'最近2小时',
+                    '名称包含': {'关键词': [], '逻辑': '和'/'或'},
+                    '名称不包含': {'关键词': [], '逻辑': '和'/'或'}
+                }
             local_path: 本地目标路径，只能是文件夹
-            mtime: 筛选修改时间（秒），只下载在此时间内修改的文件，默认无限大即不限制
-            filename: 筛选文件名包含该字符串，默认空字符串即不限制
+            work_dir: 服务器端临时目录所在路径，默认为 /home/{username}
             progress_cb: 可选的进度回调函数 progress_cb(phase, current, total, extra)
                 phase: 'find' | 'copy' | 'download'
                 current/total: 进度数值
@@ -827,119 +938,139 @@ class SSHTools(object):
             print("未连接到服务器，请先连接")
             return False
 
-        remote_path = remote_path.replace('\\', '/').rstrip('/')
         local_path = local_path.replace('\\', '/').rstrip('/')
 
         if not os.path.exists(local_path) or not os.path.isdir(local_path):
             print(f"下载失败，本地路径不存在或不是文件夹: {local_path}")
             return False
 
-        if self.username != 'root':
-            check_remote_cmd = f"echo {self.password} | sudo -S bash -c 'test -e \"{remote_path}\" && echo exists || echo not exists'"
-        else:
-            check_remote_cmd = f"bash -c 'test -e \"{remote_path}\" && echo exists || echo not exists'"
-        stdin, stdout, stderr = self.ssh.exec_command(check_remote_cmd)
-        dir_check_result = stdout.read().decode('utf-8').strip()
-        stderr.read()
-        exit_status = stdout.channel.recv_exit_status()
-        if exit_status != 0 or 'not exists' in dir_check_result:
-            print(f"下载失败，远程路径不存在: {remote_path}")
-            return False
+        # 修改时间映射（秒）
+        mtime_dic = {
+            "全部": float('inf'),
+            "最近30分钟": 1800,
+            "最近1小时": 3600,
+            "最近2小时": 7200,
+            "最近1天": 86400,
+            "最近1月": 2592000,
+            "最近1年": 31536000
+        }
 
-        # 标记传输状态为进行中
-        self.transfer_stat = 1
-
-        # 获取服务器当前时间戳，用于筛选条件
-        time_cmd = "date +%s"
-        stdin, stdout, stderr = self.ssh.exec_command(time_cmd)
-        server_now = stdout.read().decode('utf-8').strip()
-        stderr.read()
-        
-        # 获取本地当前时间戳（精确到毫秒），用于生成唯一临时目录名，避免冲突
-        # 使用本地时间避免部分Linux服务器不支持%N参数的问题，同时保证毫秒级精度
-        local_timestamp_ms = f"{int(time.time() * 1000)}"
-
-        # 构造远程临时目录路径，放在当前用户home下避免权限问题
-        # 构造服务器临时目录
-        base_dir = work_dir if work_dir else f"/home/{self.username}"
-        temp_remote_path = f"{base_dir}/OneClick_temp{local_timestamp_ms}"
-        # 提取远程源路径的基础名并清洗Windows不支持的字符
-        remote_base = os.path.basename(remote_path)
-        remote_base = re.sub(r'[<>:"/\\|?*]', '-', remote_base)
-
-
-        print("开始查找符合条件的文件...")
-        # 将修改时间阈值从秒转换为分钟，适配find命令的-mmin参数
-        mtime_minutes = int(mtime / 60) if mtime != float('inf') else 0
-
-        dir_list = []
-        file_list = []
-
-        # 构造sudo前缀，非root用户执行需要权限的命令时自动输入密码
+        # 构造sudo前缀
         if self.username != 'root':
             sudo_prefix = f"echo {self.password} | sudo -S "
         else:
             sudo_prefix = ""
 
-        # 根据筛选条件构造find命令，分四种情况：无筛选、仅文件名筛选、仅时间筛选、双重筛选
-        if mtime == float('inf') and filename == '':
-            dir_find_cmd = f'{sudo_prefix}find "{remote_path}" -type d'
-            file_find_cmd = f'{sudo_prefix}find "{remote_path}" -type f'
-        elif mtime == float('inf'):
-            dir_find_cmd = f'{sudo_prefix}find "{remote_path}" -type d -name "*{filename}*"'
-            file_find_cmd = f'{sudo_prefix}find "{remote_path}" -type f -name "*{filename}*"'
-        elif filename == '':
-            dir_find_cmd = f'{sudo_prefix}find "{remote_path}" -type d -mmin -{mtime_minutes}'
-            file_find_cmd = f'{sudo_prefix}find "{remote_path}" -type f -mmin -{mtime_minutes}'
-        else:
-            dir_find_cmd = f'{sudo_prefix}find "{remote_path}" -type d -name "*{filename}*" -mmin -{mtime_minutes}'
-            file_find_cmd = f'{sudo_prefix}find "{remote_path}" -type f -name "*{filename}*" -mmin -{mtime_minutes}'
-
-        # 执行查找目录的命令，检查执行状态，失败则终止下载
-        stdin, stdout, stderr = self.ssh.exec_command(dir_find_cmd)
-        dir_result = stdout.read().decode('utf-8').strip()
-        dir_err = stderr.read().decode('utf-8').strip()
-        exit_status = stdout.channel.recv_exit_status()
-        if exit_status != 0:
-            print(f"查找目录失败: {dir_err}")
-            self.transfer_stat = 0
-            return False
-
-        # 执行查找文件的命令，检查执行状态，失败则终止下载
-        stdin, stdout, stderr = self.ssh.exec_command(file_find_cmd)
-        file_result = stdout.read().decode('utf-8').strip()
-        file_err = stderr.read().decode('utf-8').strip()
-        exit_status = stdout.channel.recv_exit_status()
-        if exit_status != 0:
-            print(f"查找文件失败: {file_err}")
-            self.transfer_stat = 0
-            return False
-
-        # 解析目录查找结果，存入dir_list
-        if dir_result:
-            for line in dir_result.split('\n'):
-                if line.strip() and line.startswith('/'):
-                    dir_list.append(line.strip())
-
-        # 解析文件查找结果，存入file_list
-        if file_result:
-            for line in file_result.split('\n'):
-                if line.strip() and line.startswith('/'):
-                    file_list.append(line.strip())
-
-        # 如果没有找到任何符合条件的目录和文件，清理临时目录后返回
-        if not dir_list and not file_list:
-            print(f"下载完成，未下载任何文件，待下载路径无符合条件的项")
-            rm_cmd = f"rm -rf \"{temp_remote_path}\""
-            stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
-            stdout.read()
+        # 校验所有源路径是否存在
+        for item in source_items:
+            path = item['路径'].replace('\\', '/').rstrip('/')
+            if self.username != 'root':
+                check_cmd = f"{sudo_prefix}bash -c 'test -e \"{path}\" && echo exists || echo not exists'"
+            else:
+                check_cmd = f"bash -c 'test -e \"{path}\" && echo exists || echo not exists'"
+            stdin, stdout, stderr = self.ssh.exec_command(check_cmd)
+            check_result = stdout.read().decode('utf-8').strip()
             stderr.read()
+            exit_status = stdout.channel.recv_exit_status()
+            if exit_status != 0 or 'not exists' in check_result:
+                print(f"下载失败，远程路径不存在: {path}")
+                return False
+
+        # 标记传输状态为进行中
+        self.transfer_stat = 1
+
+        # 获取服务器当前时间戳
+        time_cmd = "date +%s"
+        stdin, stdout, stderr = self.ssh.exec_command(time_cmd)
+        server_now = stdout.read().decode('utf-8').strip()
+        stderr.read()
+
+        # 生成毫秒级本地时间戳，用于临时目录命名，避免重名
+        local_timestamp_ms = f"{int(time.time() * 1000)}"
+
+        # 构造服务器临时目录
+        base_dir = work_dir if work_dir else f"/home/{self.username}"
+        temp_remote_path = f"{base_dir}/OneClick_temp{local_timestamp_ms}"
+
+        print("开始查找符合条件的文件...")
+
+        # 多源路径合并后的文件/目录列表，每项带源路径信息用于计算相对路径
+        all_file_list = []  # [(full_path, source_root)]
+        all_dir_list = []   # [(full_path, source_root)]
+        # 无筛选条件且源路径是目录的项，直接 cp -a 复制，不走 find + 逐文件复制
+        direct_copy_dirs = []  # [(src_path, source_root)]
+
+        for item in source_items:
+            src_path = item['路径'].replace('\\', '/').rstrip('/')
+            mtime_str = item.get('修改时间', '全部')
+            mtime_sec = mtime_dic.get(mtime_str, float('inf'))
+            inc = item.get('名称包含', {})
+            inc_kw = inc.get('关键词', []) if isinstance(inc, dict) else ([inc] if inc else [])
+            inc_logic = inc.get('逻辑', '或') if isinstance(inc, dict) else '或'
+            exc = item.get('名称不包含', {})
+            exc_kw = exc.get('关键词', []) if isinstance(exc, dict) else []
+            exc_logic = exc.get('逻辑', '和') if isinstance(exc, dict) else '和'
+
+            # 判断：源路径是目录 且 完全没有筛选条件 → 直接 cp -a
+            has_no_filter = (
+                mtime_sec == float('inf')
+                and not inc_kw
+                and not exc_kw
+            )
+            if has_no_filter:
+                # 检查源路径是否为目录
+                if self.username != 'root':
+                    check_cmd = f"{sudo_prefix}bash -c 'test -d \"{src_path}\" && echo dir || echo not_dir'"
+                else:
+                    check_cmd = f"bash -c 'test -d \"{src_path}\" && echo dir || echo not_dir'"
+                stdin, stdout, stderr = self.ssh.exec_command(check_cmd)
+                check_result = stdout.read().decode('utf-8').strip()
+                stderr.read()
+                exit_status = stdout.channel.recv_exit_status()
+                if exit_status == 0 and check_result == 'dir':
+                    direct_copy_dirs.append((src_path, src_path))
+                    continue
+
+            dirs, files = self._filter_remote_source(
+                src_path, mtime_sec, inc_kw, inc_logic, exc_kw, exc_logic, server_now, sudo_prefix
+            )
+            for d in dirs:
+                all_dir_list.append((d, src_path))
+            for f in files:
+                all_file_list.append((f, src_path))
+
+            if self.transfer_stat == 0:
+                print('下载被中止！')
+                return False
+
+        # 没有符合条件的项，直接返回
+        if not all_dir_list and not all_file_list and not direct_copy_dirs:
+            print(f"下载完成，未下载任何文件，待下载路径无符合条件的项")
             self.transfer_stat = 0
             return True
 
-        print(f"找到{len(dir_list)}个目录, {len(file_list)}个文件")
+        # 统计直接复制目录的文件总数
+        direct_copy_file_count = 0
+        for dir_path, _ in direct_copy_dirs:
+            if self.username != 'root':
+                count_cmd = f"echo {self.password} | sudo -S find \"{dir_path}\" -type f | wc -l"
+            else:
+                count_cmd = f"find \"{dir_path}\" -type f | wc -l"
+            stdin, stdout, stderr = self.ssh.exec_command(count_cmd)
+            count_out = stdout.read().decode('utf-8').strip()
+            stderr.read()
+            if count_out.isdigit():
+                direct_copy_file_count += int(count_out)
+
+        print(f"找到{len(all_dir_list)}个目录, {len(all_file_list)}个文件, {len(direct_copy_dirs)}个直接复制目录")
         if progress_cb:
-            progress_cb('find', 0, len(file_list), f'找到{len(file_list)}个文件')
+            total_files = len(all_file_list) + direct_copy_file_count
+            if not all_file_list and direct_copy_dirs:
+                progress_cb('find', 0, total_files, f'找到{len(direct_copy_dirs)}个目录（共{total_files}个文件）')
+            elif all_file_list and direct_copy_dirs:
+                progress_cb('find', 0, total_files, f'找到{total_files}个文件 + {len(direct_copy_dirs)}个目录')
+            else:
+                progress_cb('find', 0, total_files, f'找到{total_files}个文件')
 
         # 清洗完整路径：所有目录名和文件名中的Windows不支持字符都替换为 -
         def sanitize_path_for_windows(path):
@@ -947,25 +1078,25 @@ class SSHTools(object):
             sanitized_parts = [re.sub(r'[<>:"/\\|?*]', '-', part) for part in parts]
             return '/'.join(sanitized_parts)
 
-        # 收集所有需要创建的目录：dir_list + file_list中所有文件的父目录，保证空目录也能被创建
+        # 收集所有需要创建的目录
         all_dirs = set()
-        for d in dir_list:
-            rel_path = d.replace(os.path.dirname(remote_path), '', 1).lstrip('/')
+        for d, src_root in all_dir_list:
+            src_parent = os.path.dirname(src_root)
+            rel_path = d.replace(src_parent, '', 1).lstrip('/')
             if rel_path == '':
                 continue
-            # 清洗路径中的所有目录名
             sanitized_rel_path = sanitize_path_for_windows(rel_path)
             dst_dir = f"{temp_remote_path}/{sanitized_rel_path}"
             all_dirs.add(dst_dir)
 
-        for f in file_list:
-            rel_path = f.replace(os.path.dirname(remote_path), '', 1).lstrip('/')
-            # 清洗完整路径
+        for f, src_root in all_file_list:
+            src_parent = os.path.dirname(src_root)
+            rel_path = f.replace(src_parent, '', 1).lstrip('/')
             sanitized_rel_path = sanitize_path_for_windows(rel_path)
             dst_dir = os.path.dirname(f"{temp_remote_path}/{sanitized_rel_path}")
             all_dirs.add(dst_dir)
 
-        # 按路径长度从长到短排序，这样创建了最长路径后，短路径如果是父路径就可以跳过
+        # 按路径长度从长到短排序
         sorted_dirs = sorted(all_dirs, key=lambda x: len(x), reverse=True)
         created_dirs = set()
 
@@ -979,7 +1110,6 @@ class SSHTools(object):
                 stderr.read()
                 return False
 
-            # 检查当前目录是否是某个已创建目录的父路径，如果是就跳过
             need_create = True
             for created in created_dirs:
                 if created.startswith(dst_dir + '/'):
@@ -1005,12 +1135,65 @@ class SSHTools(object):
         stdout.read()
         stderr.read()
 
-        # 所有目录创建完成，直接复制文件，不用再创建目录
-        file_count = len(file_list)
-        print(f"开始复制文件到远程临时目录，共{file_count}个文件")
+        # 复制文件到临时目录
+        file_count = len(all_file_list)
+        print(f"开始复制文件到远程临时目录，共{file_count}个文件, {len(direct_copy_dirs)}个直接复制目录")
 
+        # 先创建临时目录根目录（直接复制目录需要）
+        if self.username != 'root':
+            mkdir_cmd = f"echo {self.password} | sudo -S mkdir -p \"{temp_remote_path}\""
+        else:
+            mkdir_cmd = f"mkdir -p \"{temp_remote_path}\""
+        stdin, stdout, stderr = self.ssh.exec_command(mkdir_cmd)
+        stdout.read()
+        stderr.read()
+
+        # 先处理直接复制的目录（cp -a 整个目录）
+        for dir_path, src_root in direct_copy_dirs:
+            if self.transfer_stat == 0:
+                print('下载被中止！')
+                rm_cmd = f"rm -rf \"{temp_remote_path}\""
+                stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
+                stdout.read()
+                stderr.read()
+                return False
+
+            src_parent = os.path.dirname(src_root)
+            rel_path = dir_path.replace(src_parent, '', 1).lstrip('/')
+            sanitized_rel_path = sanitize_path_for_windows(rel_path)
+            dst_path = f"{temp_remote_path}/{sanitized_rel_path}"
+
+            # 确保目标父目录存在
+            dst_parent = os.path.dirname(dst_path)
+            if dst_parent and dst_parent != temp_remote_path:
+                if self.username != 'root':
+                    mkdir_cmd = f"echo {self.password} | sudo -S mkdir -p \"{dst_parent}\""
+                else:
+                    mkdir_cmd = f"mkdir -p \"{dst_parent}\""
+                stdin, stdout, stderr = self.ssh.exec_command(mkdir_cmd)
+                stdout.read()
+                stderr.read()
+
+            if self.username != 'root':
+                cp_cmd = f"echo {self.password} | sudo -S cp -a \"{dir_path}\" \"{dst_path}\""
+            else:
+                cp_cmd = f"cp -a \"{dir_path}\" \"{dst_path}\""
+
+            stdin, stdout, stderr = self.ssh.exec_command(cp_cmd)
+            cp_err = stderr.read().decode('utf-8').strip()
+            stdout.read()
+            exit_status = stdout.channel.recv_exit_status()
+            if exit_status != 0:
+                print(f"直接复制目录失败: {dir_path} -> {dst_path},原因: {cp_err}")
+            else:
+                print(f"复制目录完成: {dir_path} -> {dst_path}")
+                if progress_cb:
+                    progress_cb('copy', 0, 0, f'复制目录{os.path.basename(dir_path)}完成')
+
+        # 再处理逐文件复制
         cp_count = 0
-        for file_path in file_list:
+        failed_files = []
+        for file_path, src_root in all_file_list:
             if self.transfer_stat == 0:
                 print('下载被中止！')
                 rm_cmd = f"rm -rf \"{temp_remote_path}\""
@@ -1020,13 +1203,12 @@ class SSHTools(object):
                 return False
 
             cp_count += 1
-            rel_path = file_path.replace(os.path.dirname(remote_path), '', 1).lstrip('/')
-            # 复制前清洗完整路径，避免Windows下载时因特殊字符失败
+            src_parent = os.path.dirname(src_root)
+            rel_path = file_path.replace(src_parent, '', 1).lstrip('/')
             sanitized_rel_path = sanitize_path_for_windows(rel_path)
             dst_path = f"{temp_remote_path}/{sanitized_rel_path}"
 
             if self.username != 'root':
-                # -p保留权限、时间复制，但不递归
                 cp_cmd = f"echo {self.password} | sudo -S cp -p \"{file_path}\" \"{dst_path}\""
             else:
                 cp_cmd = f"cp -p \"{file_path}\" \"{dst_path}\""
@@ -1037,10 +1219,18 @@ class SSHTools(object):
             exit_status = stdout.channel.recv_exit_status()
             if exit_status != 0:
                 print(f"复制到临时目录失败 {cp_count}/{file_count}: {file_path} -> {dst_path},原因: {cp_err}")
+                failed_files.append({"文件": file_path, "原因": cp_err})
             else:
                 print(f"已复制到临时目录 {cp_count}/{file_count}: {file_path} -> {dst_path}")
                 if progress_cb:
                     progress_cb('copy', cp_count, file_count, os.path.basename(file_path))
+
+        # 打印复制失败汇总
+        if failed_files:
+            fail_lines = [f"复制失败{len(failed_files)}个文件："]
+            for idx, f_item in enumerate(failed_files, 1):
+                fail_lines.append(f"  {idx}. {f_item['文件']} - {f_item['原因']}")
+            print("\n".join(fail_lines))
 
         if self.transfer_stat == 0:
             print('下载被中止！')
@@ -1059,49 +1249,44 @@ class SSHTools(object):
         stdout.read()
         stderr.read()
 
-        dst_path = f"{temp_remote_path}/{remote_base}"
-
-        # 多层fallback计算远程文件/目录大小，兼容嵌入式Linux系统
+        # 多层fallback计算远程文件/目录大小
         dst_size = 0
-        # 方案1: 尝试用du -sb（标准Linux）
-        stdin, stdout, stderr = self.ssh.exec_command(f'du -sb "{dst_path}" 2>/dev/null | awk \'{{print $1}}\'')
+        stdin, stdout, stderr = self.ssh.exec_command(f'du -sb "{temp_remote_path}" 2>/dev/null | awk \'{{print $1}}\'')
         output = stdout.read().decode('utf-8').strip()
         stderr.read()
         if output.isdigit():
             dst_size = int(output)
         else:
-            # 方案2: BusyBox du -s，按1024字节/块估算
-            stdin, stdout, stderr = self.ssh.exec_command(f'du -s "{dst_path}" 2>/dev/null')
+            stdin, stdout, stderr = self.ssh.exec_command(f'du -s "{temp_remote_path}" 2>/dev/null')
             du_output = stdout.read().decode('utf-8').strip()
             stderr.read()
             output = du_output.split()[0] if du_output else ''
             if output.isdigit():
-                dst_size = int(output) * 1024  # 估算每块1024字节
+                dst_size = int(output) * 1024
             else:
-                # 方案3: 用find + wc -c逐个统计文件大小
-                stdin, stdout, stderr = self.ssh.exec_command(f'find "{dst_path}" -type f -exec wc -c {{}} \\; 2>/dev/null | awk \'{{sum+=$1}} END {{print sum}}\'')
+                stdin, stdout, stderr = self.ssh.exec_command(f'find "{temp_remote_path}" -type f -exec wc -c {{}} \\; 2>/dev/null | awk \'{{sum+=$1}} END {{print sum}}\'')
                 output = stdout.read().decode('utf-8').strip()
                 stderr.read()
                 if output.isdigit():
                     dst_size = int(output)
-        
+
         if dst_size > 0:
             print(f"开始下载，大小: {dst_size/1048576:.2f} M")
         else:
             print(f"开始下载（无法获取大小）")
 
         try:
-            # 跟踪下载进度的累计状态（SCP回调的sent是当前文件的，需要自行累计）
+            # 直接复制目录的文件数 + 逐文件复制的文件数
+            _real_total_files = len(all_file_list) + direct_copy_file_count
             _download_state = {
-                'accumulated': 0,       # 已完成文件累计字节数
-                'last_name': '',        # 上一个文件名
-                'last_size': 0,         # 上一个文件大小
-                'file_index': 0,        # 已完成文件数
-                'total_files': len(file_list),
-                'last_cb_pct': -1,      # 上次回调时的总进度百分比（节流用）
+                'accumulated': 0,
+                'last_name': '',
+                'last_size': 0,
+                'file_index': 0,
+                'total_files': _real_total_files,
+                'last_cb_pct': -1,
             }
 
-            # 把外部progress_cb包装成下载阶段专用回调
             if progress_cb:
                 def _dl_progress(total_sent, total_size, cur_name, cur_size, cur_sent, file_idx, total_files):
                     progress_cb('download', total_sent, total_size,
@@ -1111,8 +1296,6 @@ class SSHTools(object):
                 self._download_progress_cb = None
 
             def _scp_progress(name, size, sent):
-                """SCP进度回调：维护总累计字节，支持总进度平滑增长"""
-                # 检测到新文件开始：上一个文件已传完，累加到累计
                 file_changed = False
                 if _download_state['last_name'] and name != _download_state['last_name']:
                     _download_state['accumulated'] += _download_state['last_size']
@@ -1122,9 +1305,7 @@ class SSHTools(object):
                 _download_state['last_size'] = size
 
                 total_sent = _download_state['accumulated'] + sent
-                # 调用原始的打印进度（只按百分比打印，用总大小）
                 self._print_progress(total_sent, dst_size)
-                # 外部回调（节流：文件变化 或 总进度变化>=1% 才回调）
                 if hasattr(self, '_download_progress_cb') and self._download_progress_cb:
                     cur_pct = int(total_sent * 100 / dst_size) if dst_size > 0 else 0
                     if file_changed or cur_pct != _download_state['last_cb_pct']:
@@ -1136,13 +1317,18 @@ class SSHTools(object):
                 if self.transfer_stat == 0:
                     raise Exception("下载被中止")
                 self._last_progress = -1
-                client.get(dst_path, local_path, recursive=True)
+                client.get(temp_remote_path, local_path, recursive=True)
+
+            # 补一次 100% 进度回调
+            if progress_cb and dst_size > 0:
+                last_name = _download_state['last_name']
+                last_size = _download_state['last_size']
+                last_idx = _download_state['file_index']
+                last_total = _download_state['total_files']
+                progress_cb('download', dst_size, dst_size,
+                            f"{last_name}|{last_size}|{last_size}|{last_idx}|{last_total}")
         except Exception as e:
             print(f"\n下载失败: {e}")
-            # 清理可能下载了一半的文件
-            local_tar = f"{local_path}/{remote_base}"
-            if os.path.exists(local_tar):
-                os.remove(local_tar)
             rm_cmd = f"rm -rf \"{temp_remote_path}\""
             stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
             stdout.read()
@@ -1156,7 +1342,25 @@ class SSHTools(object):
         stdout.read()
         stderr.read()
         print("远程临时目录已删除")
-        print(f"下载完毕！文件已保存到: {local_path}/{remote_base}")
+
+        # 将本地下载的 temp 目录内容移动到 local_path，去掉多余的一层 temp 目录名
+        temp_basename = os.path.basename(temp_remote_path)
+        local_temp_dir = f"{local_path}/{temp_basename}"
+        if os.path.exists(local_temp_dir):
+            for item in os.listdir(local_temp_dir):
+                src_item = os.path.join(local_temp_dir, item)
+                dst_item = os.path.join(local_path, item)
+                # 目标存在则先删除（覆盖）
+                if os.path.exists(dst_item):
+                    if os.path.isdir(dst_item):
+                        shutil.rmtree(dst_item)
+                    else:
+                        os.remove(dst_item)
+                shutil.move(src_item, dst_item)
+            # 删除空的 temp 目录
+            os.rmdir(local_temp_dir)
+
+        print(f"下载完毕！文件已保存到: {local_path}")
         self.transfer_stat = 0
         self._download_progress_cb = None
         return True

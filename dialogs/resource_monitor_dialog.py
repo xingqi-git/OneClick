@@ -1475,8 +1475,10 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                             worker.info_signal.emit(('progress', phase, current, total, extra))
 
                     get_result = ssh_client.get_files(
-                        remote_download_path, self.monitor_data_path,
-                        float('inf'), '', work_dir, progress_cb=progress_cb
+                        [{'路径': remote_download_path, '修改时间': '全部',
+                          '名称包含': {'关键词': [], '逻辑': '或'},
+                          '名称不包含': {'关键词': [], '逻辑': '和'}}],
+                        self.monitor_data_path, work_dir, progress_cb=progress_cb
                     )
                     if not get_result:
                         # 失败时顺便清理服务器临时目录

@@ -1236,6 +1236,10 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.update_run_info(f'<{button_name}> 开始执行')
         self.set_button_executing(button_id, True)
 
+        # 每次执行生成唯一进度ID，确保新进度不会覆盖上一次的行
+        import time
+        exec_id = f"{button_id}_{int(time.time()*1000)}"
+
         # 初始化SSHTools
         ssh_tool = ssh_tools.SSHTools()
         try:
@@ -1248,97 +1252,43 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self.set_button_executing(button_id, False)
             return
 
-        mtime_dic = {
-            "全部": float('inf'),
-            "最近30分钟": 1800,
-            "最近1小时": 3600,
-            "最近2小时": 7200,
-            "最近1天": 86400,
-            "最近1月": 2592000,
-            "最近1年": 31536000
-        }
+        sc_cfg = self.sc_buttons[button_id]['config']
+        work_dir = sc_cfg['文件暂存路径'] if '文件暂存路径' in sc_cfg else ''
+
+        # 读取源路径列表（兼容旧版单条配置）
+        if '源路径列表' in sc_cfg:
+            source_items = sc_cfg['源路径列表']
+        else:
+            # 兼容旧版单条配置
+            source_items = [{
+                '路径': sc_cfg.get('服务器路径', ''),
+                '修改时间': sc_cfg.get('修改时间', '全部'),
+                '名称包含': {'关键词': [sc_cfg.get('文件名包含', '')] if sc_cfg.get('文件名包含') else [], '逻辑': '或'},
+                '名称不包含': {'关键词': [], '逻辑': '和'}
+            }]
+
+        # 目的路径
+        local_path = sc_cfg['目的路径']
 
         # 将本地路径的"当前路径/时间IP(例:20251024031415-1.1.1.1)/"修改为当前时间当前路径
-        if self.sc_buttons[button_id]['config']['本地路径'] == "当前路径/时间IP(例:20251024031415-1.1.1.1)/":
+        if local_path == "当前路径/时间IP(例:20251024031415-1.1.1.1)/":
             current_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-            local_path = self.get_default_path() + '/' + current_time + '-' + self.sc_buttons[button_id]['config'][
-                'IP']
+            local_path = self.get_default_path() + '/' + current_time + '-' + sc_cfg['IP']
             os.mkdir(local_path)
-        else:
-            local_path = self.sc_buttons[button_id]['config']['本地路径']
-
-        remote_path = self.sc_buttons[button_id]['config']['服务器路径']
-        mtime = mtime_dic.get(self.sc_buttons[button_id]['config']['修改时间'])
-        filename = self.sc_buttons[button_id]['config']['文件名包含']
-        work_dir = self.sc_buttons[button_id]['config']['文件暂存路径']
 
         def execute_get_files():
             c_result = ssh_tool.connect()
             if not c_result:
                 return False
 
-            def progress_cb(phase, current, total, extra):
-                """进度回调：通过info_signal发到主线程"""
-                if worker:
-                    worker.info_signal.emit(('progress', phase, current, total, extra))
+            def get_progress_cb(phase, current, total, extra=''):
+                print(f"__PROGRESS__:{phase}|{current}|{total}|{extra}")
 
-            g_result = ssh_tool.get_files(remote_path, local_path, mtime, filename, work_dir, progress_cb=progress_cb)
+            g_result = ssh_tool.get_files(source_items, local_path, work_dir=work_dir if work_dir else None, progress_cb=get_progress_cb)
 
             ssh_tool.disconnect()
 
             return g_result
-
-        def on_progress(data):
-            """处理进度信号，实时刷新最后一行（不刷屏）"""
-            if isinstance(data, tuple) and len(data) >= 5 and data[0] == 'progress':
-                _, phase, current, total, extra = data
-                msg = ''
-                if phase == 'find':
-                    msg = f'<{button_name}> 查找中... 找到{total}个文件'
-                elif phase == 'copy':
-                    if total > 0:
-                        cur_name = extra.split('/')[-1] if '/' in (extra or '') else (extra or '')
-                        msg = f'<{button_name}> 复制中... {current}/{total} ({int(current*100/total)}%)  {cur_name}'
-                elif phase == 'download':
-                    if total > 0:
-                        pct = int(current * 100 / total)
-                        total_mb = total / 1048576
-                        # extra格式：cur_name|cur_size|cur_sent|file_idx|total_files
-                        parts = extra.split('|') if extra else []
-                        if len(parts) >= 5:
-                            file_idx = int(parts[3]) if parts[3].isdigit() else 0
-                            total_files = int(parts[4]) if parts[4].isdigit() else 0
-                            cur_name = os.path.basename(parts[0])
-                            cur_size = int(parts[1]) if parts[1].isdigit() else 0
-                            cur_sent = int(parts[2]) if parts[2].isdigit() else 0
-                            cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
-                            cur_mb = cur_size / 1048576
-                            msg = (f'<{button_name}> 下载中... 总进度{pct}% ({total_mb:.1f}MB) '
-                                   f'文件{file_idx + 1}/{total_files}: {cur_name} {cur_pct}% ({cur_mb:.1f}MB)')
-                        else:
-                            msg = f'<{button_name}> 下载中... {pct}% ({total_mb:.1f}MB)'
-                if msg:
-                    self.update_run_info_progress(button_id, msg)
-
-        def on_log_message(text, level='INFO'):
-            """过滤刷屏的日志，只保留关键信息"""
-            skip_patterns = [
-                '已复制到临时目录',
-                '复制到临时目录失败',
-                '传输进度:',
-                '开始复制文件到远程临时目录',
-                '开始查找符合条件的文件',
-                '找到.*个目录',
-                '开始创建目录',
-                '开始下载',
-                '远程临时目录已删除',
-            ]
-            import re
-            for pat in skip_patterns:
-                if re.search(pat, text):
-                    return
-            # 正常日志走追加
-            log_wrapper(text, level)
 
         def on_worker_finished(result):
             if result:
@@ -1362,9 +1312,66 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         worker.moveToThread(thread)
 
         # 绑定worker信号槽
-        log_wrapper = self._make_log_wrapper(button_name)
-        worker.info_signal.connect(on_progress)
-        worker.log_signal.connect(on_log_message)
+        # 过滤刷屏日志
+        skip_phrases = [
+            '已复制到临时目录',
+            '复制到临时目录失败',
+            '传输进度:',
+            '开始复制文件到远程临时目录，共',
+            '开始查找符合条件的文件',
+            '找到.*个目录',
+            '开始创建目录',
+            '开始下载',
+            '远程临时目录已删除',
+            '下载完毕！',
+        ]
+
+        def get_log_wrapper(text, level='INFO'):
+            if text.startswith('__PROGRESS__:'):
+                content = text[len('__PROGRESS__:'):]
+                parts = content.split('|')
+                if len(parts) >= 3:
+                    phase = parts[0]
+                    current = int(parts[1]) if parts[1].isdigit() else 0
+                    total = int(parts[2]) if parts[2].isdigit() else 0
+                    extra_parts = parts[3:]
+                    extra = '|'.join(extra_parts)
+                    msg = None
+                    if phase == 'find':
+                        msg = f'<{button_name}> 查找中... 找到{total}个文件'
+                    elif phase == 'copy':
+                        if total > 0:
+                            cur_name = extra.split('/')[-1] if '/' in (extra or '') else (extra or '')
+                            msg = f'<{button_name}> 复制中... {current}/{total} ({int(current*100/total)}%)  {cur_name}'
+                    elif phase == 'download':
+                        if total > 0:
+                            pct = int(current * 100 / total)
+                            total_mb = total / 1048576
+                            # extra格式：cur_name|cur_size|cur_sent|file_idx|total_files
+                            if len(extra_parts) >= 5:
+                                file_idx = int(extra_parts[3]) if extra_parts[3].isdigit() else 0
+                                total_files = int(extra_parts[4]) if extra_parts[4].isdigit() else 0
+                                cur_name = os.path.basename(extra_parts[0])
+                                cur_size = int(extra_parts[1]) if extra_parts[1].isdigit() else 0
+                                cur_sent = int(extra_parts[2]) if extra_parts[2].isdigit() else 0
+                                cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
+                                cur_mb = cur_size / 1048576
+                                total_display = total_files if total_files > 0 else '未知'
+                                msg = (f'<{button_name}> 下载中... 总进度{pct}% ({total_mb:.1f}MB) '
+                                       f'文件{file_idx + 1}/{total_display}: {cur_name} {cur_pct}% ({cur_mb:.1f}MB)')
+                            else:
+                                msg = f'<{button_name}> 下载中... {pct}% ({total_mb:.1f}MB)'
+                    if msg:
+                        self.update_run_info_progress(f"{exec_id}_{phase}", msg)
+                return
+            import re
+            for pat in skip_phrases:
+                if re.search(pat, text):
+                    return
+            log_wrapper2 = self._make_log_wrapper(button_name)
+            log_wrapper2(text, level)
+
+        worker.log_signal.connect(get_log_wrapper)
         worker.finished.connect(on_worker_finished)
         worker.finished.connect(worker.deleteLater)
 
