@@ -29,6 +29,6 @@ var/
 .env
 .venv
 .envrc
-*.log
+*.log*
 config.json
 OneClick.log
