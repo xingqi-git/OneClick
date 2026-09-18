@@ -91,7 +91,7 @@
      <item row="5" column="0">
       <widget class="QLabel" name="label_workdir">
        <property name="text">
-        <string>文件暂存路径</string>
+        <string>临时文件路径</string>
        </property>
       </widget>
      </item>
@@ -102,14 +102,14 @@
      <item row="6" column="0">
       <widget class="QLabel" name="label_7">
        <property name="text">
-        <string>待获取文件(夹)</string>
+        <string>源路径</string>
        </property>
       </widget>
      </item>
      <item row="7" column="0">
       <widget class="QLabel" name="label_10">
        <property name="text">
-        <string>本地保存路径</string>
+        <string>目的路径</string>
        </property>
       </widget>
      </item>
@@ -201,12 +201,27 @@
           <string>最近2小时</string>
          </property>
         </item>
+        <item>
+         <property name="text">
+          <string>最近1天</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>最近1月</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>最近1年</string>
+         </property>
+        </item>
        </widget>
       </item>
       <item row="0" column="0" colspan="2">
        <widget class="QLabel" name="label_12">
         <property name="text">
-         <string>待获取文件夹的筛选条件</string>
+         <string>源路径筛选条件</string>
         </property>
        </widget>
       </item>

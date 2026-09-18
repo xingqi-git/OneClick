@@ -91,7 +91,7 @@
      <item row="5" column="0">
       <widget class="QLabel" name="label_workdir">
        <property name="text">
-        <string>文件暂存路径</string>
+        <string>临时文件路径</string>
        </property>
       </widget>
      </item>

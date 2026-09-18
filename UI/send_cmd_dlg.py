@@ -120,7 +120,7 @@ class Ui_Dialog(object):
         self.sshport_lineEdit.setText(_translate("Dialog", "22"))
         self.label_4.setText(_translate("Dialog", "用户名"))
         self.label_5.setText(_translate("Dialog", "密码"))
-        self.label_workdir.setText(_translate("Dialog", "文件暂存路径"))
+        self.label_workdir.setText(_translate("Dialog", "临时文件路径"))
         self.label_7.setText(_translate("Dialog", "指令内容"))
         self.label_8.setText(_translate("Dialog", "快捷按钮名称"))
         self.save_pushButton.setText(_translate("Dialog", "生成快捷按钮"))

@@ -658,7 +658,13 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
                 start_ssh.ssh.exec_command(f"mkdir -p {user_path}")
 
                 # 上传脚本
-                send_result = start_ssh.send_files(local_script, f"{user_path}", float('inf'), '', work_dir)
+                source_items = [{
+                    '路径': local_script,
+                    '修改时间': '全部',
+                    '名称包含': {'关键词': [], '逻辑': '或'},
+                    '名称不包含': {'关键词': [], '逻辑': '和'}
+                }]
+                send_result = start_ssh.send_files(source_items, f"{user_path}", work_dir=work_dir)
                 if not send_result:
                     worker.info_signal.emit(("提示", "上传脚本失败"))
                     start_ssh.disconnect()

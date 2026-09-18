@@ -395,21 +395,115 @@ class SSHTools(object):
 
         return tree_list
 
-    def send_files(self, local_path, remote_path, mtime=float('inf'), filename='', work_dir=None, progress_cb=None):
+    def _match_filename(self, name, include_keywords, include_logic, exclude_keywords, exclude_logic):
         """
-        SSH上传文件
+        判断文件名是否符合包含/不包含筛选条件
+        - include_keywords: 包含关键词列表
+        - include_logic: '和' 或 '或'
+        - exclude_keywords: 不包含关键词列表
+        - exclude_logic: '和' 或 '或'
+        - 包含组 和 不包含组 之间是"与"关系
+        """
+        # 包含判断
+        if include_keywords:
+            if include_logic == '和':
+                include_ok = all(kw in name for kw in include_keywords)
+            else:  # 或
+                include_ok = any(kw in name for kw in include_keywords)
+        else:
+            include_ok = True
+
+        # 不包含判断
+        if exclude_keywords:
+            if exclude_logic == '和':
+                # 所有关键词都不包含才算通过
+                exclude_ok = all(kw not in name for kw in exclude_keywords)
+            else:  # 或
+                # 任意一个关键词不包含就算通过？不对，应该是"任意一个包含就排除"
+                # "名称不包含 A 或 B" = 不含A 或者 不含B = 几乎总是成立，没意义
+                # 更合理的理解：不包含组的逻辑是"命中排除规则"的条件
+                # 逻辑'和' = 所有关键词都包含才排除；逻辑'或' = 任意一个包含就排除
+                # 然后 exclude_ok = 不命中排除规则
+                if exclude_logic == '和':
+                    # 所有关键词都包含 → 命中排除 → 不通过
+                    hit_exclude = all(kw in name for kw in exclude_keywords)
+                else:  # 或
+                    hit_exclude = any(kw in name for kw in exclude_keywords)
+                exclude_ok = not hit_exclude
+        else:
+            exclude_ok = True
+
+        return include_ok and exclude_ok
+
+    def _filter_source_path(self, source_path, mtime_seconds, include_keywords, include_logic,
+                            exclude_keywords, exclude_logic, time_now):
+        """
+        对单个源路径进行筛选，返回 (dir_list, file_list)
+        规则：
+        - 如果源路径是文件，不参与筛选，直接加入 file_list
+        - 如果源路径是文件夹，文件夹本身不参与筛选（总是加入 dir_list），
+          其下的子目录和子文件才参与筛选
+        """
+        dir_list = []
+        file_list = []
+
+        source_path = source_path.replace('\\', '/').rstrip('/')
+        if not os.path.exists(source_path):
+            return dir_list, file_list
+
+        if os.path.isfile(source_path):
+            # 源路径是文件，不筛选，直接传
+            file_list.append(source_path)
+            return dir_list, file_list
+
+        # 源路径是文件夹，文件夹本身直接加入目录列表
+        dir_list.append(source_path)
+
+        # 遍历子目录和子文件，应用筛选
+        for root, dirs, files in os.walk(source_path):
+            if self.transfer_stat == 0:
+                return dir_list, file_list
+            for name in dirs + files:
+                full_path = os.path.join(root, name).replace('\\', '/')
+                is_dir = os.path.isdir(full_path)
+                # 修改时间筛选
+                try:
+                    mtime_val = os.path.getmtime(full_path)
+                except OSError:
+                    continue
+                interval = time_now - mtime_val
+                if interval > mtime_seconds:
+                    continue
+                # 文件名筛选
+                if not self._match_filename(name, include_keywords, include_logic,
+                                            exclude_keywords, exclude_logic):
+                    continue
+                if is_dir:
+                    dir_list.append(full_path)
+                else:
+                    file_list.append(full_path)
+
+        return dir_list, file_list
+
+    def send_files(self, source_items, remote_path, work_dir=None, progress_cb=None):
+        """
+        SSH上传文件（支持多源路径，每条独立筛选）
         流程：本地筛选 -> 复制到临时目录 -> 打包 -> SCP上传 -> 服务器端解包 -> 移动到目标目录 -> 清理临时文件
         参数：
-            local_path: 本地源路径，可以是文件或文件夹
-            work_dir: 服务器端临时目录所在路径，默认为 /home/{username}
+            source_items: 源路径列表，每项为 dict：
+                {
+                    '路径': '本地路径',
+                    '修改时间': '全部'/'最近30分钟'/'最近1小时'/'最近2小时',
+                    '名称包含': {'关键词': [], '逻辑': '和'/'或'},
+                    '名称不包含': {'关键词': [], '逻辑': '和'/'或'}
+                }
             remote_path: 远程目标路径，只能是文件夹
-            mtime: 筛选修改时间（秒），只上传在此时间内修改的文件，默认无限大即不限制
-            filename: 筛选文件名包含该字符串，默认空字符串即不限制
+            work_dir: 服务器端临时目录所在路径，默认为 /home/{username}
             progress_cb: 可选的进度回调函数 progress_cb(phase, current, total, extra)
                 phase: 'find' | 'upload' | 'move'
                 find: current=0, total=文件数, extra=描述
                 upload: current=已传字节, total=总字节, extra=cur_name|cur_size|cur_sent|file_idx|total_files
-                move: current=0, total=0, extra=描述
+                move: current=已移动文件数, total=总文件数, extra=描述
         返回：
             成功返回True，失败返回False
         中断支持：
@@ -419,13 +513,27 @@ class SSHTools(object):
             print("未连接到服务器，请先连接")
             return False
 
-        local_path = local_path.replace('\\', '/').rstrip('/')
         remote_path = remote_path.replace('\\', '/').rstrip('/')
 
-        if not os.path.exists(local_path):
-            print(f"上传失败，本地路径不存在: {local_path}")
-            return False
+        # 修改时间映射（秒）
+        mtime_dic = {
+            "全部": float('inf'),
+            "最近30分钟": 1800,
+            "最近1小时": 3600,
+            "最近2小时": 7200,
+            "最近1天": 86400,
+            "最近1月": 2592000,
+            "最近1年": 31536000
+        }
 
+        # 校验所有源路径是否存在
+        for item in source_items:
+            path = item['路径'].replace('\\', '/').rstrip('/')
+            if not os.path.exists(path):
+                print(f"上传失败，本地路径不存在: {path}")
+                return False
+
+        # 检查远程目标路径
         if self.username != 'root':
             check_remote_cmd = f"echo {self.password} | sudo -S bash -c 'test -d \"{remote_path}\" && echo exists || echo not exists'"
         else:
@@ -445,70 +553,72 @@ class SSHTools(object):
         time_now = time.time()
         # 生成毫秒级本地时间戳，用于临时目录命名，避免重名
         local_timestamp_ms = f"{int(time_now * 1000)}"
-        dir_list = []
-        file_list = []
 
-        name = os.path.basename(local_path)
-        mtime_val = os.path.getmtime(local_path)
-        interval = time_now - mtime_val
-        if interval <= mtime and filename in name:
-            if os.path.isfile(local_path):
-                file_list.append(local_path)
-            else:
-                dir_list.append(local_path)
-        # 源路径是目录，用os.walk遍历，分别收集目录和文件
-        for root, dirs, files in os.walk(local_path):
+        # 多源路径合并后的文件/目录列表，每项带源路径信息用于计算相对路径
+        all_file_list = []  # [(full_path, source_root)]
+        all_dir_list = []   # [(full_path, source_root)]
+
+        for item in source_items:
+            src_path = item['路径'].replace('\\', '/').rstrip('/')
+            mtime_str = item.get('修改时间', '全部')
+            mtime_sec = mtime_dic.get(mtime_str, float('inf'))
+            inc = item.get('名称包含', {})
+            inc_kw = inc.get('关键词', []) if isinstance(inc, dict) else ([inc] if inc else [])
+            inc_logic = inc.get('逻辑', '或') if isinstance(inc, dict) else '或'
+            exc = item.get('名称不包含', {})
+            exc_kw = exc.get('关键词', []) if isinstance(exc, dict) else []
+            exc_logic = exc.get('逻辑', '和') if isinstance(exc, dict) else '和'
+
+            dirs, files = self._filter_source_path(
+                src_path, mtime_sec, inc_kw, inc_logic, exc_kw, exc_logic, time_now
+            )
+            for d in dirs:
+                all_dir_list.append((d, src_path))
+            for f in files:
+                all_file_list.append((f, src_path))
+
             if self.transfer_stat == 0:
                 print('上传被中止！')
                 return False
-            for name in dirs + files:
-                full_path = os.path.join(root, name).replace('\\', '/')
-                is_dir = os.path.isdir(full_path)
-                mtime_val = os.path.getmtime(full_path)
-                interval = time_now - mtime_val
-                if interval <= mtime and filename in name:
-                    if is_dir:
-                        dir_list.append(full_path)
-                    else:
-                        file_list.append(full_path)
 
         # 没有符合条件的项，直接返回
-        if not dir_list and not file_list:
+        if not all_dir_list and not all_file_list:
             print(f"上传完成，未上传任何文件，待上传路径无符合条件的项")
             self.transfer_stat = 0
             return True
 
-        print(f"找到{len(dir_list)}个目录, {len(file_list)}个文件")
+        print(f"找到{len(all_dir_list)}个目录, {len(all_file_list)}个文件")
         if progress_cb:
-            progress_cb('find', 0, len(file_list), f'找到{len(file_list)}个文件')
+            progress_cb('find', 0, len(all_file_list), f'找到{len(all_file_list)}个文件')
 
         # 计算总大小（用于总进度）
         total_size = 0
-        for f in file_list:
+        for f_path, _ in all_file_list:
             try:
-                total_size += os.path.getsize(f)
+                total_size += os.path.getsize(f_path)
             except OSError:
                 pass
 
-        # 提取源路径的基础名，用于保持原目录结构
-        local_base = os.path.basename(local_path)
         # 构造服务器临时目录
         base_dir = work_dir if work_dir else f"/home/{self.username}"
         temp_remote_dir = f"{base_dir}/OneClick_temp{local_timestamp_ms}"
 
-        # 收集所有需要创建的目录：dir_list + file_list中所有文件的父目录，保证空目录也能被创建
+        # 收集所有需要创建的目录
         all_dirs = set()
-        for d in dir_list:
-            rel_path = d.replace(os.path.dirname(local_path), '', 1).lstrip('/')
+        for d, src_root in all_dir_list:
+            # 相对路径 = 去掉源路径父目录后的部分
+            src_parent = os.path.dirname(src_root)
+            rel_path = d.replace(src_parent, '', 1).lstrip('/')
             dst_dir = f"{temp_remote_dir}/{rel_path}"
             all_dirs.add(dst_dir)
 
-        for f in file_list:
-            rel_path = f.replace(os.path.dirname(local_path), '', 1).lstrip('/')
+        for f, src_root in all_file_list:
+            src_parent = os.path.dirname(src_root)
+            rel_path = f.replace(src_parent, '', 1).lstrip('/')
             dst_dir = os.path.dirname(f"{temp_remote_dir}/{rel_path}")
             all_dirs.add(dst_dir)
 
-        # 按路径长度从长到短排序，这样创建了最长路径后，短路径如果是父路径就可以跳过
+        # 按路径长度从长到短排序，优化 mkdir -p 调用
         sorted_dirs = sorted(all_dirs, key=lambda x: len(x), reverse=True)
         created_dirs = set()
 
@@ -516,7 +626,6 @@ class SSHTools(object):
         for dst_dir in sorted_dirs:
             if self.transfer_stat == 0:
                 print('上传被中止！')
-                # 清理已创建的临时目录
                 rm_cmd = f"rm -rf \"{temp_remote_dir}\""
                 stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
                 stdout.read()
@@ -524,7 +633,6 @@ class SSHTools(object):
                 self.transfer_stat = 0
                 return False
 
-            # 检查当前目录是否是某个已创建目录的父路径，如果是就跳过
             need_create = True
             for created in created_dirs:
                 if created.startswith(dst_dir + '/'):
@@ -554,12 +662,12 @@ class SSHTools(object):
         stdout.read()
         stderr.read()
 
-        # 所有目录创建完成，直接复制文件，不用再创建目录
-        file_count = len(file_list)
+        # 所有目录创建完成，开始上传文件
+        file_count = len(all_file_list)
         print(f"开始上传文件到服务器临时目录，共{file_count}个文件")
 
         up_count = 0
-        # 上传进度状态（用于累计字节数）
+        failed_files = []
         _upload_state = {'accumulated': 0, 'cur_index': 0, 'last_name': '', 'last_cb_pct': -1}
 
         def _scp_upload_progress(name, size, sent):
@@ -570,9 +678,8 @@ class SSHTools(object):
             file_changed = False
             if name_str != _upload_state['last_name']:
                 if _upload_state['last_name']:
-                    # 上一个文件传完，累加到累计
                     try:
-                        prev_size = os.path.getsize(file_list[_upload_state['cur_index']])
+                        prev_size = os.path.getsize(all_file_list[_upload_state['cur_index']][0])
                         _upload_state['accumulated'] += prev_size
                     except (OSError, IndexError):
                         pass
@@ -580,17 +687,15 @@ class SSHTools(object):
                 _upload_state['last_name'] = name_str
                 file_changed = True
             total_sent = _upload_state['accumulated'] + sent
-            # 节流：文件变化 或 总进度变化>=1% 才回调
             cur_pct = int(total_sent * 100 / total_size) if total_size > 0 else 0
             if file_changed or cur_pct != _upload_state['last_cb_pct']:
                 _upload_state['last_cb_pct'] = cur_pct
                 extra = f"{name_str}|{size}|{sent}|{up_count}|{file_count}"
                 progress_cb('upload', total_sent, total_size, extra)
 
-        for f_path in file_list:
+        for f_path, src_root in all_file_list:
             if self.transfer_stat == 0:
                 print('上传被中止！')
-                # 清理可能上传了一半的文件
                 rm_cmd = f"rm -rf \"{temp_remote_dir}\""
                 stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
                 stdout.read()
@@ -599,13 +704,13 @@ class SSHTools(object):
                 return False
 
             up_count += 1
-            rel_path = f_path.replace(os.path.dirname(local_path), '', 1).lstrip('/')
+            src_parent = os.path.dirname(src_root)
+            rel_path = f_path.replace(src_parent, '', 1).lstrip('/')
             dst_path = f"{temp_remote_dir}/{rel_path}"
 
             try:
                 file_size = os.path.getsize(f_path)
                 if file_size < 100 * 1024 * 1024:
-                    # 不打印进度上传
                     if progress_cb and file_count <= 10:
                         with SCPClient(self.transport, progress=lambda n, s, se, fp=f_path: _scp_upload_progress(os.path.basename(fp), s, se)) as client:
                             self._last_progress = -1
@@ -615,7 +720,6 @@ class SSHTools(object):
                             self._last_progress = -1
                             client.put(f_path, dst_path)
                     if progress_cb and file_count > 10:
-                        # 大于10个文件时按文件粒度更新进度，小文件不逐字节回调节省开销
                         _upload_state['accumulated'] += file_size
                         extra = f"{os.path.basename(f_path)}|{file_size}|{file_size}|{up_count}|{file_count}"
                         progress_cb('upload', _upload_state['accumulated'], total_size, extra)
@@ -634,7 +738,27 @@ class SSHTools(object):
                         client.put(f_path, dst_path)
                 print(f"已上传到临时目录 {up_count}/{file_count}: {f_path} -> {dst_path}")
             except Exception as e:
-                print(f"上传到临时目录失败 {up_count}/{file_count}: {f_path} -> {dst_path},原因: {e}")
+                err_msg = str(e)
+                real_failed = True
+                if "No response from server" in err_msg:
+                    try:
+                        check_cmd = f"test -f '{dst_path}' && echo EXISTS"
+                        _, check_stdout, _ = self.ssh.exec_command(check_cmd)
+                        check_result = check_stdout.read().decode('utf-8').strip()
+                        if check_result == 'EXISTS':
+                            real_failed = False
+                    except Exception:
+                        pass
+                if real_failed:
+                    print(f"上传到临时目录失败 {up_count}/{file_count}: {f_path} -> {dst_path},原因: {e}")
+                    failed_files.append({"文件": f_path, "原因": err_msg})
+
+        # 打印上传失败汇总
+        if failed_files:
+            fail_lines = [f"上传失败{len(failed_files)}个文件："]
+            for idx, f_item in enumerate(failed_files, 1):
+                fail_lines.append(f"  {idx}. {f_item['文件']} - {f_item['原因']}")
+            print("\n".join(fail_lines))
 
         # 设置临时目录权限为777
         if self.username != 'root':
@@ -645,13 +769,12 @@ class SSHTools(object):
         stdout.read()
         stderr.read()
 
+        # 移动文件到目标目录：一次性 cp -a，更快
         print("上传完成，开始移动文件到目标目录...")
         if progress_cb:
             progress_cb('move', 0, 0, '移动文件到目标目录...')
 
-        target_path = f"{remote_path}/{local_base}"
         if self.username != 'root':
-            # -a 保留文件权限并且递归复制
             mv_cmd = f"echo {self.password} | sudo -S cp -a \"{temp_remote_dir}/.\" \"{remote_path}/\""
         else:
             mv_cmd = f"cp -a \"{temp_remote_dir}/.\" \"{remote_path}/\""
@@ -669,13 +792,14 @@ class SSHTools(object):
             self.transfer_stat = 0
             return False
 
+        # 清理临时目录
         rm_cmd = f"rm -rf \"{temp_remote_dir}\""
         stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
         stdout.read()
         stderr.read()
         print("临时目录已删除")
 
-        print(f"上传完毕！文件已保存到: {target_path}")
+        print(f"上传完毕！文件已保存到: {remote_path}")
         self.transfer_stat = 0
         return True
 

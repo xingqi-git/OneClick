@@ -1040,6 +1040,10 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.update_run_info(f'<{button_name}> 开始执行')
         self.set_button_executing(button_id, True)
 
+        # 每次执行生成唯一进度ID，确保新进度不会覆盖上一次的行
+        import time
+        exec_id = f"{button_id}_{int(time.time()*1000)}"
+
         # 初始化SSHTools
         ssh_tool = ssh_tools.SSHTools()
         try:
@@ -1052,18 +1056,21 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self.set_button_executing(button_id, False)
             return
 
-        mtime_dic = {
-            "全部": float('inf'),
-            "最近30分钟": 1800,
-            "最近1小时": 3600,
-            "最近2小时": 7200
-        }
+        # 读取源路径列表（兼容旧版单条配置）
+        sc_cfg = self.sc_buttons[button_id]['config']
+        remote_path = sc_cfg['服务器路径'] if '服务器路径' in sc_cfg else sc_cfg.get('目的路径', '')
+        work_dir = sc_cfg['文件暂存路径'] if '文件暂存路径' in sc_cfg else ''
 
-        local_path = self.sc_buttons[button_id]['config']['本地路径']
-        remote_path = self.sc_buttons[button_id]['config']['服务器路径']
-        mtime = mtime_dic.get(self.sc_buttons[button_id]['config']['修改时间'])
-        filename = self.sc_buttons[button_id]['config']['文件名包含']
-        work_dir = self.sc_buttons[button_id]['config']['文件暂存路径']
+        if '源路径列表' in sc_cfg:
+            source_items = sc_cfg['源路径列表']
+        else:
+            # 兼容旧版单条配置
+            source_items = [{
+                '路径': sc_cfg.get('本地路径', ''),
+                '修改时间': sc_cfg.get('修改时间', '全部'),
+                '名称包含': {'关键词': [sc_cfg.get('文件名包含', '')] if sc_cfg.get('文件名包含') else [], '逻辑': '或'},
+                '名称不包含': {'关键词': [], '逻辑': '和'}
+            }]
 
         def execute_send_files():
             c_result = ssh_tool.connect()
@@ -1071,10 +1078,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 return False
 
             def send_progress_cb(phase, current, total, extra=''):
-                if hasattr(worker, 'info_signal'):
-                    worker.info_signal.emit(('progress', phase, current, total, extra or ''))
+                print(f"__PROGRESS__:{phase}|{current}|{total}|{extra}")
 
-            s_result = ssh_tool.send_files(local_path, remote_path, mtime, filename, work_dir, progress_cb=send_progress_cb)
+            s_result = ssh_tool.send_files(source_items, remote_path, work_dir=work_dir if work_dir else None, progress_cb=send_progress_cb)
 
             ssh_tool.disconnect()
 
@@ -1117,7 +1123,11 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                     else:
                         msg = f'<{button_name}> 上传中... {pct}% (共{total_mb:.1f}MB)'
             elif phase == 'move':
-                msg = f'<{button_name}> 移动中... {extra}'
+                if total > 0 and isinstance(current, (int, float)):
+                    pct = int(current * 100 / total)
+                    msg = f'<{button_name}> 移动中... {pct}% ({current}/{total}) {extra}'
+                else:
+                    msg = f'<{button_name}> 移动中... {extra}'
             if msg:
                 self.update_run_info_progress(button_id, msg)
 
@@ -1149,6 +1159,43 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         ]
 
         def send_log_wrapper(text, level='INFO'):
+            if text.startswith('__PROGRESS__:'):
+                content = text[len('__PROGRESS__:'):]
+                parts = content.split('|')
+                if len(parts) >= 3:
+                    phase = parts[0]
+                    current = int(parts[1]) if parts[1].isdigit() else 0
+                    total = int(parts[2]) if parts[2].isdigit() else 0
+                    extra_parts = parts[3:]
+                    extra = '|'.join(extra_parts)
+                    msg = None
+                    if phase == 'find':
+                        msg = f'<{button_name}> 查找中... 找到{total}个文件'
+                    elif phase == 'upload':
+                        if total > 0:
+                            pct = int(current * 100 / total)
+                            total_mb = total / 1048576
+                            if len(extra_parts) >= 5:
+                                file_idx = int(extra_parts[3]) if extra_parts[3].isdigit() else 0
+                                total_files = int(extra_parts[4]) if extra_parts[4].isdigit() else 0
+                                cur_name = os.path.basename(extra_parts[0])
+                                cur_size = int(extra_parts[1]) if extra_parts[1].isdigit() else 0
+                                cur_sent = int(extra_parts[2]) if extra_parts[2].isdigit() else 0
+                                cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
+                                cur_mb = cur_size / 1048576
+                                msg = (f'<{button_name}> 上传中... 总进度{pct}% (共{total_mb:.1f}MB)  '
+                                       f'文件{file_idx}/{total_files}: {cur_name} {cur_pct}% ({cur_mb:.1f}MB)')
+                            else:
+                                msg = f'<{button_name}> 上传中... {pct}% (共{total_mb:.1f}MB)'
+                    elif phase == 'move':
+                        if total > 0 and isinstance(current, (int, float)):
+                            pct = int(current * 100 / total)
+                            msg = f'<{button_name}> 移动中... {pct}% ({current}/{total}) {extra}'
+                        else:
+                            msg = f'<{button_name}> 移动中... {extra}'
+                    if msg:
+                        self.update_run_info_progress(f"{exec_id}_{phase}", msg)
+                return
             for p in skip_phrases:
                 if p in text:
                     return
@@ -1205,7 +1252,10 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             "全部": float('inf'),
             "最近30分钟": 1800,
             "最近1小时": 3600,
-            "最近2小时": 7200
+            "最近2小时": 7200,
+            "最近1天": 86400,
+            "最近1月": 2592000,
+            "最近1年": 31536000
         }
 
         # 将本地路径的"当前路径/时间IP(例:20251024031415-1.1.1.1)/"修改为当前时间当前路径
@@ -1353,7 +1403,10 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             "全部": float('inf'),
             "最近30分钟": 1800,
             "最近1小时": 3600,
-            "最近2小时": 7200
+            "最近2小时": 7200,
+            "最近1天": 86400,
+            "最近1月": 2592000,
+            "最近1年": 31536000
         }
 
         # 将复制到的"当前路径/当前时间(例:20251024031415)/"修改为当前路径/当前时间

@@ -1,7 +1,58 @@
 from PyQt5 import QtCore
-from PyQt5.QtWidgets import QDialog
+from PyQt5.QtWidgets import QDialog, QFrame, QGridLayout, QLabel
 from UI import send_cmd_dlg
 from utils.logger import get_logger
+
+
+def wrap_server_info_in_frame(dialog, grid_layout, server_row_count):
+    """
+    将 grid_layout 中前 server_row_count 行的服务器信息控件，
+    移动到一个带边框的 QFrame 中，并将 QFrame 插入到 grid_layout 第0行。
+    """
+    # 创建带边框的 QFrame，样式与筛选条件框一致
+    frame = QFrame(dialog)
+    frame.setFrameShape(QFrame.Box)
+    frame.setFrameShadow(QFrame.Sunken)
+    frame.setLineWidth(1)
+
+    # QFrame 内部的网格布局
+    frame_layout = QGridLayout(frame)
+    frame_layout.setContentsMargins(8, 8, 8, 8)
+    frame_layout.setHorizontalSpacing(6)
+    frame_layout.setVerticalSpacing(6)
+    frame_layout.setColumnStretch(0, 1)
+    frame_layout.setColumnStretch(1, 4)
+
+    # 添加标题
+    title_label = QLabel("服务器信息", frame)
+    title_font = title_label.font()
+    title_font.setBold(True)
+    title_label.setFont(title_font)
+    frame_layout.addWidget(title_label, 0, 0, 1, 2)
+
+    # 收集前 server_row_count 行的控件
+    widgets = []
+    for row in range(server_row_count):
+        for col in range(2):
+            item = grid_layout.itemAtPosition(row, col)
+            if item is not None:
+                w = item.widget()
+                if w is not None:
+                    widgets.append((row, col, w))
+
+    # 从原布局移除
+    for row, col, w in widgets:
+        grid_layout.removeWidget(w)
+
+    # 将控件加入 frame_layout（第0行是标题，所以行号 +1）
+    for row, col, w in widgets:
+        frame_layout.addWidget(w, row + 1, col, 1, 1)
+
+    # 将 frame 插入到 grid_layout 第0行，跨2列
+    grid_layout.addWidget(frame, 0, 0, 1, 2)
+
+    return frame
+
 
 sc_class2str = {
     'SendCMDDialog': "发送命令",
@@ -32,6 +83,17 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
         self.sc_cfg = {}
         self._loading = False  # 编辑模式加载标志，防止 textChanged 覆盖名称
 
+        # 将服务器信息行用边框包裹起来
+        # 前6行：选择服务器、IP、端口、用户名、密码、临时文件路径
+        wrap_server_info_in_frame(self, self.gridLayout, 6)
+
+        # "指令内容"和"快捷按钮名称"加粗
+        bold_labels = [self.label_7, self.label_8]
+        for lbl in bold_labels:
+            f = lbl.font()
+            f.setBold(True)
+            lbl.setFont(f)
+
         self.save_pushButton.clicked.connect(self.create_sc)
         self.reset_pushButton.clicked.connect(self.reset)
         self.close_pushButton.clicked.connect(self.close)
@@ -50,6 +112,11 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
             # 初始化时设置默认值（如果已有用户名则自动填入）
             if self.username_lineEdit.text():
                 self.work_dir_lineEdit.setText(f"/home/{self.username_lineEdit.text()}")
+
+        # 仅发送命令和发送命令并接收回显不需要显示临时文件路径输入框
+        if self.__class__.__name__ in ('SendCMDDialog', 'SendCMD2Dialog'):
+            self.label_workdir.setVisible(False)
+            self.work_dir_lineEdit.setVisible(False)
 
     def _on_ip_changed(self, ip):
         """手动填写IP时，自动生成快捷按钮名称"""
