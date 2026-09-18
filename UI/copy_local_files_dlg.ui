@@ -52,7 +52,7 @@
         <number>-1</number>
        </property>
        <property name="text">
-        <string>当前路径/当前时间(例:20251024031415)/</string>
+        <string>当前路径/当前时间(例:20251024_031415)/</string>
        </property>
       </widget>
      </item>

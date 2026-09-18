@@ -113,7 +113,7 @@ class Ui_Dialog(object):
         self.label_7.setText(_translate("Dialog", "源路径"))
         self.source_path_pushButton.setText(_translate("Dialog", "请选择"))
         self.label_10.setText(_translate("Dialog", "目的路径"))
-        self.target_path_pushButton.setText(_translate("Dialog", "当前路径/当前时间(例:20251024031415)/"))
+        self.target_path_pushButton.setText(_translate("Dialog", "当前路径/当前时间(例:20251024_031415)/"))
         self.label_13.setText(_translate("Dialog", "源路径筛选条件"))
         self.label_8.setText(_translate("Dialog", "修改时间"))
         self.time_comboBox.setItemText(0, _translate("Dialog", "全部"))

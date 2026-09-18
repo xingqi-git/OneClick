@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import QThread, QTimer
@@ -259,16 +259,16 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if button_id:
                 button_type = self.sc_buttons[button_id]["config"]["指令类型"]
                 button_text = self.sc_buttons[button_id]["config"]["指令名称"]
-                self.update_run_info(f'{button_type} {button_text}快捷按钮编辑成功')
+                self.update_run_info(f'<{button_text}> 快捷按钮编辑成功')
             else:
                 button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
                 button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
                 self.update_run_info(f'<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
-                self.update_run_info('取消编辑快捷按钮')
+                self.update_run_info('取消编辑发送命令快捷按钮')
             else:
-                self.update_run_info('取消创建快捷按钮')
+                self.update_run_info('取消创建发送命令快捷按钮')
 
     def cmd2_dialog(self, button_id=None):
         """创建发送指令的窗口实例"""
@@ -281,16 +281,16 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if button_id:
                 button_type = self.sc_buttons[button_id]["config"]["指令类型"]
                 button_text = self.sc_buttons[button_id]["config"]["指令名称"]
-                self.update_run_info(f'{button_type} {button_text}快捷按钮编辑成功')
+                self.update_run_info(f'<{button_text}> 快捷按钮编辑成功')
             else:
                 button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
                 button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
                 self.update_run_info(f'<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
-                self.update_run_info('取消编辑快捷按钮')
+                self.update_run_info('取消编辑发送命令并接收回显快捷按钮')
             else:
-                self.update_run_info('取消创建快捷按钮')
+                self.update_run_info('取消创建发送命令并接收回显快捷按钮')
 
     def send_file_dialog(self, button_id=None):
         s_file_dlg = SendFilesDialog(parent=self)
@@ -302,16 +302,16 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if button_id:
                 button_type = self.sc_buttons[button_id]["config"]["指令类型"]
                 button_text = self.sc_buttons[button_id]["config"]["指令名称"]
-                self.update_run_info(f'{button_type} {button_text}快捷按钮编辑成功')
+                self.update_run_info(f'<{button_text}> 快捷按钮编辑成功')
             else:
                 button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
                 button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
                 self.update_run_info(f'<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
-                self.update_run_info('取消编辑快捷按钮')
+                self.update_run_info('取消编辑发送文件快捷按钮')
             else:
-                self.update_run_info('取消创建快捷按钮')
+                self.update_run_info('取消创建发送文件快捷按钮')
 
     def get_file_dialog(self, button_id=None):
         dialog = QDialog()
@@ -324,16 +324,16 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if button_id:
                 button_type = self.sc_buttons[button_id]["config"]["指令类型"]
                 button_text = self.sc_buttons[button_id]["config"]["指令名称"]
-                self.update_run_info(f'{button_type} {button_text}快捷按钮编辑成功')
+                self.update_run_info(f'<{button_text}> 快捷按钮编辑成功')
             else:
                 button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
                 button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
                 self.update_run_info(f'<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
-                self.update_run_info('取消编辑快捷按钮')
+                self.update_run_info('取消编辑获取文件快捷按钮')
             else:
-                self.update_run_info('取消创建快捷按钮')
+                self.update_run_info('取消创建获取文件快捷按钮')
 
     def copy_file_dialog(self, button_id=None):
         copy_file_dlg = CopyFilesDialog(parent=self)
@@ -345,16 +345,16 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if button_id:
                 button_type = self.sc_buttons[button_id]["config"]["指令类型"]
                 button_text = self.sc_buttons[button_id]["config"]["指令名称"]
-                self.update_run_info(f'{button_type} {button_text}快捷按钮编辑成功')
+                self.update_run_info(f'<{button_text}> 快捷按钮编辑成功')
             else:
                 button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
                 button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
                 self.update_run_info(f'<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
-                self.update_run_info('取消编辑快捷按钮')
+                self.update_run_info('取消编辑复制本地文件快捷按钮')
             else:
-                self.update_run_info('取消创建快捷按钮')
+                self.update_run_info('取消创建复制本地文件快捷按钮')
 
     def resource_monitor_dialog(self, button_id=None):
         """创建资源监控的窗口实例"""
@@ -367,16 +367,16 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if button_id:
                 button_type = self.sc_buttons[button_id]["config"]["指令类型"]
                 button_text = self.sc_buttons[button_id]["config"]["指令名称"]
-                self.update_run_info(f'{button_type} {button_text}快捷按钮编辑成功')
+                self.update_run_info(f'<{button_text}> 快捷按钮编辑成功')
             else:
                 button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
                 button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
                 self.update_run_info(f'<{button_text}>快捷按钮创建成功')
         else:
             if button_id:
-                self.update_run_info('取消编辑快捷按钮')
+                self.update_run_info('取消编辑资源监控快捷按钮')
             else:
-                self.update_run_info('取消创建快捷按钮')
+                self.update_run_info('取消创建资源监控快捷按钮')
 
     def weak_net_dialog(self, button_id=None):
         """创建弱网的窗口实例"""
@@ -388,7 +388,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if button_id:
                 button_type = self.sc_buttons[button_id]["config"]["指令类型"]
                 button_text = self.sc_buttons[button_id]["config"]["指令名称"]
-                self.update_run_info(f'{button_type} {button_text}快捷按钮编辑成功')
+                self.update_run_info(f'<{button_text}> 快捷按钮编辑成功')
             else:
                 button_type = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令类型"]
                 button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
@@ -408,7 +408,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if button_id:
                 button_type = self.sc_buttons[button_id]["config"]["指令类型"]
                 button_text = self.sc_buttons[button_id]["config"]["指令名称"]
-                self.update_run_info(f'{button_type} {button_text}快捷按钮编辑成功')
+                self.update_run_info(f'<{button_text}> 快捷按钮编辑成功')
             else:
                 if f"button_{self.btn_count}" in self.sc_buttons:
                     button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
@@ -1270,9 +1270,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 目的路径
         local_path = sc_cfg['目的路径']
 
-        # 将本地路径的"当前路径/时间IP(例:20251024031415-1.1.1.1)/"修改为当前时间当前路径
-        if local_path == "当前路径/时间IP(例:20251024031415-1.1.1.1)/":
-            current_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        # 将本地路径的"当前路径/时间IP(例:20251024_031415-1.1.1.1)/"修改为当前时间当前路径
+        if local_path == "当前路径/时间IP(例:20251024_031415-1.1.1.1)/":
+            current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             local_path = self.get_default_path() + '/' + current_time + '-' + sc_cfg['IP']
             os.mkdir(local_path)
 
@@ -1392,7 +1392,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         thread.start()
 
     def click_copy_files(self, button_id):
-        """打包复制文件或文件夹"""
+        """复制本地文件（支持多源路径、名称包含/不包含筛选）"""
         if button_id not in self.sc_buttons:
             return
         button_name = self.sc_buttons[button_id]['config']['指令名称']
@@ -1403,33 +1403,36 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.update_run_info(f'<{button_name}> 开始执行')
         self.set_button_executing(button_id, True)
 
+        # 生成唯一执行ID，避免多次执行的进度行互相覆盖
+        import time
+        exec_id = f"{button_id}_{int(time.time() * 1000)}"
+
         # 初始化WindowsTools
         win_tool = windows_tools.WindowsTools()
 
-        mtime_dic = {
-            "全部": float('inf'),
-            "最近30分钟": 1800,
-            "最近1小时": 3600,
-            "最近2小时": 7200,
-            "最近1天": 86400,
-            "最近1月": 2592000,
-            "最近1年": 31536000
-        }
+        sc_cfg = self.sc_buttons[button_id]['config']
 
-        # 将复制到的"当前路径/当前时间(例:20251024031415)/"修改为当前路径/当前时间
-        if self.sc_buttons[button_id]['config']['复制到'] == "当前路径/当前时间(例:20251024031415)/":
-            current_time = datetime.datetime.now().strftime("%Y_%m%d_%H%M%S")
+        # 目的路径：优先读"目的路径"，兼容旧版"复制到"
+        target_path = sc_cfg.get('目的路径', sc_cfg.get('复制到', ''))
+
+        # 将"当前路径/当前时间(例:20251024_031415)/"修改为当前路径/当前时间
+        if target_path == "当前路径/当前时间(例:20251024_031415)/":
+            current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             target_path = self.get_default_path() + '/' + current_time
             os.mkdir(target_path)
-        else:
-            target_path = self.sc_buttons[button_id]['config']['复制到']
 
-        resource_path = self.sc_buttons[button_id]['config']['源路径']
-        mtime = mtime_dic.get(self.sc_buttons[button_id]['config']['修改时间'])
-        filename = self.sc_buttons[button_id]['config']['文件名包含']
+        # 读取源路径列表
+        source_items = sc_cfg.get('源路径列表', [])
+        if not source_items:
+            self.update_run_info(f'<{button_name}> 请至少添加一个源路径', 'WARNING')
+            self.set_button_executing(button_id, False)
+            return
 
         def execute_copy_files():
-            cp_result = win_tool.copy_files(resource_path, target_path, mtime, filename)
+            def copy_progress_cb(phase, current, total, extra=''):
+                print(f"__PROGRESS__:{phase}|{current}|{total}|{extra}")
+
+            cp_result = win_tool.copy_files(source_items, target_path, progress_cb=copy_progress_cb)
             return cp_result
 
         def on_worker_finished(result):
@@ -1453,9 +1456,44 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 将worker移动到线程中
         worker.moveToThread(thread)
 
+        # 过滤刷屏日志
+        skip_phrases = [
+            '开始复制文件到目的目录，共',
+            '找到',
+            '已复制 ',
+            '开始创建目录',
+        ]
+
+        def copy_log_wrapper(text, level='INFO'):
+            if text.startswith('__PROGRESS__:'):
+                content = text[len('__PROGRESS__:'):]
+                parts = content.split('|')
+                if len(parts) >= 3:
+                    phase = parts[0]
+                    current = int(parts[1]) if parts[1].isdigit() else 0
+                    total = int(parts[2]) if parts[2].isdigit() else 0
+                    extra_parts = parts[3:]
+                    extra = '|'.join(extra_parts)
+                    msg = None
+                    if phase == 'find':
+                        msg = f'<{button_name}> 查找中... 找到{total}个文件'
+                    elif phase == 'copy':
+                        # extra是直接的展示文本
+                        if extra:
+                            msg = f'<{button_name}> 复制中... {extra}'
+                        elif total > 0:
+                            msg = f'<{button_name}> 复制中... {current}% ({current}/{total})'
+                    if msg:
+                        self.update_run_info_progress(f"{exec_id}_{phase}", msg)
+                return
+            for p in skip_phrases:
+                if p in text:
+                    return
+            log_wrapper2 = self._make_log_wrapper(button_name)
+            log_wrapper2(text, level)
+
         # 绑定worker信号槽
-        log_wrapper = self._make_log_wrapper(button_name)
-        worker.log_signal.connect(log_wrapper)
+        worker.log_signal.connect(copy_log_wrapper)
         worker.finished.connect(on_worker_finished)
         worker.finished.connect(worker.deleteLater)
 

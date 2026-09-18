@@ -469,7 +469,7 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
         self.passwd_lineEdit.clear()
         self.sshport_lineEdit.clear()
         self.work_dir_lineEdit.clear()
-        self.local_path_pushButton.setText("当前路径/时间IP(例:20251024031415-1.1.1.1)/")
+        self.local_path_pushButton.setText("当前路径/时间IP(例:20251024_031415-1.1.1.1)/")
         self.sc_name_lineEdit.clear()
         self.source_items = []
         self.source_list.clear()

@@ -29,6 +29,11 @@ class CopyFilesDialog(QDialog, copy_local_files_dlg.Ui_Dialog):
         self._rebuild_source_and_target()
         self._rebuild_filter_frame()
 
+        # 快捷按钮名称标签加粗
+        font_bold = self.label_11.font()
+        font_bold.setBold(True)
+        self.label_11.setFont(font_bold)
+
         self.target_path_pushButton.clicked.connect(self.select_target_path)
         self.save_pushButton.clicked.connect(self.create_sc)
         self.reset_pushButton.clicked.connect(self.reset)
@@ -115,14 +120,20 @@ class CopyFilesDialog(QDialog, copy_local_files_dlg.Ui_Dialog):
 
     def _rebuild_filter_frame(self):
         """重建筛选条件 frame：修改时间 + 名称包含 + 名称不包含"""
-        # 筛选条件标题加粗，并移到第0行跨2列
+        # 筛选条件标题加粗，放到第0行跨2列
         font = self.label_13.font()
         font.setBold(True)
         self.label_13.setFont(font)
         self.gridLayout.removeWidget(self.label_13)
         self.gridLayout.addWidget(self.label_13, 0, 0, 1, 2)
 
-        # 移除原来的"名称包含"行
+        # 修改时间行（label_8 在第1行第0列，time_comboBox 移到第1行第1列）
+        self.gridLayout.removeWidget(self.label_8)
+        self.gridLayout.removeWidget(self.time_comboBox)
+        self.gridLayout.addWidget(self.label_8, 1, 0, 1, 1)
+        self.gridLayout.addWidget(self.time_comboBox, 1, 1, 1, 1)
+
+        # 移除原来的名称包含相关控件
         self.gridLayout.removeWidget(self.label_9)
         self.gridLayout.removeWidget(self.filename_lineEdit)
         self.label_9.setParent(None)
@@ -135,27 +146,22 @@ class CopyFilesDialog(QDialog, copy_local_files_dlg.Ui_Dialog):
         self.include_lineEdit = QLineEdit()
         self.include_lineEdit.setPlaceholderText("多个关键词用 / 分隔")
 
-        include_logic_widget = QWidget()
-        include_logic_layout = QHBoxLayout(include_logic_widget)
-        include_logic_layout.setContentsMargins(0, 0, 0, 0)
-        include_logic_layout.setSpacing(6)
-        include_logic_label = QLabel("逻辑：")
         self.include_radio_and = QRadioButton("和")
         self.include_radio_or = QRadioButton("或")
         self.include_radio_or.setChecked(True)
         self.include_logic_group = QButtonGroup(self)
         self.include_logic_group.addButton(self.include_radio_and)
         self.include_logic_group.addButton(self.include_radio_or)
-        include_logic_layout.addWidget(include_logic_label)
-        include_logic_layout.addWidget(self.include_radio_and)
-        include_logic_layout.addWidget(self.include_radio_or)
 
         include_row_widget = QWidget()
         include_row_layout = QHBoxLayout(include_row_widget)
         include_row_layout.setContentsMargins(0, 0, 0, 0)
         include_row_layout.setSpacing(8)
         include_row_layout.addWidget(self.include_lineEdit, 1)
-        include_row_layout.addWidget(include_logic_widget)
+        include_logic_label = QLabel("逻辑：")
+        include_row_layout.addWidget(include_logic_label)
+        include_row_layout.addWidget(self.include_radio_and)
+        include_row_layout.addWidget(self.include_radio_or)
 
         self.gridLayout.addWidget(self.label_include, 2, 0, 1, 1)
         self.gridLayout.addWidget(include_row_widget, 2, 1, 1, 1)
@@ -165,27 +171,22 @@ class CopyFilesDialog(QDialog, copy_local_files_dlg.Ui_Dialog):
         self.exclude_lineEdit = QLineEdit()
         self.exclude_lineEdit.setPlaceholderText("多个关键词用 / 分隔")
 
-        exclude_logic_widget = QWidget()
-        exclude_logic_layout = QHBoxLayout(exclude_logic_widget)
-        exclude_logic_layout.setContentsMargins(0, 0, 0, 0)
-        exclude_logic_layout.setSpacing(6)
-        exclude_logic_label = QLabel("逻辑：")
         self.exclude_radio_and = QRadioButton("和")
         self.exclude_radio_or = QRadioButton("或")
         self.exclude_radio_and.setChecked(True)
         self.exclude_logic_group = QButtonGroup(self)
         self.exclude_logic_group.addButton(self.exclude_radio_and)
         self.exclude_logic_group.addButton(self.exclude_radio_or)
-        exclude_logic_layout.addWidget(exclude_logic_label)
-        exclude_logic_layout.addWidget(self.exclude_radio_and)
-        exclude_logic_layout.addWidget(self.exclude_radio_or)
 
         exclude_row_widget = QWidget()
         exclude_row_layout = QHBoxLayout(exclude_row_widget)
         exclude_row_layout.setContentsMargins(0, 0, 0, 0)
         exclude_row_layout.setSpacing(8)
         exclude_row_layout.addWidget(self.exclude_lineEdit, 1)
-        exclude_row_layout.addWidget(exclude_logic_widget)
+        exclude_logic_label = QLabel("逻辑：")
+        exclude_row_layout.addWidget(exclude_logic_label)
+        exclude_row_layout.addWidget(self.exclude_radio_and)
+        exclude_row_layout.addWidget(self.exclude_radio_or)
 
         self.gridLayout.addWidget(self.label_exclude, 3, 0, 1, 1)
         self.gridLayout.addWidget(exclude_row_widget, 3, 1, 1, 1)
@@ -436,7 +437,7 @@ class CopyFilesDialog(QDialog, copy_local_files_dlg.Ui_Dialog):
     def reset(self):
         self.source_items = []
         self.source_list.clear()
-        self.target_path_pushButton.setText('当前路径/当前时间(例:20251024031415)/')
+        self.target_path_pushButton.setText('当前路径/当前时间(例:20251024_031415)/')
         self.time_comboBox.setCurrentIndex(0)
         self.include_lineEdit.clear()
         self.exclude_lineEdit.clear()

@@ -57,6 +57,11 @@ class ServerCheckDialog(QDialog, server_check_dlg.Ui_Dialog):
         
         # 设置默认按钮名称
         self.sc_name_lineEdit.setText("服务器检查：")
+
+        # 快捷按钮名称标签加粗
+        font_bold = self.label_8.font()
+        font_bold.setBold(True)
+        self.label_8.setFont(font_bold)
         
         # 连接按钮
         self.save_pushButton.clicked.connect(self.create_sc)
