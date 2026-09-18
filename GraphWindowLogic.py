@@ -51,6 +51,8 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         logger.info("开始扫描数据文件: %s", self.data_path)
         self._scan_files()
         logger.info("文件扫描完成，进程数: %d", len(self.file_map))
+        # 根据本地数据文件的最新修改时间，初始化上次更新时间
+        self._init_last_update_time()
         self._build_tree()
         logger.info("树形结构构建完成")
         self.showMaximized()
@@ -58,14 +60,14 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
     def _build_ui(self):
         self.menuBar().hide()
 
-        # 顶部工具栏（两行，固定高度）
+        # 顶部工具栏（一行，固定高度）
         top_bar = QtWidgets.QWidget(self.centralwidget)
-        top_bar.setMaximumHeight(70)
+        top_bar.setMaximumHeight(42)
         top_layout = QtWidgets.QVBoxLayout(top_bar)
-        top_layout.setContentsMargins(8, 4, 8, 4)
-        top_layout.setSpacing(2)
+        top_layout.setContentsMargins(8, 2, 8, 2)
+        top_layout.setSpacing(0)
 
-        # 第一行：数据源 + 操作按钮
+        # 第一行：数据源 + 操作按钮 + 时间筛选
         row1 = QtWidgets.QHBoxLayout()
         self.path_label = QtWidgets.QLabel()
         self.path_label.setStyleSheet("color: #666;")
@@ -84,11 +86,14 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         if self.server_config is None:
             self.update_btn.hide()
 
-        row1.addStretch()
-        top_layout.addLayout(row1)
+        # 上次更新时间
+        self.last_update_label = QtWidgets.QLabel()
+        self.last_update_label.setStyleSheet("color: #888; font-size: 12px;")
+        row1.addWidget(self.last_update_label)
 
-        # 第二行：时间筛选
-        row2 = QtWidgets.QHBoxLayout()
+        row1.addStretch()
+
+        # 时间筛选（放在同一行右侧）
         self.start_label = QtWidgets.QLabel("开始：")
         self.start_dateTimeEdit = QtWidgets.QDateTimeEdit()
         self.start_dateTimeEdit.setCalendarPopup(True)
@@ -108,17 +113,16 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         self.reset_filter_btn.clicked.connect(self.reset_time_filter)
         self.reset_filter_btn.setEnabled(False)
 
-        row2.addWidget(self.start_label)
-        row2.addWidget(self.start_dateTimeEdit)
-        row2.addSpacing(6)
-        row2.addWidget(self.end_label)
-        row2.addWidget(self.end_dateTimeEdit)
-        row2.addSpacing(6)
-        row2.addWidget(self.apply_filter_btn)
-        row2.addWidget(self.reset_filter_btn)
-        row2.addStretch()
+        row1.addWidget(self.start_label)
+        row1.addWidget(self.start_dateTimeEdit)
+        row1.addSpacing(4)
+        row1.addWidget(self.end_label)
+        row1.addWidget(self.end_dateTimeEdit)
+        row1.addSpacing(4)
+        row1.addWidget(self.apply_filter_btn)
+        row1.addWidget(self.reset_filter_btn)
 
-        top_layout.addLayout(row2)
+        top_layout.addLayout(row1)
 
         self._filter_widgets = [
             self.start_label, self.start_dateTimeEdit,
@@ -158,6 +162,30 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         central_layout.addWidget(top_bar)
         central_layout.addWidget(splitter)
         self.centralwidget.setLayout(central_layout)
+
+    def _init_last_update_time(self):
+        """根据本地数据文件的最新修改时间，初始化上次更新时间显示"""
+        if not os.path.isdir(self.data_path):
+            return
+        try:
+            all_files = [f for f in os.listdir(self.data_path) if f.endswith('.log')]
+            if not all_files:
+                return
+            latest_mtime = 0
+            for f in all_files:
+                fp = os.path.join(self.data_path, f)
+                try:
+                    mtime = os.path.getmtime(fp)
+                    if mtime > latest_mtime:
+                        latest_mtime = mtime
+                except OSError:
+                    pass
+            if latest_mtime > 0:
+                dt = QtCore.QDateTime.fromSecsSinceEpoch(int(latest_mtime))
+                self._last_update_time = dt
+                self._update_last_update_label()
+        except Exception:
+            pass
 
     def _scan_files(self):
         """扫描数据文件夹，归并进程，读取表头和PID列表"""
@@ -678,54 +706,67 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             return
 
         logger.info("开始绘图: %s, pids=%s", action_name, (len(pids) if pids else 0 if pids is not None else '全部'))
-        from utils.graph_data_tools import make_plot_figure
+        try:
+            from utils.graph_data_tools import make_plot_figure
 
-        filter_pids = set(str(p) for p in pids) if pids is not None else None
-        result = make_plot_figure(self.data_dic, action_name,
-                                  self.current_time_start, self.current_time_end,
-                                  filter_pids)
+            filter_pids = set(str(p) for p in pids) if pids is not None else None
+            result = make_plot_figure(self.data_dic, action_name,
+                                      self.current_time_start, self.current_time_end,
+                                      filter_pids)
 
-        if isinstance(result, tuple):
-            logger.warning("绘图失败(数据问题): %s, %s", action_name, result)
-            QtWidgets.QMessageBox.information(self, result[0], result[1])
-            # 出错，取消勾选
+            if isinstance(result, tuple):
+                logger.warning("绘图失败(数据问题): %s, %s", action_name, result)
+                QtWidgets.QMessageBox.information(self, result[0], result[1])
+                # 出错，取消勾选
+                self._sync_check_from_action(action_name, False)
+                return
+
+            fig = result
+            ax = fig.axes[0] if fig.axes else None
+            logger.debug("创建 FigureCanvas: %s", action_name)
+            canvas = FigureCanvas(fig)
+            toolbar = NavigationToolbar(canvas, self.centralwidget)
+            tab_content = QtWidgets.QWidget()
+            tab_layout = QtWidgets.QVBoxLayout(tab_content)
+            tab_layout.addWidget(toolbar)
+            tab_layout.addWidget(canvas)
+            tab_content.setLayout(tab_layout)
+            tab_index = self.tab_widget.addTab(tab_content, action_name)
+            self.action_tab_map[action_name] = tab_index
+            self.tab_widget.setCurrentIndex(tab_index)
+
+            # 保存图信息用于后续动态更新
+            lines = {}  # {pid: line}
+            if ax is not None:
+                for line in ax.get_lines():
+                    label = line.get_label()
+                    # label 格式是 proc_pid
+                    parts = label.rsplit('_', 1)
+                    if len(parts) == 2 and parts[1].isdigit():
+                        lines[parts[1]] = line
+                    else:
+                        lines[label] = line
+
+            self.fig_objects[action_name] = {
+                'fig': fig,
+                'ax': ax,
+                'canvas': canvas,
+                'lines': lines,
+                'color_idx': len(lines),
+            }
+            # 强制绘制一次，确保 figure 完全渲染后再返回
+            canvas.draw()
+            QtWidgets.QApplication.processEvents()
+            logger.info("绘图完成: %s, 曲线数=%d", action_name, len(lines))
+        except Exception as e:
+            logger.error("绘图异常: %s, %s", action_name, e, exc_info=True)
+            QtWidgets.QMessageBox.critical(self, "绘图失败", f"绘制「{action_name}」时发生异常：\n{str(e)}")
+            # 清理可能已创建的半拉子 tab
+            if action_name in self.action_tab_map:
+                idx = self.action_tab_map.pop(action_name)
+                self.tab_widget.removeTab(idx)
+            self.fig_objects.pop(action_name, None)
             self._sync_check_from_action(action_name, False)
-            return
-
-        fig = result
-        ax = fig.axes[0] if fig.axes else None
-        logger.debug("创建 FigureCanvas: %s", action_name)
-        canvas = FigureCanvas(fig)
-        toolbar = NavigationToolbar(canvas, self.centralwidget)
-        tab_content = QtWidgets.QWidget()
-        tab_layout = QtWidgets.QVBoxLayout(tab_content)
-        tab_layout.addWidget(toolbar)
-        tab_layout.addWidget(canvas)
-        tab_content.setLayout(tab_layout)
-        tab_index = self.tab_widget.addTab(tab_content, action_name)
-        self.action_tab_map[action_name] = tab_index
-        self.tab_widget.setCurrentIndex(tab_index)
-
-        # 保存图信息用于后续动态更新
-        lines = {}  # {pid: line}
-        if ax is not None:
-            for line in ax.get_lines():
-                label = line.get_label()
-                # label 格式是 proc_pid
-                parts = label.rsplit('_', 1)
-                if len(parts) == 2 and parts[1].isdigit():
-                    lines[parts[1]] = line
-                else:
-                    lines[label] = line
-
-        self.fig_objects[action_name] = {
-            'fig': fig,
-            'ax': ax,
-            'canvas': canvas,
-            'lines': lines,
-            'color_idx': len(lines),
-        }
-        logger.info("绘图完成: %s, 曲线数=%d", action_name, len(lines))
 
     def _update_plot_pids(self, action_name, new_pids):
         """在原图上动态增删PID曲线，不重建图
@@ -1050,6 +1091,17 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             QtWidgets.QMessageBox.information(self, "提示", "服务器未连接，无法更新数据")
             return
 
+        # 如果有已打开的图表，先提示用户确认
+        if self.action_tab_map:
+            reply = QtWidgets.QMessageBox.question(
+                self, "确认",
+                f"更新数据将关闭当前打开的 {len(self.action_tab_map)} 个图表，是否继续？",
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                QtWidgets.QMessageBox.StandardButton.No
+            )
+            if reply != QtWidgets.QMessageBox.StandardButton.Yes:
+                return
+
         logger.info("开始更新数据: ip=%s, 本地路径=%s", self.server_config.get('IP'), self.data_path)
         from utils import ssh_tools
         from utils import qthread_worker
@@ -1059,7 +1111,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         port = cfg.get('端口')
         username = cfg.get('用户名')
         password = cfg.get('密码')
-        work_dir = cfg.get('文件暂存路径')
+        work_dir = cfg.get('临时文件路径') or cfg.get('文件暂存路径')
         user_path = f"{work_dir}/OneClick/Monitor"
 
         ssh_client = ssh_tools.SSHTools()
@@ -1173,6 +1225,9 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                 progress_dialog.close()
                 success, msg = result
                 if success:
+                    # 记录上次更新时间
+                    self._last_update_time = QtCore.QDateTime.currentDateTime()
+                    self._update_last_update_label()
                     self._refresh_after_update()
                     QtWidgets.QMessageBox.information(self, "提示", msg)
                 else:
@@ -1190,67 +1245,62 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         self._update_thread = thread_obj
         thread_obj.start()
 
+    def _update_last_update_label(self):
+        """更新上次更新时间的显示"""
+        if hasattr(self, '_last_update_time') and self._last_update_time is not None:
+            time_str = self._last_update_time.toString("yyyy-MM-dd HH:mm:ss")
+            self.last_update_label.setText(f"上次更新：{time_str}")
+        else:
+            self.last_update_label.setText("")
+
     def _refresh_after_update(self):
         logger.info("更新数据后刷新界面...")
-        # 先保存当前选中状态
-        saved_indicators = dict(self.selected_indicators)
-        saved_pids = dict(self.selected_pids)
-        saved_tabs = list(self.action_tab_map.keys())
+        try:
+            # 先保存当前选中状态
+            saved_indicators = dict(self.selected_indicators)
+            saved_pids = dict(self.selected_pids)
+            saved_tabs = list(self.action_tab_map.keys())
 
-        self.data_dic = {}
-        self.loaded_processes = set()
-        self.global_min_time = None
-        self.global_max_time = None
+            # 关闭所有旧图表，释放 matplotlib 资源
+            for action_name in list(self.action_tab_map.keys()):
+                self.remove_plot_tab(action_name)
 
-        self._scan_files()
-        self._build_tree()
+            self.data_dic = {}
+            self.loaded_processes = set()
+            self.loaded_pids = {}
+            self.global_min_time = None
+            self.global_max_time = None
 
-        # 恢复选中状态
-        self.selected_indicators = saved_indicators
-        self.selected_pids = saved_pids
+            self._scan_files()
+            self._build_tree()
 
-        # 重新加载之前打开的进程数据
-        procs_to_load = set()
-        for action_name in saved_tabs:
-            parts = action_name.rsplit('-', 1)
-            if len(parts) == 2:
-                procs_to_load.add(parts[0])
-        for proc_name in procs_to_load:
-            if proc_name in self.file_map:
-                self._load_process_data(proc_name,
-                                        on_finished=lambda ok, p=proc_name: self._redraw_proc_charts(p) if ok else None)
+            # 清空选中状态
+            self.selected_indicators = {}
+            self.selected_pids = {}
 
-        # 恢复树节点勾选状态
-        self._updating_tree = True
-        for proc_name, inds in saved_indicators.items():
-            proc_item = self.process_tree_items.get(proc_name)
-            if not proc_item:
-                continue
-            for i in range(proc_item.childCount()):
-                child = proc_item.child(i)
-                child_data = child.data(0, QtCore.Qt.ItemDataRole.UserRole)
-                if not child_data or child_data[0] != 'indicator':
-                    continue
-                if child_data[2] in inds:
-                    child.setCheckState(0, QtCore.Qt.CheckState.Checked)
-            self._update_process_check_state(proc_item)
+            # 重置树节点勾选状态
+            self._updating_tree = True
+            for proc_name, proc_item in self.process_tree_items.items():
+                proc_item.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
+                for i in range(proc_item.childCount()):
+                    child = proc_item.child(i)
+                    child_data = child.data(0, QtCore.Qt.ItemDataRole.UserRole)
+                    if not child_data:
+                        continue
+                    if child_data[0] == 'indicator':
+                        child.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
+                    elif child_data[0] == 'pid_group':
+                        child.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
+                        for j in range(child.childCount()):
+                            pid_item = child.child(j)
+                            pid_item.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
+            self._updating_tree = False
 
-            # 恢复 PID 勾选
-            pids = saved_pids.get(proc_name, set())
-            if not pids:
-                continue
-            # 找到 PID 分组节点
-            for i in range(proc_item.childCount()):
-                child = proc_item.child(i)
-                child_data = child.data(0, QtCore.Qt.ItemDataRole.UserRole)
-                if not child_data or child_data[0] != 'pid_group':
-                    continue
-                for j in range(child.childCount()):
-                    pid_item = child.child(j)
-                    pid_data = pid_item.data(0, QtCore.Qt.ItemDataRole.UserRole)
-                    if pid_data and pid_data[0] == 'pid' and pid_data[2] in pids:
-                        pid_item.setCheckState(0, QtCore.Qt.CheckState.Checked)
-        self._updating_tree = False
+            logger.info("更新数据后刷新完成")
+
+        except Exception as e:
+            logger.error("更新数据后刷新异常: %s", e, exc_info=True)
+            QtWidgets.QMessageBox.critical(self, "刷新失败", f"数据更新成功，但刷新界面时发生异常：\n{str(e)}")
 
     def _is_ssh_connected(self):
         if self.parent() and hasattr(self.parent(), 'ssh_stutas_label'):
