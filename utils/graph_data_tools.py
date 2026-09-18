@@ -1,8 +1,9 @@
 from PyQt5 import QtCore
 import os
 import logging
-import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 from matplotlib.dates import AutoDateLocator, DateFormatter
+import matplotlib.cm as cm
 import pandas as pd
 
 logger = logging.getLogger('graph_data_tools')
@@ -101,16 +102,20 @@ def make_plot_figure(data_dic, action_name, time_start=None, time_end=None, filt
                     resampled.append((label, ts, vs))
             series_to_plot = resampled
 
-        # 创建图表（空图也创建，保证有坐标轴/标题）
-        fig, ax = plt.subplots(figsize=(8, 6), constrained_layout=True)
-        colors = plt.cm.tab10.colors
+        # 创建图表（面向对象方式，避免 pyplot 全局状态机导致的偶发崩溃）
+        fig = Figure(figsize=(8, 6), constrained_layout=True)
+        ax = fig.add_subplot(111)
+        colors = cm.tab10.colors
         color_idx = 0
         lines = []
 
         # X轴时间格式（即使没有线也设置）
         ax.xaxis.set_major_locator(AutoDateLocator())
         ax.xaxis.set_major_formatter(DateFormatter('%Y-%m-%d %H:%M:%S'))
-        plt.setp(ax.get_xticklabels(), rotation=45, ha='right', fontsize=8)
+        for label in ax.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
+            label.set_fontsize(8)
 
         ax.set_title(action_name, fontsize=12, fontweight='bold')
         ax.set_xlabel("系统时间", fontsize=10)

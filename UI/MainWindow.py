@@ -202,7 +202,7 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "OneClick V2.2"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "OneClick V2.3"))
         self.label.setText(_translate("MainWindow", "快捷按钮"))
         self.stop_pushButton.setText(_translate("MainWindow", "结束所有"))
         self.linux_print_label.setText(_translate("MainWindow", "服务器回显"))

@@ -206,8 +206,10 @@ class SSHTools(object):
         out = self.purify_output(out, only)
         return out
 
-    def get_output_continue(self, echo_signal=None, timeout=3):
-        """用于持续接收类似与top这样的命令的回显"""
+    def get_output_continue(self, echo_signal=None, timeout=3, raw=False):
+        """用于持续接收类似与top这样的命令的回显
+        raw=True 时不做任何纯化，直接发原始字节字符串给 echo_signal（给终端模拟器用）
+        """
         if not self.is_connected():
             print("未连接到服务器，请先连接。")
             return False
@@ -221,11 +223,18 @@ class SSHTools(object):
                     break
                 try:
                     if self.channel.recv_ready():
-                        output = self.channel.recv(4096).decode().strip()
-                        output = self.purify_output(output, False)
+                        output_bytes = self.channel.recv(4096)
+                        if raw:
+                            # 原始模式：直接发字符串（带 \r\n 和 ANSI），给 pyte 处理
+                            output = output_bytes.decode('utf-8', errors='replace')
+                            if echo_signal is not None:
+                                echo_signal.emit(output)
+                        else:
+                            output = output_bytes.decode().strip()
+                            output = self.purify_output(output, False)
 
-                        if echo_signal is not None:
-                            echo_signal.emit(output)
+                            if echo_signal is not None:
+                                echo_signal.emit(output)
 
                         timeout_count = 0  # 重置超时计数器
                     else:

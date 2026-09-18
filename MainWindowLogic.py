@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import QThread, QTimer
@@ -14,6 +14,7 @@ from utils.logger import setup_logging, get_logger
 from dialogs import (SendCMDDialog, SendCMD2Dialog, SendFilesDialog, GetFilesDialog, CopyFilesDialog,
                      SetServerDialog, ResourceMonitorDialog1, ResourceMonitorDialog2,
                      WeakNetDialog1, WeakNetControlDialog, HelpDialog, ServerCheckDialog, ServerCheckRunDialog)
+from widgets.terminal_widget import TerminalEdit
 
 
 class DraggableButton(QPushButton):
@@ -231,6 +232,55 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         # 设置勾选框初始状态（会触发 stateChanged，自动初始化文件日志开关）
         self.log_file_checkBox.setChecked(initial_log_enabled)
+
+        # ---- 终端改造：替换右上的服务器回显区为可编辑终端 ----
+        # 同时把右侧两整行合并：终端占绝大部分空间，底部只留服务器/命令下拉两行
+        self.terminal_widget = TerminalEdit(self.centralwidget)
+
+        # 1. 创建右侧新容器（垂直布局：终端区 + 命令区）
+        self.right_column_widget = QtWidgets.QWidget(self.centralwidget)
+        right_layout = QtWidgets.QVBoxLayout(self.right_column_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(5)
+
+        # 2. 终端区（原 verticalLayout_2 的内容：标题行 horizontalLayout_2 + 回显区）
+        # 从 verticalLayout_2 中取出标题行（整个 horizontalLayout_2）
+        self.verticalLayout_2.removeItem(self.horizontalLayout_2)
+        # 从 verticalLayout_2 中移除回显区
+        self.verticalLayout_2.removeWidget(self.linux_print_browser)
+        # 旧的回显区销毁
+        self.linux_print_browser.deleteLater()
+        # 标题行加到新布局
+        right_layout.addLayout(self.horizontalLayout_2)
+        # 终端控件（占剩余空间）
+        right_layout.addWidget(self.terminal_widget, 1)
+        # 把旧的引用指向新终端，兼容其他代码
+        self.linux_print_browser = self.terminal_widget
+
+        # 3. 命令区（底部只留服务器选择和命令下拉两行）
+        # 隐藏多余行：只保留第0行(服务器)和第1行(命令下拉)
+        # 隐藏第2-3行(输入框+保存/发送按钮)
+        for i in range(2, self.gridLayout.rowCount()):
+            for j in range(self.gridLayout.columnCount()):
+                item = self.gridLayout.itemAtPosition(i, j)
+                if item and item.widget():
+                    item.widget().hide()
+        # 把 gridLayout 从 gridLayout_2 里取出来，加到右侧容器底部
+        self.gridLayout_2.removeItem(self.gridLayout)
+        right_layout.addLayout(self.gridLayout)
+
+        # 4. 把右侧新容器放到 gridLayout_2 的右侧列，跨两行
+        # 先移除原来的 verticalLayout_2（右上的服务器回显区布局，已空）
+        self.gridLayout_2.removeItem(self.verticalLayout_2)
+        # 新容器放右侧，跨 2 行
+        self.gridLayout_2.addWidget(self.right_column_widget, 0, 1, 2, 1)
+
+        # "服务器回显" 标签改为 "终端"
+        self.linux_print_label.setText("终端")
+
+        # 终端按键发送信号
+        self.terminal_widget.key_sent.connect(self._on_terminal_key)
+        self.terminal_widget.paste_sent.connect(self._on_terminal_paste)
 
         self.showMaximized()
 
@@ -1713,25 +1763,63 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 self.logger.info(text)
 
     def update_linux_print(self, text, insert=False):
-        if insert:
-            # 获取当前文本控件的光标
-            cursor = self.linux_print_browser.textCursor()
-            # 将光标移动到文档末尾
-            cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
-            # 应用移动后的光标
-            self.linux_print_browser.setTextCursor(cursor)
-            self.linux_print_browser.insertPlainText(text)
+        # 更新终端显示（服务器回显）
+        if hasattr(self, 'terminal_widget'):
+            self.terminal_widget.append_output(text)
         else:
-            # 将输出添加到linux_print_browser
-            self.linux_print_browser.append(text)
-        # 滚动到底部
-        self.linux_print_browser.verticalScrollBar().setValue(
-            self.linux_print_browser.verticalScrollBar().maximum()
-        )
-        # 水平滚动条到头部
-        self.linux_print_browser.horizontalScrollBar().setValue(
-            self.linux_print_browser.horizontalScrollBar().minimum()
-        )
+            if insert:
+                cursor = self.linux_print_browser.textCursor()
+                cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
+                self.linux_print_browser.setTextCursor(cursor)
+                self.linux_print_browser.insertPlainText(text)
+            else:
+                self.linux_print_browser.append(text)
+            self.linux_print_browser.verticalScrollBar().setValue(
+                self.linux_print_browser.verticalScrollBar().maximum()
+            )
+            self.linux_print_browser.horizontalScrollBar().setValue(
+                self.linux_print_browser.horizontalScrollBar().minimum()
+            )
+
+    def _start_terminal_mode(self):
+        """进入终端模式：开启可编辑，准备接收服务器回显"""
+        if hasattr(self, 'terminal_widget'):
+            self.terminal_widget.set_terminal_mode(True)
+            self.update_run_info('SSH 连接成功，进入终端模式')
+
+    def _stop_terminal_mode(self):
+        """退出终端模式：回到只读"""
+        if hasattr(self, 'terminal_widget'):
+            self.terminal_widget.set_terminal_mode(False)
+
+    def _on_terminal_output(self, text):
+        """接收到服务器回显，追加到终端"""
+        self.update_linux_print(text, insert=True)
+
+    def _on_terminal_key(self, key_text):
+        """终端按键：发送给服务器"""
+        if (self.connect_pushButton.text() == '断开' and
+                'tool' in self.current_ssh and self.current_ssh['tool']):
+            try:
+                channel = self.current_ssh['tool'].channel
+                if channel and channel.active:
+                    channel.send(key_text)
+            except Exception as e:
+                self.update_run_info(f'发送按键失败: {e}', 'ERROR')
+
+    def _on_terminal_paste(self, text):
+        """终端粘贴：发送给服务器"""
+        if (self.connect_pushButton.text() == '断开' and
+                'tool' in self.current_ssh and self.current_ssh['tool']):
+            try:
+                channel = self.current_ssh['tool'].channel
+                if channel and channel.active:
+                    # 分块发送避免一次发太多
+                    chunk_size = 4096
+                    for i in range(0, len(text), chunk_size):
+                        channel.send(text[i:i+chunk_size])
+            except Exception as e:
+                self.update_run_info(f'粘贴发送失败: {e}', 'ERROR')
 
     def show_button_context_menu(self, pos, button_id):
         menu = QMenu()
@@ -2065,8 +2153,13 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.stop_pushButton.setEnabled(True)
 
     def clean_linux_print(self):
-        self.linux_print_browser.clear()
-        self.update_run_info(f"服务器回显区已清空")
+        # 清屏：终端模式下清空终端，否则清空服务器回显区
+        if hasattr(self, 'terminal_widget'):
+            self.terminal_widget.clear_terminal()
+            self.update_run_info("终端已清空")
+        else:
+            self.linux_print_browser.clear()
+            self.update_run_info(f"服务器回显区已清空")
 
     def get_default_path(self):
         # 获取可执行文件（.exe）本身所在的路径，不包含自己的名称
@@ -2377,6 +2470,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 """data[0]=text, data[1]=True"""
                 self.connect_pushButton.setText(data[0])
                 self.connect_pushButton.setEnabled(data[1])
+                # 连接成功后切换终端模式
+                if data[0] == '断开':
+                    self._start_terminal_mode()
 
             # 封装指令发送和回显接收方法
             def current_ssh(echo_signal):
@@ -2384,12 +2480,15 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 if not c_result:
                     return False
                 worker.info_signal.emit(('断开',True))
-                g_result = ssh_tool.get_output_continue(timeout=float('inf'), echo_signal=echo_signal)
+                g_result = ssh_tool.get_output_continue(timeout=float('inf'), echo_signal=echo_signal, raw=True)
                 return g_result
 
             def on_worker_finished():
                 update_connect_button(('连接',True))
                 self.server_comboBox.setEnabled(True)
+                # 退出终端模式
+                self._stop_terminal_mode()
+                self.update_run_info('SSH 已断开')
                 # 不要在worker里deleteLater自己，会被放到worker的线程中执行
                 thread.quit()
 
@@ -2412,7 +2511,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
             # 绑定信号槽
             worker.log_signal.connect(self.update_run_info)
-            worker.echo_signal.connect(lambda text: self.update_linux_print(text, insert=True))
+            worker.echo_signal.connect(self._on_terminal_output)
             worker.info_signal.connect(update_connect_button)
             worker.finished.connect(on_worker_finished)
 
