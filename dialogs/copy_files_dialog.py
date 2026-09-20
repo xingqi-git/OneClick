@@ -334,27 +334,9 @@ class CopyFilesDialog(QDialog, copy_local_files_dlg.Ui_Dialog):
 
     def _select_path_dialog(self):
         """弹出文件/文件夹选择对话框，返回选择的路径或空字符串"""
-        dialog = QFileDialog(self)
-        dialog.setWindowFlags(QtCore.Qt.WindowType.Dialog | QtCore.Qt.WindowType.WindowCloseButtonHint)
-        dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
-        dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
-
-        button_box = dialog.findChild(QDialogButtonBox)
-        if button_box:
-            buttons = button_box.buttons()
-            for button in buttons:
-                role = button_box.buttonRole(button)
-                if role == QDialogButtonBox.ButtonRole.RejectRole:
-                    button.setText("选择当前文件夹路径")
-
-        if dialog.exec_():
-            file_paths = dialog.selectedFiles()
-            if file_paths:
-                return file_paths[0]
-        else:
-            current_dir = dialog.directory().absolutePath()
-            return current_dir
-        return ""
+        from utils.qt_dialog_tools import select_path_dialog
+        paths = select_path_dialog(self, title="选择源路径")
+        return paths[0] if paths else ""
 
     def create_sc(self):
         # 每次点生成快捷方式按钮时，都先初始化所有输入框的样式
@@ -450,14 +432,9 @@ class CopyFilesDialog(QDialog, copy_local_files_dlg.Ui_Dialog):
         pass
 
     def select_target_path(self):
-        dialog = QFileDialog(self)
-        dialog.setWindowFlags(QtCore.Qt.WindowType.Dialog | QtCore.Qt.WindowType.WindowCloseButtonHint)
-        dialog.setFileMode(QFileDialog.FileMode.Directory)
-        dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
-        if dialog.exec_():
-            file_paths = dialog.selectedFiles()
-            if file_paths:
-                self.target_path_pushButton.setText(file_paths[0])
-                self.target_path_pushButton.setToolTip(file_paths[0])
-                self.target_path_pushButton.setToolTipDuration(10000)
-                return
+        from utils.qt_dialog_tools import select_dir_dialog
+        path = select_dir_dialog(self, title="选择目的路径")
+        if path:
+            self.target_path_pushButton.setText(path)
+            self.target_path_pushButton.setToolTip(path)
+            self.target_path_pushButton.setToolTipDuration(10000)

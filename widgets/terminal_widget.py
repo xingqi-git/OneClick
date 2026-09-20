@@ -81,6 +81,11 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
         self._auto_scroll = True
         self.verticalScrollBar().valueChanged.connect(self._on_scrollbar_changed)
 
+        # 选中保护：用户选中时暂停渲染，避免破坏选区
+        self._has_user_selection = False
+        self._deferred_render = False  # 选中期间有新输出需要延后渲染
+        self.selectionChanged.connect(self._on_selection_changed)
+
     def _ensure_pyte(self):
         """确保 pyte 和 wcwidth 已加载，screen/stream 已创建"""
         if self._screen is not None:
@@ -105,6 +110,18 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
     def _on_scrollbar_changed(self, value):
         sb = self.verticalScrollBar()
         self._auto_scroll = (value >= sb.maximum() - 2)
+
+    def _on_selection_changed(self):
+        """用户选中/取消选中时触发"""
+        cursor = self.textCursor()
+        had_selection = self._has_user_selection
+        self._has_user_selection = cursor.hasSelection()
+
+        # 刚取消选中时，如果选中期间有累积输出，立即渲染一次
+        if had_selection and not self._has_user_selection and self._deferred_render:
+            self._deferred_render = False
+            self._render_pending = True
+            self._render_timer.start()
 
     def _scroll_to_bottom(self):
         sb = self.verticalScrollBar()
@@ -235,6 +252,37 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
     def wheelEvent(self, event):
         super().wheelEvent(event)
 
+    def contextMenuEvent(self, event):
+        """右键菜单：有选中时显示复制，否则显示粘贴+全选。只读模式下 Qt 不提供这些项，自己加。"""
+        menu = QtWidgets.QMenu(self)
+
+        cursor = self.textCursor()
+        has_selection = cursor.hasSelection()
+
+        if has_selection:
+            act_copy = menu.addAction("复制")
+        else:
+            act_copy = None
+
+        act_paste = menu.addAction("粘贴")
+        act_select_all = menu.addAction("全选")
+
+        action = menu.exec_(event.globalPos())
+        if action is None:
+            return
+
+        if act_copy is not None and action == act_copy:
+            text = cursor.selectedText()
+            if text:
+                QtWidgets.QApplication.clipboard().setText(text)
+        elif action == act_paste:
+            text = QtWidgets.QApplication.clipboard().text()
+            if text:
+                text = text.replace('\r\n', '\r').replace('\n', '\r')
+                self.paste_sent.emit(text)
+        elif action == act_select_all:
+            self.selectAll()
+
     # ---- 输出 ----
 
     def append_output(self, text):
@@ -307,6 +355,15 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
         self._render_pending = False
         if self._screen is None:
             return
+
+        # ---- 关键保护：用户有选中时完全跳过渲染 ----
+        # 渲染会修改 document，导致 Qt 丢弃选区 + 自动滚动视图
+        # screen.feed 仍在累积输出，取消选中后一次性渲染
+        if self._has_user_selection:
+            self._deferred_render = True
+            return
+
+        self._deferred_render = False
         screen = self._screen
 
         # 历史行数
@@ -317,6 +374,8 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
             self._full_redraw(screen, history_count)
             self._need_full_redraw = False
             self._rendered_history_count = history_count
+            if self._auto_scroll:
+                self._scroll_to_bottom()
             return
 
         doc = self.document()
@@ -353,7 +412,7 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
                 cursor.setCharFormat(self._default_fmt)
                 cursor.insertText('\n')
 
-        # 光标渲染
+        # 光标渲染（反色）
         if self._cursor_visible and self._terminal_mode and self._auto_scroll:
             abs_line = self._rendered_history_count + min(screen.cursor.y, screen.lines - 1)
             block = doc.findBlockByNumber(abs_line)
@@ -402,6 +461,10 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
         if not self._terminal_mode:
             return
         self._cursor_visible = not self._cursor_visible
+        # 用户有选中时光标闪烁不触发渲染（_do_render 里也会再次拦截）
+        if self._has_user_selection:
+            self._deferred_render = True
+            return
         if not self._render_pending:
             self._render_pending = True
             self._render_timer.start()

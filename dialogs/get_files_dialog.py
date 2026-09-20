@@ -490,15 +490,9 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
     # 保留原来的选择路径方法（选择本地目的路径）
     def select_path(self):
         """获取文件时本地路径只能选择文件夹"""
-        dialog = QFileDialog(self)
-        dialog.setWindowFlags(QtCore.Qt.WindowType.Dialog | QtCore.Qt.WindowType.WindowCloseButtonHint)
-        dialog.setFileMode(QFileDialog.FileMode.Directory)
-
-        dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
-        if dialog.exec_():
-            file_paths = dialog.selectedFiles()
-            if file_paths:
-                self.local_path_pushButton.setText(file_paths[0])
-                self.local_path_pushButton.setToolTip(file_paths[0])
-                self.local_path_pushButton.setToolTipDuration(10000)
-                return
+        from utils.qt_dialog_tools import select_dir_dialog
+        path = select_dir_dialog(self, title="选择目的路径")
+        if path:
+            self.local_path_pushButton.setText(path)
+            self.local_path_pushButton.setToolTip(path)
+            self.local_path_pushButton.setToolTipDuration(10000)

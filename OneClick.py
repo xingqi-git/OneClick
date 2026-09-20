@@ -21,6 +21,7 @@
 from MainWindowLogic import MainWindowLogic
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import QTimer
 import sys
 import os
 
@@ -59,7 +60,8 @@ if __name__ == '__main__':
         # app.setFont(global_font)  # 应用到所有控件
 
         window = MainWindowLogic()
-        window.show()
+        # 延迟到事件循环空闲后再最大化，避免 QSplitter 尺寸计算冲突
+        QTimer.singleShot(0, window.showMaximized)
         sys.exit(app.exec_())
 
     run()

@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import QThread, QTimer
@@ -232,47 +232,95 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 设置勾选框初始状态（会触发 stateChanged，自动初始化文件日志开关）
         self.log_file_checkBox.setChecked(initial_log_enabled)
 
-        # ---- 终端改造：替换右上的服务器回显区为可编辑终端 ----
-        # 同时把右侧两整行合并：终端占绝大部分空间，底部只留服务器/命令下拉两行
-        self.terminal_widget = TerminalEdit(self.centralwidget)
+        # ---- 三列布局改造：按钮区 | 文件区 | 终端区 ----
+        # 用 QSplitter 水平分割，可拖动调整宽度
+        from widgets.terminal_widget import TerminalEdit
+        from widgets.file_browser_widget import FileBrowserWidget
 
-        # 1. 创建右侧新容器（垂直布局：终端区 + 命令区）
+        self.terminal_widget = TerminalEdit(self.centralwidget)
+        self.file_browser = FileBrowserWidget(self.centralwidget)
+
+        # 1. 左侧容器：快捷按钮（上）+ 运行信息（下），垂直 splitter
+        self.left_container = QtWidgets.QWidget(self.centralwidget)
+        left_layout = QtWidgets.QVBoxLayout(self.left_container)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
+
+        # 把按钮区（原 verticalLayout）包进一个 QWidget
+        self.gridLayout_2.removeItem(self.verticalLayout)
+        self.left_top_widget = QtWidgets.QWidget(self.left_container)
+        top_layout = QtWidgets.QVBoxLayout(self.left_top_widget)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(0)
+        top_layout.addLayout(self.verticalLayout)
+
+        # 把运行信息区（原 verticalLayout_3）包进一个 QWidget
+        self.gridLayout_2.removeItem(self.verticalLayout_3)
+        self.left_bottom_widget = QtWidgets.QWidget(self.left_container)
+        bottom_layout = QtWidgets.QVBoxLayout(self.left_bottom_widget)
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_layout.setSpacing(0)
+        bottom_layout.addLayout(self.verticalLayout_3)
+
+        # 垂直 splitter 让两个区可拖动
+        self.left_splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical, self.left_container)
+        self.left_splitter.addWidget(self.left_top_widget)
+        self.left_splitter.addWidget(self.left_bottom_widget)
+        self.left_splitter.setStretchFactor(0, 4)
+        self.left_splitter.setStretchFactor(1, 1)
+        left_layout.addWidget(self.left_splitter)
+
+        # 2. 右侧容器：终端区（上）+ 服务器选择行（下）
         self.right_column_widget = QtWidgets.QWidget(self.centralwidget)
         right_layout = QtWidgets.QVBoxLayout(self.right_column_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(5)
 
-        # 2. 终端区（原 verticalLayout_2 的内容：标题行 horizontalLayout_2 + 回显区）
-        # 从 verticalLayout_2 中取出标题行（整个 horizontalLayout_2）
+        # 终端标题行（原 horizontalLayout_2）从 verticalLayout_2 取出
         self.verticalLayout_2.removeItem(self.horizontalLayout_2)
-        # 从 verticalLayout_2 中移除回显区
+        # 旧回显区销毁
         self.verticalLayout_2.removeWidget(self.linux_print_browser)
-        # 旧的回显区销毁
         self.linux_print_browser.deleteLater()
-        # 标题行加到新布局
         right_layout.addLayout(self.horizontalLayout_2)
-        # 终端控件（占剩余空间）
         right_layout.addWidget(self.terminal_widget, 1)
-        # 把旧的引用指向新终端，兼容其他代码
         self.linux_print_browser = self.terminal_widget
 
-        # 3. 底部服务器选择行的布局直接用 gridLayout
-        # 把 gridLayout 从 gridLayout_2 里取出来，加到右侧容器底部
+        # 底部服务器选择行从 gridLayout_2 取出，放到右侧容器底部
         self.gridLayout_2.removeItem(self.gridLayout)
         right_layout.addLayout(self.gridLayout)
 
-        # 4. 把右侧新容器放到 gridLayout_2 的右侧列，跨两行
-        # 先移除原来的 verticalLayout_2（右上的服务器回显区布局，已空）
+        # 3. 主 splitter：左 | 中 | 右
+        self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self.centralwidget)
+        self.main_splitter.addWidget(self.left_container)
+        self.main_splitter.addWidget(self.file_browser)
+        self.main_splitter.addWidget(self.right_column_widget)
+        self.main_splitter.setStretchFactor(0, 2)  # 按钮区
+        self.main_splitter.setStretchFactor(1, 2)  # 文件区
+        self.main_splitter.setStretchFactor(2, 3)  # 终端区
+
+        # 4. 把 gridLayout_2 清空，只留主 splitter
+        # 先移除 verticalLayout_2（已空）
         self.gridLayout_2.removeItem(self.verticalLayout_2)
-        # 新容器放右侧，跨 2 行
-        self.gridLayout_2.addWidget(self.right_column_widget, 0, 1, 2, 1)
+        # 主 splitter 填满 gridLayout_2
+        self.gridLayout_2.addWidget(self.main_splitter, 0, 0, 2, 2)
 
         # "服务器回显" 标签改为 "终端"
         self.linux_print_label.setText("终端")
 
+        # ---- 统一四个区域标题样式：加粗 + 统一高度 ----
+        title_style = "font-weight: bold; font-size: 13px; padding: 4px 0;"
+        for lbl in (self.label, self.run_info_label, self.linux_print_label):
+            lbl.setStyleSheet(title_style)
+        # 远程文件标题也统一样式
+        self.file_browser.set_title_style(title_style)
+
         # 终端按键发送信号
         self.terminal_widget.key_sent.connect(self._on_terminal_key)
         self.terminal_widget.paste_sent.connect(self._on_terminal_paste)
+
+        # 文件浏览器信号
+        self.file_browser.upload_requested.connect(self._fb_upload)
+        self.file_browser.download_requested.connect(self._fb_download)
 
         # 指令管理按钮，放到连接按钮后面（第0行第3列）
         self.cmd_manage_button = QtWidgets.QPushButton("指令管理", self.centralwidget)
@@ -287,8 +335,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
         self.gridLayout.addWidget(self.cmd_manage_button, 0, 3, 1, 1)
 
-        self.showMaximized()
-
         # 如果有默认配置文件，则获取
         if os.path.exists(self.default_config_path):
             self.update_run_info('存在默认配置文件，开始添加服务器和快捷按钮')
@@ -302,6 +348,15 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.server_comboBox.setCurrentIndex(-1)
         self.update_server_combobox()
         self.update_run_info("OneClick 启动成功")
+
+        # 延迟设置 splitter 初始比例：等窗口最大化、真实尺寸确定后再设
+        QtCore.QTimer.singleShot(50, self._init_splitter_sizes)
+
+    def _init_splitter_sizes(self):
+        """窗口显示后设置 splitter 初始分配比例"""
+        # 左侧垂直 splitter：按钮区 4/5，运行信息 1/5
+        total_h = self.left_splitter.height()
+        self.left_splitter.setSizes([int(total_h * 0.8), int(total_h * 0.2)])
 
     def cmd1_dialog(self, button_id=None):
         """创建发送指令的窗口实例"""
@@ -1791,6 +1846,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if hasattr(self, 'terminal_widget'):
             self.terminal_widget.set_terminal_mode(True)
             self.update_run_info('SSH 连接成功，进入终端模式')
+        # 联动文件浏览器
+        if hasattr(self, 'file_browser') and 'tool' in self.current_ssh:
+            self.file_browser.set_ssh_tool(self.current_ssh['tool'])
 
     def _stop_terminal_mode(self):
         """退出终端模式：回到只读"""
@@ -1825,6 +1883,235 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                         channel.send(text[i:i+chunk_size])
             except Exception as e:
                 self.update_run_info(f'粘贴发送失败: {e}', 'ERROR')
+
+    # ---------- 文件浏览器：上传/下载 ----------
+
+    def _fb_upload(self, remote_dir, local_paths):
+        """文件浏览器：上传本地文件/文件夹到远程目录"""
+        if ('tool' not in self.current_ssh or
+                not self.current_ssh['tool'] or
+                not self.current_ssh['tool'].is_connected()):
+            self.update_run_info('请先连接服务器', 'WARNING')
+            return
+
+        if not local_paths:
+            return
+
+        import time, os, re
+
+        ssh_tool = self.current_ssh['tool']
+        button_name = '文件上传'
+        exec_id = f"fb_upload_{int(time.time()*1000)}"
+        self.update_run_info(f'<{button_name}> 开始执行')
+
+        # 构造 source_items（文件浏览器上传不做筛选，直接传）
+        source_items = []
+        for p in local_paths:
+            source_items.append({
+                '路径': p,
+                '修改时间': '全部',
+                '名称包含': {'关键词': [], '逻辑': '或'},
+                '名称不包含': {'关键词': [], '逻辑': '和'}
+            })
+
+        skip_phrases = [
+            '已复制到临时目录',
+            '复制到临时目录失败',
+            '传输进度:',
+            '开始上传文件到远程临时目录，共',
+            '开始查找符合条件的文件',
+            '找到.*个目录',
+            '开始创建目录',
+            '开始上传',
+            '远程临时目录已删除',
+            '上传完毕！',
+        ]
+
+        def send_log_wrapper(text, level='INFO'):
+            if text.startswith('__PROGRESS__:'):
+                content = text[len('__PROGRESS__:'):]
+                parts = content.split('|')
+                if len(parts) >= 3:
+                    phase = parts[0]
+                    current = int(parts[1]) if parts[1].isdigit() else 0
+                    total = int(parts[2]) if parts[2].isdigit() else 0
+                    extra_parts = parts[3:]
+                    msg = None
+                    if phase == 'find':
+                        msg = f'<{button_name}> 查找中... 找到{total}个文件'
+                    elif phase == 'upload':
+                        if total > 0:
+                            pct = int(current * 100 / total)
+                            msg = f'<{button_name}> 上传中... {current}/{total} ({pct}%)'
+                        else:
+                            msg = f'<{button_name}> 上传中... {current}/{total}'
+                    elif phase == 'move':
+                        msg = f'<{button_name}> 移动中... {current}/{total}'
+                    elif phase == 'done':
+                        msg = f'<{button_name}> {("|".join(extra_parts))}'
+                    elif phase == 'error':
+                        msg = f'<{button_name}> 错误: {("|".join(extra_parts))}'
+                    if msg:
+                        self.update_run_info_progress(f"{exec_id}_{phase}", msg)
+                return
+            for pat in skip_phrases:
+                if re.search(pat, text):
+                    return
+            self.update_run_info(f'<{button_name}> {text}', level)
+
+        def progress_cb(phase, current, total, extra=''):
+            print(f"__PROGRESS__:{phase}|{current}|{total}|{extra}")
+
+        def execute_upload():
+            result = ssh_tool.send_files(source_items, remote_dir, progress_cb=progress_cb)
+            return result
+
+        def on_worker_finished(result):
+            if result:
+                self.update_run_info(f'<{button_name}> 执行成功')
+                if hasattr(self, 'file_browser') and self.file_browser.is_connected():
+                    self.file_browser.refresh()
+            else:
+                self.update_run_info(f'<{button_name}> 执行失败', 'ERROR')
+            thread.quit()
+
+        worker = qthread_worker.OneClickWorker(execute_upload)
+        worker.log_signal.connect(send_log_wrapper)
+
+        self.thread_count += 1
+        thread_name = f'sc_thread_{self.thread_count}'
+        thread = QThread()
+        worker.moveToThread(thread)
+
+        def on_thread_finished():
+            if thread_name in self.sc_threads:
+                del self.sc_threads[thread_name]
+
+        worker.finished.connect(on_worker_finished)
+        worker.finished.connect(worker.deleteLater)
+        thread.started.connect(worker.run_task)
+        thread.finished.connect(on_thread_finished)
+        thread.finished.connect(thread.deleteLater)
+
+        self.sc_threads[thread_name] = {"thread": thread, "worker": worker}
+        thread.start()
+
+    def _fb_download(self, remote_paths, local_dir):
+        """文件浏览器：下载远程文件/文件夹到本地"""
+        if ('tool' not in self.current_ssh or
+                not self.current_ssh['tool'] or
+                not self.current_ssh['tool'].is_connected()):
+            self.update_run_info('请先连接服务器', 'WARNING')
+            return
+
+        if not remote_paths:
+            return
+
+        import time, os, re
+
+        ssh_tool = self.current_ssh['tool']
+        button_name = '文件下载'
+        exec_id = f"fb_download_{int(time.time()*1000)}"
+        self.update_run_info(f'<{button_name}> 开始执行')
+
+        # 构造 source_items（文件浏览器下载不做筛选，直接下）
+        source_items = []
+        for p in remote_paths:
+            source_items.append({
+                '路径': p,
+                '修改时间': '全部',
+                '名称包含': {'关键词': [], '逻辑': '或'},
+                '名称不包含': {'关键词': [], '逻辑': '和'}
+            })
+
+        skip_phrases = [
+            '已复制到临时目录',
+            '复制到临时目录失败',
+            '传输进度:',
+            '开始复制文件到远程临时目录，共',
+            '开始查找符合条件的文件',
+            '找到.*个目录',
+            '开始创建目录',
+            '开始下载',
+            '远程临时目录已删除',
+            '下载完毕！',
+        ]
+
+        def get_log_wrapper(text, level='INFO'):
+            if text.startswith('__PROGRESS__:'):
+                content = text[len('__PROGRESS__:'):]
+                parts = content.split('|')
+                if len(parts) >= 3:
+                    phase = parts[0]
+                    current = int(parts[1]) if parts[1].isdigit() else 0
+                    total = int(parts[2]) if parts[2].isdigit() else 0
+                    extra_parts = parts[3:]
+                    msg = None
+                    if phase == 'find':
+                        msg = f'<{button_name}> 查找中... 找到{total}个文件'
+                    elif phase == 'download':
+                        if total > 0:
+                            pct = int(current * 100 / total)
+                            total_mb = total / 1048576
+                            if len(extra_parts) >= 5:
+                                file_idx = int(extra_parts[3]) if extra_parts[3].isdigit() else 0
+                                total_files = int(extra_parts[4]) if extra_parts[4].isdigit() else 0
+                                cur_name = os.path.basename(extra_parts[0])
+                                cur_size = int(extra_parts[1]) if extra_parts[1].isdigit() else 0
+                                cur_sent = int(extra_parts[2]) if extra_parts[2].isdigit() else 0
+                                cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
+                                cur_mb = cur_size / 1048576
+                                total_display = total_files if total_files > 0 else '未知'
+                                msg = (f'<{button_name}> 下载中... 总进度{pct}% ({total_mb:.1f}MB) '
+                                       f'文件{file_idx + 1}/{total_display}: {cur_name} {cur_pct}% ({cur_mb:.1f}MB)')
+                            else:
+                                msg = f'<{button_name}> 下载中... {pct}% ({total_mb:.1f}MB)'
+                    elif phase == 'done':
+                        msg = f'<{button_name}> {("|".join(extra_parts))}'
+                    elif phase == 'error':
+                        msg = f'<{button_name}> 错误: {("|".join(extra_parts))}'
+                    if msg:
+                        self.update_run_info_progress(f"{exec_id}_{phase}", msg)
+                return
+            for pat in skip_phrases:
+                if re.search(pat, text):
+                    return
+            self.update_run_info(f'<{button_name}> {text}', level)
+
+        def progress_cb(phase, current, total, extra=''):
+            print(f"__PROGRESS__:{phase}|{current}|{total}|{extra}")
+
+        def execute_download():
+            result = ssh_tool.get_files(source_items, local_dir, progress_cb=progress_cb)
+            return result
+
+        def on_worker_finished(result):
+            if result:
+                self.update_run_info(f'<{button_name}> 执行成功')
+            else:
+                self.update_run_info(f'<{button_name}> 执行失败', 'ERROR')
+            thread.quit()
+
+        worker = qthread_worker.OneClickWorker(execute_download)
+        worker.log_signal.connect(get_log_wrapper)
+
+        self.thread_count += 1
+        thread_name = f'sc_thread_{self.thread_count}'
+        thread = QThread()
+        worker.moveToThread(thread)
+
+        def on_thread_finished():
+            if thread_name in self.sc_threads:
+                del self.sc_threads[thread_name]
+
+        worker.finished.connect(on_worker_finished)
+        worker.finished.connect(worker.deleteLater)
+        thread.started.connect(worker.run_task)
+        thread.finished.connect(on_thread_finished)
+        thread.finished.connect(thread.deleteLater)
+
+        self.sc_threads[thread_name] = {"thread": thread, "worker": worker}
+        thread.start()
 
     def show_button_context_menu(self, pos, button_id):
         menu = QMenu()
@@ -2187,24 +2474,15 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
     def save_config_to(self, path):
         """保存功能调用，如果点击菜单-另存为按钮来调用时，传入的是False，弹出对话框"""
         if not path:
-            dialog = QFileDialog()
-            dialog.setWindowFlags(QtCore.Qt.WindowType.Dialog | QtCore.Qt.WindowType.WindowCloseButtonHint)
-            # 关键：禁用系统原生对话框，强制使用Qt风格
-            dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
-            # 设置为保存模式
-            dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
-            # 设置默认文件名和文件类型
-            dialog.setDefaultSuffix("json")  # 自动补充.json后缀
-            dialog.selectFile("自定义配置")  # 默认文件名
-            dialog.setNameFilter("JSON Files (*.json)")
-            # 显示对话框并处理结果
-            if dialog.exec_():
-                # 获取选中的完整路径
-                file_path = dialog.selectedFiles()[0]
-                # 确保后缀正确
-                if not file_path.endswith('.json'):
-                    file_path += '.json'
-            else:
+            from utils.qt_dialog_tools import save_file_dialog
+            file_path = save_file_dialog(
+                self,
+                title="另存为配置",
+                default_name="自定义配置",
+                suffix="json",
+                file_filter="JSON Files (*.json)"
+            )
+            if not file_path:
                 self.update_run_info(f"另存为配置 取消")
                 return
         else:
@@ -2267,25 +2545,16 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
     def load_sc_config(self, path):
         """启动时如果有默认配置会调用，传入默认配置路径，手动点的时候传入的是False，弹出对话框"""
         if not path:
-            dialog = QFileDialog()
-            dialog.setWindowFlags(QtCore.Qt.WindowType.Dialog | QtCore.Qt.WindowType.WindowCloseButtonHint)
-            #  使用Qt自带的对话框,保持风格一致
-            dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
-
-            # 设置文件过滤器，只显示JSON文件
-            # 格式："描述 (*.扩展名)"，多个类型用;;分隔
-            dialog.setNameFilter("JSON Files (*.json)")
-
-            # 可以设置默认文件后缀，当用户输入无后缀的文件名时自动添加
-            dialog.setDefaultSuffix("json")
-
-            # 显示对话框并检查用户是否点击了打开按钮
-            if dialog.exec_():
-                # 如果用户选择了文件，返回文件路径
-                file_path = dialog.selectedFiles()[0]
-            else:
+            from utils.qt_dialog_tools import open_file_dialog
+            files = open_file_dialog(
+                self,
+                title="加载快捷按钮配置",
+                file_filter="JSON Files (*.json)"
+            )
+            if not files:
                 self.update_run_info('批量添加快捷按钮 取消')
                 return
+            file_path = files[0]
         else:
             file_path = path
         try:
@@ -2349,25 +2618,16 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
     def load_server_config(self, path):
         """启动时如果有默认配置会调用，传入默认配置路径，手动点的时候传入的是False，弹出对话框"""
         if not path:  # 手动点的情况
-            dialog = QFileDialog()
-            dialog.setWindowFlags(QtCore.Qt.WindowType.Dialog | QtCore.Qt.WindowType.WindowCloseButtonHint)
-            # 使用Qt自带的对话框,保持风格一致
-            dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
-
-            # 设置文件过滤器，只显示JSON文件
-            # 格式："描述 (*.扩展名)"，多个类型用;;分隔
-            dialog.setNameFilter("JSON Files (*.json)")
-
-            # 可以设置默认文件后缀，当用户输入无后缀的文件名时自动添加
-            dialog.setDefaultSuffix("json")
-
-            # 显示对话框并检查用户是否点击了打开按钮
-            if dialog.exec_():
-                # 如果用户选择了文件，返回文件路径
-                file_path = dialog.selectedFiles()[0]
-            else:
+            from utils.qt_dialog_tools import open_file_dialog
+            files = open_file_dialog(
+                self,
+                title="加载服务器配置",
+                file_filter="JSON Files (*.json)"
+            )
+            if not files:
                 self.update_run_info('批量添加服务器 取消')
                 return
+            file_path = files[0]
         else:
             file_path = path
         try:
@@ -2492,6 +2752,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 # 退出终端模式
                 self._stop_terminal_mode()
                 self.update_run_info('SSH 已断开')
+                # 关闭文件浏览器
+                if hasattr(self, 'file_browser'):
+                    self.file_browser.set_ssh_tool(None)
                 # 不要在worker里deleteLater自己，会被放到worker的线程中执行
                 thread.quit()
 

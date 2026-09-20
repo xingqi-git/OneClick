@@ -362,32 +362,9 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
 
     def _select_path_dialog(self):
         """弹出文件/文件夹选择对话框，返回选择的路径或空字符串"""
-        dialog = QFileDialog(self)
-        dialog.setWindowFlags(QtCore.Qt.WindowType.Dialog | QtCore.Qt.WindowType.WindowCloseButtonHint)
-
-        dialog.setFileMode(QFileDialog.FileMode.ExistingFile)  # 只允许选择已存在的文件
-
-        # 使用Qt自带的对话框,可以修改按钮名称，实现既可以选择文件又可以选择文件夹（修改取消按钮为选择文件夹）
-        dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
-
-        # 在对话框显示前修改按钮
-        button_box = dialog.findChild(QDialogButtonBox)
-        if button_box:
-            buttons = button_box.buttons()
-            for button in buttons:
-                role = button_box.buttonRole(button)
-                if role == QDialogButtonBox.ButtonRole.RejectRole:
-                    button.setText("选择当前文件夹路径")
-        # 显示对话框并检查用户是否点击了打开按钮
-        if dialog.exec_():
-            file_paths = dialog.selectedFiles()
-            if file_paths:
-                return file_paths[0]
-        else:
-            # 如果用户未选择任何文件（点了"选择当前文件夹路径"），返回当前文件夹路径
-            current_dir = dialog.directory().absolutePath()
-            return current_dir
-        return ""
+        from utils.qt_dialog_tools import select_path_dialog
+        paths = select_path_dialog(self, title="选择源路径")
+        return paths[0] if paths else ""
 
     def _on_ip_changed(self, ip):
         """手动填写IP时，自动生成快捷按钮名称"""
