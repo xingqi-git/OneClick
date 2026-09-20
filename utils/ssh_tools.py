@@ -1,10 +1,8 @@
-import paramiko
-import time
+﻿import time
 import os
 import re
 import shutil
 from utils.windows_tools import WindowsTools
-from scp import SCPClient
 
 
 class SSHTools(object):
@@ -25,6 +23,10 @@ class SSHTools(object):
         self.win_tool = WindowsTools()
 
     def connect(self, timeout=10):
+        import paramiko
+        from scp import SCPClient
+        self._paramiko = paramiko
+        self._SCPClient = SCPClient
         try:
             self.ssh = paramiko.SSHClient()
             self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -722,11 +724,11 @@ class SSHTools(object):
                 file_size = os.path.getsize(f_path)
                 if file_size < 100 * 1024 * 1024:
                     if progress_cb and file_count <= 10:
-                        with SCPClient(self.transport, progress=lambda n, s, se, fp=f_path: _scp_upload_progress(os.path.basename(fp), s, se)) as client:
+                        with self._SCPClient(self.transport, progress=lambda n, s, se, fp=f_path: _scp_upload_progress(os.path.basename(fp), s, se)) as client:
                             self._last_progress = -1
                             client.put(f_path, dst_path)
                     else:
-                        with SCPClient(self.transport) as client:
+                        with self._SCPClient(self.transport) as client:
                             self._last_progress = -1
                             client.put(f_path, dst_path)
                     if progress_cb and file_count > 10:
@@ -735,7 +737,7 @@ class SSHTools(object):
                         progress_cb('upload', _upload_state['accumulated'], total_size, extra)
                 else:
                     print(f"大文件上传: {file_size} 字节")
-                    with SCPClient(self.transport, progress=lambda n, s, se, fp=f_path: _scp_upload_progress(os.path.basename(fp), s, se)) as client:
+                    with self._SCPClient(self.transport, progress=lambda n, s, se, fp=f_path: _scp_upload_progress(os.path.basename(fp), s, se)) as client:
                         if self.transfer_stat == 0:
                             print("上传被中止")
                             rm_cmd = f"rm -rf \"{temp_remote_dir}\""
@@ -1322,7 +1324,7 @@ class SSHTools(object):
                         self._download_progress_cb(total_sent, dst_size, name, size, sent,
                                                    _download_state['file_index'], _download_state['total_files'])
 
-            with SCPClient(self.transport, progress=_scp_progress) as client:
+            with self._SCPClient(self.transport, progress=_scp_progress) as client:
                 if self.transfer_stat == 0:
                     raise Exception("下载被中止")
                 self._last_progress = -1

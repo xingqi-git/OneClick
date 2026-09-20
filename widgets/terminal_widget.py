@@ -3,11 +3,9 @@
 - 历史行只追加，不重绘（history.top 只增不减）
 - 当前屏（几十行）每次重绘
 - 16ms 节流，合并高频输出
+- pyte/wcwidth 延迟加载（首次进入终端模式时才 import）
 """
 from PyQt5 import QtWidgets, QtCore, QtGui
-import pyte
-from pyte.screens import HistoryScreen
-from wcwidth import wcwidth
 
 
 # 颜色映射
@@ -24,18 +22,6 @@ _HISTORY_LINES = 2000
 _RENDER_INTERVAL_MS = 16  # 渲染节流间隔（约 60fps）
 
 
-def _fg_color(char):
-    if char.fg in _COLOR_MAP:
-        return _COLOR_MAP[char.fg]
-    return _DEFAULT_FG
-
-
-def _bg_color(char):
-    if char.bg in _COLOR_MAP:
-        return _COLOR_MAP[char.bg]
-    return _DEFAULT_BG
-
-
 def _default_char_format():
     fmt = QtGui.QTextCharFormat()
     fmt.setFontFamily("Consolas")
@@ -46,18 +32,18 @@ def _default_char_format():
 
 
 class TerminalEdit(QtWidgets.QPlainTextEdit):
-    """终端控件（高性能增量渲染）"""
+    """终端控件（高性能增量渲染，pyte 延迟加载）"""
     key_sent = QtCore.pyqtSignal(str)
     paste_sent = QtCore.pyqtSignal(str)
 
     def __init__(self, parent=None, cols=120, rows=40):
         super().__init__(parent)
 
-        self._screen = HistoryScreen(cols, rows, history=_HISTORY_LINES)
-        self._stream = pyte.ByteStream(self._screen)
-
         self._cols = cols
         self._rows = rows
+        self._screen = None  # pyte HistoryScreen，延迟创建
+        self._stream = None  # pyte ByteStream，延迟创建
+        self._wcwidth = None  # wcwidth 函数，延迟加载
 
         # 样式
         self.setReadOnly(True)
@@ -80,9 +66,9 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
         self._cursor_timer.start()
 
         # 增量渲染状态
-        self._rendered_history_count = 0  # 已渲染的历史行数
+        self._rendered_history_count = 0
         self._default_fmt = _default_char_format()
-        self._need_full_redraw = True  # 首次需要全量绘制
+        self._need_full_redraw = True
 
         # 渲染节流定时器
         self._render_pending = False
@@ -95,7 +81,20 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
         self._auto_scroll = True
         self.verticalScrollBar().valueChanged.connect(self._on_scrollbar_changed)
 
+    def _ensure_pyte(self):
+        """确保 pyte 和 wcwidth 已加载，screen/stream 已创建"""
+        if self._screen is not None:
+            return
+        import pyte
+        from pyte.screens import HistoryScreen
+        from wcwidth import wcwidth
+        self._wcwidth = wcwidth
+        self._screen = HistoryScreen(self._cols, self._rows, history=_HISTORY_LINES)
+        self._stream = pyte.ByteStream(self._screen)
+
     def set_terminal_mode(self, enabled):
+        if enabled:
+            self._ensure_pyte()
         self._terminal_mode = enabled
         self.setReadOnly(not enabled)
         if enabled:
@@ -240,6 +239,7 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
 
     def append_output(self, text):
         """接收服务器输出（节流渲染）"""
+        self._ensure_pyte()
         if isinstance(text, str):
             data = text.encode('utf-8', errors='replace')
         else:
@@ -258,24 +258,34 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
             self._render_pending = True
             self._render_timer.start()
 
+    def _fg_color(self, char):
+        if char.fg in _COLOR_MAP:
+            return _COLOR_MAP[char.fg]
+        return _DEFAULT_FG
+
+    def _bg_color(self, char):
+        if char.bg in _COLOR_MAP:
+            return _COLOR_MAP[char.bg]
+        return _DEFAULT_BG
+
     def _render_line_into(self, cursor, line, cols):
         """把一行字符渲染到 cursor 位置（返回 cursor 便于链式调用）"""
         x = 0
         while x < cols:
             char = line[x]
-            fg = _fg_color(char)
-            bg = _bg_color(char)
+            fg = self._fg_color(char)
+            bg = self._bg_color(char)
             bold = char.bold
             chars = []
 
             while x < cols:
                 c = line[x]
-                if _fg_color(c) != fg or _bg_color(c) != bg or c.bold != bold:
+                if self._fg_color(c) != fg or self._bg_color(c) != bg or c.bold != bold:
                     break
                 if not c.data:
                     x += 1
                     continue
-                w = wcwidth(c.data) if c.data else 1
+                w = self._wcwidth(c.data) if c.data else 1
                 if w <= 0:
                     w = 1
                 chars.append(c.data)
@@ -295,6 +305,8 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
     def _do_render(self):
         """执行渲染（增量方式）"""
         self._render_pending = False
+        if self._screen is None:
+            return
         screen = self._screen
 
         # 历史行数
@@ -311,32 +323,10 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
         cursor = QtGui.QTextCursor(doc)
 
         # ---- 追加新增的历史行 ----
-        if history_count > self._rendered_history_count:
-            # 移到文档末尾
-            cursor.movePosition(cursor.MoveOperation.End)
-            # 补个换行（如果当前屏之前没换行的话，先换行再追加历史）
-            # 实际上历史行都是从当前屏滚出去的，所以我们用另一种方式：
-            # 把当前屏内容删掉，追加历史行，再重新画当前屏
-            # 这个策略更简单，因为 history 增长意味着屏幕滚了一行
-            pass  # 见下方统一处理
-
-        # ---- 重新绘制当前屏区域 ----
-        # 当前屏在文档中的起始行号 = 已渲染历史行数
-        # 每次输出可能改变当前屏的任何行，所以当前屏要全重绘
-        # 但历史行（history.top）只增不减，历史部分不用重绘
-
-        # 策略：删除从 history 起始行到末尾的所有内容，重新追加当前屏
-        # 历史行不动
-
-        # 找到第 rendered_history_count 行的起始位置
         if history_count >= self._rendered_history_count:
-            # 历史行增长了，有新行滚入 history
-            # 新增的历史行数量
             new_hist_lines = history_count - self._rendered_history_count
             if new_hist_lines > 0:
-                # 从 history.top 中取新增的行
                 new_lines = list(screen.history.top)[-new_hist_lines:]
-                # 移到文档末尾，追加新增历史行
                 cursor.movePosition(cursor.MoveOperation.End)
                 for hist_line in new_lines:
                     self._render_line_into(cursor, hist_line, screen.columns)
@@ -344,20 +334,14 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
                     cursor.insertText('\n')
                 self._rendered_history_count = history_count
 
-        # 现在重绘当前屏：
-        # 当前屏在文档中的位置 = rendered_history_count 行 到 rendered_history_count + rows - 1 行
-        # 删除这些行，重新画
-
-        # 找到第 rendered_history_count 行的开头
+        # ---- 重新绘制当前屏区域 ----
         block = doc.findBlockByNumber(self._rendered_history_count)
         if block.isValid():
             cursor = QtGui.QTextCursor(doc)
             cursor.setPosition(block.position())
-            # 选到文档末尾
             cursor.movePosition(cursor.MoveOperation.End, cursor.MoveMode.KeepAnchor)
             cursor.removeSelectedText()
         else:
-            # 找不到就直接移到末尾
             cursor = QtGui.QTextCursor(doc)
             cursor.movePosition(cursor.MoveOperation.End)
 
@@ -426,7 +410,8 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
 
     def clear_terminal(self):
         """清空终端"""
-        self._screen.reset()
+        if self._screen is not None:
+            self._screen.reset()
         self._rendered_history_count = 0
         self._need_full_redraw = True
         self._render_pending = True

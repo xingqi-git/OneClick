@@ -4,7 +4,6 @@ import time
 import subprocess
 import psutil
 import shutil
-import GraphWindowLogic
 from PyQt5 import QtCore
 from PyQt5.QtCore import QThread, QTimer
 from PyQt5.QtWidgets import QDialog, QMessageBox, QProgressDialog
@@ -1954,6 +1953,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 '文件暂存路径': cfg.get('文件暂存路径'),
             }
 
+        import GraphWindowLogic
         g_window = GraphWindowLogic.GraphWindow(data_path, self, server_config=server_config)
         g_window.destroyed.connect(
             lambda obj: self.remove_window_from_list(obj)

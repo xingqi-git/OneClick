@@ -9,7 +9,6 @@ from PyQt5.QtWidgets import (QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QComboBox, QSpinBox, QLineEdit, QAbstractItemView)
 from UI import server_check_run_dlg
 from utils import qthread_worker
-import paramiko
 
 
 class ServerCheckRunDialog(QDialog, server_check_run_dlg.Ui_Dialog):
@@ -426,6 +425,7 @@ class ServerCheckRunDialog(QDialog, server_check_run_dlg.Ui_Dialog):
 
     def _do_ssh_login(self, host, port, username, password):
         try:
+            import paramiko
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(hostname=host, port=port, username=username, password=password, timeout=5)

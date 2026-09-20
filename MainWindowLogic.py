@@ -85,6 +85,11 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
 
+        # 启动模块后台预加载（不阻塞主界面显示）
+        from utils.module_loader import ModuleLoader
+        ModuleLoader.instance().set_main_window(self)
+        ModuleLoader.instance().start_preload()
+
         # 创建菜单栏选项与弹出的编辑窗口关系
         self.send_cmd_action.triggered.connect(self.cmd1_dialog)  # 发送cmd的编辑框
         self.send_cmd2_action.triggered.connect(self.cmd2_dialog)  # 发送cmd并接收回显的编辑框
