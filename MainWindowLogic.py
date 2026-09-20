@@ -13,7 +13,8 @@ import datetime
 from utils.logger import setup_logging, get_logger
 from dialogs import (SendCMDDialog, SendCMD2Dialog, SendFilesDialog, GetFilesDialog, CopyFilesDialog,
                      SetServerDialog, ResourceMonitorDialog1, ResourceMonitorDialog2,
-                     WeakNetDialog1, WeakNetControlDialog, HelpDialog, ServerCheckDialog, ServerCheckRunDialog)
+                     WeakNetDialog1, WeakNetControlDialog, HelpDialog, ServerCheckDialog,
+                     ServerCheckRunDialog, CmdManageDialog)
 from widgets.terminal_widget import TerminalEdit
 
 
@@ -186,13 +187,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         # 发送指令、保存指令、删除指令按钮逻辑
         self.commands = []
-        self.save_cmd_pushButton.clicked.connect(self.save_cmd)
-        self.del_cmd_pushButton.clicked.connect(self.del_cmd)
-        self.send_cmd_pushButton.clicked.connect(self.send_cmd)
-        self.cmd_comboBox.activated.connect(self.select_cmd)
-        # 输入框的按键监听
-        self.cmd_plainTextEdit.keyPressEvent = self.keyPressEvent
-
         # 配置文件的默认路径
         self.default_config_path = self.get_default_path() + '/' + 'config.json'
 
@@ -257,14 +251,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 把旧的引用指向新终端，兼容其他代码
         self.linux_print_browser = self.terminal_widget
 
-        # 3. 命令区（底部只留服务器选择和命令下拉两行）
-        # 隐藏多余行：只保留第0行(服务器)和第1行(命令下拉)
-        # 隐藏第2-3行(输入框+保存/发送按钮)
-        for i in range(2, self.gridLayout.rowCount()):
-            for j in range(self.gridLayout.columnCount()):
-                item = self.gridLayout.itemAtPosition(i, j)
-                if item and item.widget():
-                    item.widget().hide()
+        # 3. 底部服务器选择行的布局直接用 gridLayout
         # 把 gridLayout 从 gridLayout_2 里取出来，加到右侧容器底部
         self.gridLayout_2.removeItem(self.gridLayout)
         right_layout.addLayout(self.gridLayout)
@@ -281,6 +268,19 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 终端按键发送信号
         self.terminal_widget.key_sent.connect(self._on_terminal_key)
         self.terminal_widget.paste_sent.connect(self._on_terminal_paste)
+
+        # 指令管理按钮，放到连接按钮后面（第0行第3列）
+        self.cmd_manage_button = QtWidgets.QPushButton("指令管理", self.centralwidget)
+        self.cmd_manage_button.setObjectName("cmd_manage_button")
+        self.cmd_manage_button.clicked.connect(self.open_cmd_manage_dialog)
+        # 与连接按钮保持一致的高度和宽度
+        self.cmd_manage_button.setMinimumWidth(120)
+        self.connect_pushButton.setMinimumWidth(120)
+        self.cmd_manage_button.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        self.connect_pushButton.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        self.gridLayout.addWidget(self.cmd_manage_button, 0, 3, 1, 1)
 
         self.showMaximized()
 
@@ -2321,9 +2321,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             elif '指令' in key:
                 for cmd in data[key]:  # data[key]=['top','pwd']
                     self.commands.append(cmd)
-                    self.cmd_comboBox.addItem(cmd, cmd)
                 self.update_run_info(f"批量添加指令 成功，来自{file_path}")
-                self.cmd_comboBox.setCurrentIndex(-1)
             elif key == '日志配置':
                 log_cfg = data[key]
                 if log_cfg.get('文件日志', False):
@@ -2523,7 +2521,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self.current_ssh.update(
                 {
                     "tool": ssh_tool,
-                    "send_count": 0,
                     "task_connect": (thread, worker)
                 }
             )
@@ -2562,86 +2559,26 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             )
             thread.start()
 
-    def send_cmd(self):
-        if self.connect_pushButton.text() == '断开':
-            self.current_ssh['send_count'] += 1
-            cmd = self.cmd_plainTextEdit.toPlainText()
+    def open_cmd_manage_dialog(self):
+        """打开指令管理对话框"""
+        dlg = CmdManageDialog(commands=self.commands, parent=self)
+        dlg.insert_cmd_signal.connect(self._insert_cmd_to_terminal)
+        dlg.exec_()
+        # 对话框关闭后，同步指令列表
+        self.commands = dlg.get_all_commands()
 
-            worker = qthread_worker.OneClickWorker(self.current_ssh['tool'].send_command_interactive, cmd)
-            thread = QThread()
-            worker.moveToThread(thread)
-
-            worker.log_signal.connect(self.update_run_info)
-            worker.finished.connect(worker.deleteLater)
-            worker.finished.connect(thread.quit)
-
-            thread.started.connect(worker.run_task)
-            thread.finished.connect(thread.deleteLater)
-
-            # 保存worker和线程信息
-            self.current_ssh.update(
-                {
-                    f"task_send_{self.current_ssh['send_count']}": (thread, worker)
-                }
-            )
-            thread.start()
-        else:
-            self.update_run_info('请先建立ssh连接', 'WARNING')
-        self.cmd_plainTextEdit.clear()
-
-    def save_cmd(self):
-        cmd = self.cmd_plainTextEdit.toPlainText()
-        if cmd == '':
-            self.update_run_info('请输入指令内容', 'WARNING')
-        else:
-            self.cmd_comboBox.addItem(cmd)
-            self.commands.append(cmd)
-            self.update_run_info(f'保存指令成功{cmd}')
-
-    def del_cmd(self):
-        confirm_dialog = QMessageBox()
-        confirm_dialog.setIcon(QMessageBox.Icon.Question)
-        confirm_dialog.setWindowTitle("确认")
-        confirm_dialog.setText("是否要删除指令")
-        confirm_dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        confirm_dialog.setDefaultButton(QMessageBox.StandardButton.No)
-        result = confirm_dialog.exec_()
-        current_index = self.cmd_comboBox.currentIndex()
-        if current_index == -1:
+    def _insert_cmd_to_terminal(self, cmd):
+        """插入指令到终端（直接发送给服务器，不自动回车）"""
+        if not (self.connect_pushButton.text() == '断开' and
+                'tool' in self.current_ssh and self.current_ssh['tool']):
+            self.update_run_info('请先建立SSH连接', 'WARNING')
             return
-        current_text = self.cmd_comboBox.currentText()
-        if result == QMessageBox.StandardButton.Yes:
-            self.cmd_comboBox.removeItem(current_index)
-            self.commands.remove(current_text)
-            self.update_run_info(f'删除指令成功{current_text}')
-        else:
-            self.update_run_info(f'删除指令取消{current_text}')
-
-    def select_cmd(self):
-        cmd = self.cmd_comboBox.currentText()
-        self.cmd_plainTextEdit.setPlainText(cmd)
-
-    def keyPressEvent(self, event):
-        # 处理 Ctrl+C 中断（插入 ^C 符号）
-        if (event.key() == QtCore.Qt.Key.Key_C and
-                event.modifiers() == QtCore.Qt.KeyboardModifier.ControlModifier):
-            event.accept()
-            self.cmd_plainTextEdit.insertPlainText("^C")
-            self.send_cmd()
-            return
-
-        # 处理回车键逻辑
-        is_enter = event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter)
-        if is_enter:
-            if not event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier:
-                # 单纯 Enter：发送
-                event.accept()
-                self.send_cmd()
-                return
-            # Shift+Enter：走默认换行逻辑，不拦截
-
-        # 其他按键（包括 Shift+Enter）走默认逻辑
-        QtWidgets.QPlainTextEdit.keyPressEvent(self.cmd_plainTextEdit, event)
+        try:
+            channel = self.current_ssh['tool'].channel
+            if channel and channel.active:
+                channel.send(cmd)
+        except Exception as e:
+            self.update_run_info(f'发送指令失败: {e}', 'ERROR')
 
     def closeEvent(self, event):
         """
