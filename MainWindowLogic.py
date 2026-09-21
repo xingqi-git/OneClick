@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import QThread, QTimer
@@ -10,7 +10,7 @@ from UI import MainWindow
 from utils import ssh_tools, windows_tools, qthread_worker
 import json
 import datetime
-from utils.logger import setup_logging, get_logger
+from utils.logger import setup_logging, get_logger, log_progress
 from dialogs import (SendCMDDialog, SendCMD2Dialog, SendFilesDialog, GetFilesDialog, CopyFilesDialog,
                      SetServerDialog, ResourceMonitorDialog1, ResourceMonitorDialog2,
                      WeakNetDialog1, WeakNetControlDialog, HelpDialog, ServerCheckDialog,
@@ -195,41 +195,49 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 配置文件的默认路径
         self.default_config_path = self.get_default_path() + '/' + 'config.json'
 
-        # 初始化日志系统（必须在 update_run_info 之前）
-        self._log_emitter = setup_logging(
-            log_dir=self.get_default_path(),
-            enable_file_logging=False,  # 默认关闭，由勾选框控制
-            enable_qt_bridge=False,
-        )
+        # 日志系统：OneClick.py 入口已统一初始化好，这里直接连接 Qt 信号
+        # setup_logging() 内部有防重复调用保护，这里再调一次只是为了拿到 emitter
+        from utils.logger import setup_logging, get_logger, set_file_logging, set_file_log_level, is_file_logging_enabled, log_progress
+        import logging as _logging
+        self._log_emitter = setup_logging()  # OneClick.py 已初始化，返回已有的 emitter
         self.logger = get_logger("MainWindow")
 
-        # 先连接状态变化信号，然后设置初始状态（从配置文件读取）
-        self.log_file_checkBox.stateChanged.connect(self._on_log_file_checkbox_changed)
+        # 连接 Qt 日志信号（所有模块的 logger.info() 都会自动到这里）
+        if self._log_emitter is not None:
+            self._log_emitter.log_signal.connect(self._on_qt_log_message)
+            self._log_emitter.progress_signal.connect(self._on_qt_progress)
 
-        # 从配置文件读取初始状态（如果有）
-        initial_log_enabled = False
-        # 日志级别配置：字典，键为级别名，值为bool
+        # 从配置文件读取初始状态
         self._log_level_config = {
-            'DEBUG': False,
-            'INFO': True,
-            'WARNING': True,
-            'ERROR': True,
+            'DEBUG': _logging.DEBUG,
+            'INFO': _logging.INFO,
+            'WARNING': _logging.WARNING,
+            'ERROR': _logging.ERROR,
         }
+        initial_log_enabled = is_file_logging_enabled()
         if os.path.exists(self.default_config_path):
             try:
                 with open(self.default_config_path, 'r', encoding='utf-8') as f:
                     import json
                     cfg_data = json.load(f)
                     if '日志配置' in cfg_data:
-                        initial_log_enabled = cfg_data['日志配置'].get('文件日志', False)
-                        # 读取日志级别配置（如果有）
-                        for level in self._log_level_config:
-                            if level in cfg_data['日志配置']:
-                                self._log_level_config[level] = cfg_data['日志配置'][level]
+                        initial_log_enabled = cfg_data['日志配置'].get('文件日志', True)
+                        # 读取日志级别配置（整数：DEBUG=10, INFO=20, ...）
+                        for level_name in self._log_level_config:
+                            if level_name in cfg_data['日志配置']:
+                                self._log_level_config[level_name] = cfg_data['日志配置'][level_name]
             except Exception:
                 pass
 
-        # 设置勾选框初始状态（会触发 stateChanged，自动初始化文件日志开关）
+        # 应用配置到 logger
+        set_file_logging(initial_log_enabled)
+        # 找到配置中最小的级别（比如只开 INFO+WARNING+ERROR 那就是 INFO=20）
+        active_levels = [v for v in self._log_level_config.values() if isinstance(v, int)]
+        if active_levels:
+            set_file_log_level(min(active_levels))
+
+        # 勾选框：现在只做开关日志的触发
+        self.log_file_checkBox.stateChanged.connect(set_file_logging)
         self.log_file_checkBox.setChecked(initial_log_enabled)
 
         # ---- 三列布局改造：按钮区 | 文件区 | 终端区 ----
@@ -1024,7 +1032,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 初始化worker
         worker = qthread_worker.OneClickWorker(
             execute_send_cmd_flow, # 封装完整流程
-            self.sc_buttons[button_id]['config']['指令']
+            self.sc_buttons[button_id]['config']['指令'],
+            op_name=button_name
         )
 
         # 初始化线程
@@ -1033,9 +1042,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 将worker移动到线程中，一定要先移动再绑信号槽，不然会绑定到主线程
         worker.moveToThread(thread)
 
-        # 绑定worker信号槽
-        log_wrapper = self._make_log_wrapper(button_name)
-        worker.log_signal.connect(log_wrapper)
+        # 绑定worker信号槽（业务日志通过 logger + 操作上下文自动进入运行信息面板）
         worker.finished.connect(on_worker_finished)
         worker.finished.connect(worker.deleteLater)
 
@@ -1103,7 +1110,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self.sc_threads.pop(thread_name)
 
         # 初始化worker
-        worker = qthread_worker.OneClickWorker(send_cmd_and_receive_echo)
+        worker = qthread_worker.OneClickWorker(
+            send_cmd_and_receive_echo, op_name=button_name
+        )
         worker.kwargs = {
             "cmd" : self.sc_buttons[button_id]['config']['指令'],
             "echo_signal": worker.echo_signal
@@ -1116,8 +1125,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         worker.moveToThread(thread)
 
         # 绑定信号槽
-        log_wrapper = self._make_log_wrapper(button_name)
-        worker.log_signal.connect(log_wrapper)
         worker.echo_signal.connect(self.update_linux_print)
         worker.finished.connect(on_worker_finished)
         worker.finished.connect(worker.deleteLater)
@@ -1188,7 +1195,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 return False
 
             def send_progress_cb(phase, current, total, extra=''):
-                print(f"__PROGRESS__:{phase}|{current}|{total}|{extra}")
+                log_progress(self.logger, phase, current, total, extra)
 
             s_result = ssh_tool.send_files(source_items, remote_path, work_dir=work_dir if work_dir else None, progress_cb=send_progress_cb)
 
@@ -1245,8 +1252,11 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             thread.deleteLater()
             self.sc_threads.pop(thread_name)
 
-        # 初始化worker
-        worker = qthread_worker.OneClickWorker(execute_send_files)
+        # 初始化worker（携带操作上下文：线程内 ssh_tools 日志自动带按钮名前缀，
+        # 进度通过 logger 的 progress_signal 统一进入运行信息面板）
+        worker = qthread_worker.OneClickWorker(
+            execute_send_files, op_name=button_name, op_id=exec_id
+        )
 
         # 初始化线程
         thread = QThread()
@@ -1255,64 +1265,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         worker.moveToThread(thread)
 
         # 绑定worker信号槽
-        # 过滤刷屏日志（已上传到临时目录、开始上传文件等由progress展示）
-        skip_phrases = [
-            '已上传到临时目录',
-            '开始上传文件到服务器临时目录，共',
-            '开始查找符合条件的文件',
-            '上传完成，开始移动文件到目标目录',
-            '开始创建服务器临时目录',
-            '大文件上传:',
-            '临时目录已删除',
-            '上传完毕！',
-            '个目录, ',
-        ]
-
-        def send_log_wrapper(text, level='INFO'):
-            if text.startswith('__PROGRESS__:'):
-                content = text[len('__PROGRESS__:'):]
-                parts = content.split('|')
-                if len(parts) >= 3:
-                    phase = parts[0]
-                    current = int(parts[1]) if parts[1].isdigit() else 0
-                    total = int(parts[2]) if parts[2].isdigit() else 0
-                    extra_parts = parts[3:]
-                    extra = '|'.join(extra_parts)
-                    msg = None
-                    if phase == 'find':
-                        msg = f'<{button_name}> 查找中... 找到{total}个文件'
-                    elif phase == 'upload':
-                        if total > 0:
-                            pct = int(current * 100 / total)
-                            total_mb = total / 1048576
-                            if len(extra_parts) >= 5:
-                                file_idx = int(extra_parts[3]) if extra_parts[3].isdigit() else 0
-                                total_files = int(extra_parts[4]) if extra_parts[4].isdigit() else 0
-                                cur_name = os.path.basename(extra_parts[0])
-                                cur_size = int(extra_parts[1]) if extra_parts[1].isdigit() else 0
-                                cur_sent = int(extra_parts[2]) if extra_parts[2].isdigit() else 0
-                                cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
-                                cur_mb = cur_size / 1048576
-                                msg = (f'<{button_name}> 上传中... 总进度{pct}% (共{total_mb:.1f}MB)  '
-                                       f'文件{file_idx}/{total_files}: {cur_name} {cur_pct}% ({cur_mb:.1f}MB)')
-                            else:
-                                msg = f'<{button_name}> 上传中... {pct}% (共{total_mb:.1f}MB)'
-                    elif phase == 'move':
-                        if total > 0 and isinstance(current, (int, float)):
-                            pct = int(current * 100 / total)
-                            msg = f'<{button_name}> 移动中... {pct}% ({current}/{total}) {extra}'
-                        else:
-                            msg = f'<{button_name}> 移动中... {extra}'
-                    if msg:
-                        self.update_run_info_progress(f"{exec_id}_{phase}", msg)
-                return
-            for p in skip_phrases:
-                if p in text:
-                    return
-            log_wrapper2 = self._make_log_wrapper(button_name)
-            log_wrapper2(text, level)
-
-        worker.log_signal.connect(send_log_wrapper)
         worker.finished.connect(on_worker_finished)
         worker.finished.connect(worker.deleteLater)
         if hasattr(worker, 'info_signal'):
@@ -1392,7 +1344,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 return False
 
             def get_progress_cb(phase, current, total, extra=''):
-                print(f"__PROGRESS__:{phase}|{current}|{total}|{extra}")
+                log_progress(self.logger, phase, current, total, extra)
 
             g_result = ssh_tool.get_files(source_items, local_path, work_dir=work_dir if work_dir else None, progress_cb=get_progress_cb)
 
@@ -1413,7 +1365,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self.sc_threads.pop(thread_name)
 
         # 初始化worker
-        worker = qthread_worker.OneClickWorker(execute_get_files)
+        worker = qthread_worker.OneClickWorker(
+            execute_get_files, op_name=button_name, op_id=exec_id
+        )
 
         # 初始化线程
         thread = QThread()
@@ -1422,66 +1376,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         worker.moveToThread(thread)
 
         # 绑定worker信号槽
-        # 过滤刷屏日志
-        skip_phrases = [
-            '已复制到临时目录',
-            '复制到临时目录失败',
-            '传输进度:',
-            '开始复制文件到远程临时目录，共',
-            '开始查找符合条件的文件',
-            '找到.*个目录',
-            '开始创建目录',
-            '开始下载',
-            '远程临时目录已删除',
-            '下载完毕！',
-        ]
-
-        def get_log_wrapper(text, level='INFO'):
-            if text.startswith('__PROGRESS__:'):
-                content = text[len('__PROGRESS__:'):]
-                parts = content.split('|')
-                if len(parts) >= 3:
-                    phase = parts[0]
-                    current = int(parts[1]) if parts[1].isdigit() else 0
-                    total = int(parts[2]) if parts[2].isdigit() else 0
-                    extra_parts = parts[3:]
-                    extra = '|'.join(extra_parts)
-                    msg = None
-                    if phase == 'find':
-                        msg = f'<{button_name}> 查找中... 找到{total}个文件'
-                    elif phase == 'copy':
-                        if total > 0:
-                            cur_name = extra.split('/')[-1] if '/' in (extra or '') else (extra or '')
-                            msg = f'<{button_name}> 复制中... {current}/{total} ({int(current*100/total)}%)  {cur_name}'
-                    elif phase == 'download':
-                        if total > 0:
-                            pct = int(current * 100 / total)
-                            total_mb = total / 1048576
-                            # extra格式：cur_name|cur_size|cur_sent|file_idx|total_files
-                            if len(extra_parts) >= 5:
-                                file_idx = int(extra_parts[3]) if extra_parts[3].isdigit() else 0
-                                total_files = int(extra_parts[4]) if extra_parts[4].isdigit() else 0
-                                cur_name = os.path.basename(extra_parts[0])
-                                cur_size = int(extra_parts[1]) if extra_parts[1].isdigit() else 0
-                                cur_sent = int(extra_parts[2]) if extra_parts[2].isdigit() else 0
-                                cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
-                                cur_mb = cur_size / 1048576
-                                total_display = total_files if total_files > 0 else '未知'
-                                msg = (f'<{button_name}> 下载中... 总进度{pct}% ({total_mb:.1f}MB) '
-                                       f'文件{file_idx + 1}/{total_display}: {cur_name} {cur_pct}% ({cur_mb:.1f}MB)')
-                            else:
-                                msg = f'<{button_name}> 下载中... {pct}% ({total_mb:.1f}MB)'
-                    if msg:
-                        self.update_run_info_progress(f"{exec_id}_{phase}", msg)
-                return
-            import re
-            for pat in skip_phrases:
-                if re.search(pat, text):
-                    return
-            log_wrapper2 = self._make_log_wrapper(button_name)
-            log_wrapper2(text, level)
-
-        worker.log_signal.connect(get_log_wrapper)
         worker.finished.connect(on_worker_finished)
         worker.finished.connect(worker.deleteLater)
 
@@ -1540,7 +1434,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         def execute_copy_files():
             def copy_progress_cb(phase, current, total, extra=''):
-                print(f"__PROGRESS__:{phase}|{current}|{total}|{extra}")
+                log_progress(self.logger, phase, current, total, extra)
 
             cp_result = win_tool.copy_files(source_items, target_path, progress_cb=copy_progress_cb)
             return cp_result
@@ -1558,7 +1452,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self.sc_threads.pop(thread_name)
 
         # 初始化worker
-        worker = qthread_worker.OneClickWorker(execute_copy_files)
+        worker = qthread_worker.OneClickWorker(
+            execute_copy_files, op_name=button_name, op_id=exec_id
+        )
 
         # 初始化线程
         thread = QThread()
@@ -1566,44 +1462,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 将worker移动到线程中
         worker.moveToThread(thread)
 
-        # 过滤刷屏日志
-        skip_phrases = [
-            '开始复制文件到目的目录，共',
-            '找到',
-            '已复制 ',
-            '开始创建目录',
-        ]
-
-        def copy_log_wrapper(text, level='INFO'):
-            if text.startswith('__PROGRESS__:'):
-                content = text[len('__PROGRESS__:'):]
-                parts = content.split('|')
-                if len(parts) >= 3:
-                    phase = parts[0]
-                    current = int(parts[1]) if parts[1].isdigit() else 0
-                    total = int(parts[2]) if parts[2].isdigit() else 0
-                    extra_parts = parts[3:]
-                    extra = '|'.join(extra_parts)
-                    msg = None
-                    if phase == 'find':
-                        msg = f'<{button_name}> 查找中... 找到{total}个文件'
-                    elif phase == 'copy':
-                        # extra是直接的展示文本
-                        if extra:
-                            msg = f'<{button_name}> 复制中... {extra}'
-                        elif total > 0:
-                            msg = f'<{button_name}> 复制中... {current}% ({current}/{total})'
-                    if msg:
-                        self.update_run_info_progress(f"{exec_id}_{phase}", msg)
-                return
-            for p in skip_phrases:
-                if p in text:
-                    return
-            log_wrapper2 = self._make_log_wrapper(button_name)
-            log_wrapper2(text, level)
-
         # 绑定worker信号槽
-        worker.log_signal.connect(copy_log_wrapper)
         worker.finished.connect(on_worker_finished)
         worker.finished.connect(worker.deleteLater)
 
@@ -1663,60 +1522,118 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if result != QtWidgets.QDialog.DialogCode.Accepted:
                 self.set_button_executing(button_id, False)
 
-    def _on_log_file_checkbox_changed(self, state):
-        """日志勾选框状态变化：控制文件日志开关"""
-        import logging.handlers
-        enable = (state == QtCore.Qt.Checked)
-        root_logger = logging.getLogger()
+    def _on_qt_log_message(self, msg: str, color: str, levelno: int, op_name: str = ''):
+        """Qt 普通日志信号回调：logger.info/warning/error → 运行信息面板
 
-        # 先移除所有已存在的文件 handler
-        for handler in root_logger.handlers[:]:
-            if isinstance(handler, logging.handlers.RotatingFileHandler):
-                handler.close()
-                root_logger.removeHandler(handler)
+        - DEBUG 级别的内部细节不进 UI（已在 QtHandler 的 INFO 级别过滤，双保险）
+        - 带操作上下文（按钮名）时自动加 <按钮名> 前缀
+        """
+        import logging
+        if levelno < logging.INFO:
+            return
+        level = logging.getLevelName(levelno)
 
-        if enable:
-            # 添加文件 handler
-            log_dir = self.get_default_path()
-            os.makedirs(log_dir, exist_ok=True)
-            file_handler = logging.handlers.RotatingFileHandler(
-                filename=os.path.join(log_dir, "OneClick.log"),
-                maxBytes=10 * 1024 * 1024,
-                backupCount=5,
-                encoding="utf-8",
-            )
-            file_handler.setLevel(logging.DEBUG)
-            fmt = logging.Formatter(
-                '[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S',
-            )
-            file_handler.setFormatter(fmt)
-            
-            # 添加过滤器：只写入配置中开启的日志级别
-            def log_filter(record):
-                level_name = record.levelname
-                # 映射日志级别名称
-                level_map = {
-                    'DEBUG': 'DEBUG',
-                    'INFO': 'INFO',
-                    'WARNING': 'WARNING',
-                    'ERROR': 'ERROR',
-                    'CRITICAL': 'ERROR',
-                }
-                config_key = level_map.get(level_name, level_name)
-                # 检查该级别是否开启（默认不输出，避免配置丢失导致日志错乱）
-                return self._log_level_config.get(config_key, False)
-            
-            file_handler.addFilter(log_filter)
-            root_logger.addHandler(file_handler)
-            self.update_run_info("文件日志已开启")
-        else:
-            self.update_run_info("文件日志已关闭")
+        if op_name and not msg.startswith(f'<{op_name}>'):
+            msg = f'<{op_name}> {msg}'
+        self.update_run_info(msg, level)
+
+    def _on_qt_progress(self, op_name, op_id, phase, current, total, extra):
+        """Qt 进度信号回调：log_progress() → 更新运行信息同一行
+
+        统一处理所有流程（发送/获取/复制文件、文件浏览器上传下载、对话框上传下载）。
+        """
+        msg = self._format_progress(op_name, phase, current, total, extra, op_id)
+        if msg:
+            progress_key = f"{op_id}_{phase}" if op_id else phase
+            level = 'ERROR' if phase == 'error' else 'INFO'
+            self.update_run_info_progress(progress_key, msg, level)
+
+    @staticmethod
+    def _format_progress(op_name, phase, current, total, extra, op_id=''):
+        """把进度四元组格式化成运行信息展示文本（复刻原各流程 wrapper 的格式）"""
+        prefix = f'<{op_name}> ' if op_name else ''
+
+        def to_int(v, default=0):
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return default
+
+        cur = to_int(current)
+        tot = to_int(total)
+        extra_parts = (extra or '').split('|') if extra else []
+
+        if phase == 'find':
+            return f'{prefix}查找中... 找到{tot}个文件'
+
+        if phase == 'upload':
+            # 文件浏览器上传：简洁格式；快捷按钮发送文件：详细格式（extra 5段）
+            if op_id.startswith('fb_upload') or len(extra_parts) < 5:
+                if tot > 0:
+                    return f'{prefix}上传中... {cur}/{tot} ({int(cur * 100 / tot)}%)'
+                return f'{prefix}上传中... {cur}/{tot}'
+            pct = int(cur * 100 / tot) if tot else 0
+            total_mb = tot / 1048576
+            file_idx = to_int(extra_parts[3])
+            total_files = to_int(extra_parts[4])
+            cur_name = os.path.basename(extra_parts[0])
+            cur_size = to_int(extra_parts[1])
+            cur_sent = to_int(extra_parts[2])
+            cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
+            cur_mb = cur_size / 1048576
+            return (f'{prefix}上传中... 总进度{pct}% (共{total_mb:.1f}MB)  '
+                    f'文件{file_idx}/{total_files}: {cur_name} {cur_pct}% ({cur_mb:.1f}MB)')
+
+        if phase == 'move':
+            if op_id.startswith('fb_upload'):
+                return f'{prefix}移动中... {cur}/{tot}'
+            if tot > 0:
+                pct = int(cur * 100 / tot)
+                return f'{prefix}移动中... {pct}% ({cur}/{tot}) {extra}'
+            return f'{prefix}移动中... {extra}'
+
+        if phase == 'copy':
+            # 本地文件复制(windows_tools)：extra 直接是展示文本
+            if extra and '总进度' in extra:
+                return f'{prefix}复制中... {extra}'
+            # 远程下载前的临时目录复制：extra 是远程路径
+            if extra:
+                cur_name = extra.split('/')[-1] if '/' in extra else extra
+                if tot > 0:
+                    return f'{prefix}复制中... {cur}/{tot} ({int(cur * 100 / tot)}%)  {cur_name}'
+            if tot > 0:
+                return f'{prefix}复制中... {cur}% ({cur}/{tot})'
+            return None
+
+        if phase == 'download':
+            if tot > 0:
+                pct = int(cur * 100 / tot)
+                total_mb = tot / 1048576
+                if len(extra_parts) >= 5:
+                    file_idx = to_int(extra_parts[3])
+                    total_files = to_int(extra_parts[4])
+                    cur_name = os.path.basename(extra_parts[0])
+                    cur_size = to_int(extra_parts[1])
+                    cur_sent = to_int(extra_parts[2])
+                    cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
+                    cur_mb = cur_size / 1048576
+                    total_display = total_files if total_files > 0 else '未知'
+                    return (f'{prefix}下载中... 总进度{pct}% ({total_mb:.1f}MB) '
+                            f'文件{file_idx + 1}/{total_display}: {cur_name} {cur_pct}% ({cur_mb:.1f}MB)')
+                return f'{prefix}下载中... {pct}% ({total_mb:.1f}MB)'
+            return None
+
+        if phase in ('done', 'error'):
+            text = '|'.join(extra_parts)
+            if phase == 'error':
+                return f'{prefix}错误: {text}'
+            return f'{prefix}{text}'
+
+        return None
 
     def _make_log_wrapper(self, button_name):
-        """创建带按钮名称前缀的日志包装函数"""
+        """创建带按钮名称前缀的日志包装函数（仅用于直接发射 worker.log_signal 的场景）"""
         def wrapper(text, level='INFO'):
-            # 如果已经有前缀了就不加了（避免重复）
             if text.startswith(f'<{button_name}> '):
                 self.update_run_info(text, level)
             else:
@@ -1724,45 +1641,35 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         return wrapper
 
     def update_run_info(self, text, level='INFO'):
-        """同步显示到UI（带颜色），同时发给logger写文件
+        """显示到运行信息面板（纯 UI 渲染，不转发 logger）
 
-        Args:
-            text: 要显示的文本
-            level: 日志级别，可选值 INFO / WARNING / ERROR
+        logger 方向：各模块直接调 logger.info() 会自动走到这里，
+                    因为 QtLogEmitter 已经连好了信号。
         """
         # 根据级别设置颜色
         color_map = {
             'INFO': '#000000',
             'WARNING': '#FF8C00',
             'ERROR': '#FF0000',
+            'DEBUG': '#808080',
         }
         color = color_map.get(level.upper(), '#000000')
 
         # HTML 转义：防止 < > & 等特殊字符被解析成标签
         html_text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-        # 1. 加时间戳后显示到UI（带颜色）
+        # 加时间戳后显示到UI（带颜色）
         formatted_datetime = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         html = f'<span style="color: {color}">{formatted_datetime} {html_text}</span>'
         self.run_info_browser.append(html)
 
-        # 2. 滚动条置底
+        # 滚动条置底
         self.run_info_browser.verticalScrollBar().setValue(
             self.run_info_browser.verticalScrollBar().maximum()
         )
         self.run_info_browser.horizontalScrollBar().setValue(
             self.run_info_browser.horizontalScrollBar().minimum()
         )
-
-        # 3. 发给logger（如果开启了文件日志，会写入文件）
-        if hasattr(self, 'logger'):
-            level_upper = level.upper()
-            if level_upper == 'WARNING':
-                self.logger.warning(text)
-            elif level_upper == 'ERROR':
-                self.logger.error(text)
-            else:
-                self.logger.info(text)
 
     def update_run_info_progress(self, progress_key, text, level='INFO'):
         """更新运行信息中指定的进度行（用于进度等实时刷新的内容，不刷屏）
@@ -1812,16 +1719,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self.run_info_browser.verticalScrollBar().maximum()
         )
 
-        # 写logger文件（和普通日志一致）
-        if hasattr(self, 'logger'):
-            level_upper = level.upper()
-            if level_upper == 'WARNING':
-                self.logger.warning(text)
-            elif level_upper == 'ERROR':
-                self.logger.error(text)
-            else:
-                self.logger.info(text)
-
     def update_linux_print(self, text, insert=False):
         # 更新终端显示（服务器回显）
         if hasattr(self, 'terminal_widget'):
@@ -1845,7 +1742,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         """进入终端模式：开启可编辑，准备接收服务器回显"""
         if hasattr(self, 'terminal_widget'):
             self.terminal_widget.set_terminal_mode(True)
-            self.update_run_info('SSH 连接成功，进入终端模式')
+            self.update_run_info('进入终端模式')
         # 联动文件浏览器
         if hasattr(self, 'file_browser') and 'tool' in self.current_ssh:
             self.file_browser.set_ssh_tool(self.current_ssh['tool'])
@@ -1897,7 +1794,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if not local_paths:
             return
 
-        import time, os, re
+        import time, os
 
         ssh_tool = self.current_ssh['tool']
         button_name = '文件上传'
@@ -1914,53 +1811,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 '名称不包含': {'关键词': [], '逻辑': '和'}
             })
 
-        skip_phrases = [
-            '已复制到临时目录',
-            '复制到临时目录失败',
-            '传输进度:',
-            '开始上传文件到远程临时目录，共',
-            '开始查找符合条件的文件',
-            '找到.*个目录',
-            '开始创建目录',
-            '开始上传',
-            '远程临时目录已删除',
-            '上传完毕！',
-        ]
-
-        def send_log_wrapper(text, level='INFO'):
-            if text.startswith('__PROGRESS__:'):
-                content = text[len('__PROGRESS__:'):]
-                parts = content.split('|')
-                if len(parts) >= 3:
-                    phase = parts[0]
-                    current = int(parts[1]) if parts[1].isdigit() else 0
-                    total = int(parts[2]) if parts[2].isdigit() else 0
-                    extra_parts = parts[3:]
-                    msg = None
-                    if phase == 'find':
-                        msg = f'<{button_name}> 查找中... 找到{total}个文件'
-                    elif phase == 'upload':
-                        if total > 0:
-                            pct = int(current * 100 / total)
-                            msg = f'<{button_name}> 上传中... {current}/{total} ({pct}%)'
-                        else:
-                            msg = f'<{button_name}> 上传中... {current}/{total}'
-                    elif phase == 'move':
-                        msg = f'<{button_name}> 移动中... {current}/{total}'
-                    elif phase == 'done':
-                        msg = f'<{button_name}> {("|".join(extra_parts))}'
-                    elif phase == 'error':
-                        msg = f'<{button_name}> 错误: {("|".join(extra_parts))}'
-                    if msg:
-                        self.update_run_info_progress(f"{exec_id}_{phase}", msg)
-                return
-            for pat in skip_phrases:
-                if re.search(pat, text):
-                    return
-            self.update_run_info(f'<{button_name}> {text}', level)
-
         def progress_cb(phase, current, total, extra=''):
-            print(f"__PROGRESS__:{phase}|{current}|{total}|{extra}")
+            log_progress(self.logger, phase, current, total, extra)
 
         def execute_upload():
             result = ssh_tool.send_files(source_items, remote_dir, progress_cb=progress_cb)
@@ -1975,8 +1827,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 self.update_run_info(f'<{button_name}> 执行失败', 'ERROR')
             thread.quit()
 
-        worker = qthread_worker.OneClickWorker(execute_upload)
-        worker.log_signal.connect(send_log_wrapper)
+        worker = qthread_worker.OneClickWorker(
+            execute_upload, op_name=button_name, op_id=exec_id
+        )
 
         self.thread_count += 1
         thread_name = f'sc_thread_{self.thread_count}'
@@ -2007,7 +1860,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if not remote_paths:
             return
 
-        import time, os, re
+        import time, os
 
         ssh_tool = self.current_ssh['tool']
         button_name = '文件下载'
@@ -2024,62 +1877,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 '名称不包含': {'关键词': [], '逻辑': '和'}
             })
 
-        skip_phrases = [
-            '已复制到临时目录',
-            '复制到临时目录失败',
-            '传输进度:',
-            '开始复制文件到远程临时目录，共',
-            '开始查找符合条件的文件',
-            '找到.*个目录',
-            '开始创建目录',
-            '开始下载',
-            '远程临时目录已删除',
-            '下载完毕！',
-        ]
-
-        def get_log_wrapper(text, level='INFO'):
-            if text.startswith('__PROGRESS__:'):
-                content = text[len('__PROGRESS__:'):]
-                parts = content.split('|')
-                if len(parts) >= 3:
-                    phase = parts[0]
-                    current = int(parts[1]) if parts[1].isdigit() else 0
-                    total = int(parts[2]) if parts[2].isdigit() else 0
-                    extra_parts = parts[3:]
-                    msg = None
-                    if phase == 'find':
-                        msg = f'<{button_name}> 查找中... 找到{total}个文件'
-                    elif phase == 'download':
-                        if total > 0:
-                            pct = int(current * 100 / total)
-                            total_mb = total / 1048576
-                            if len(extra_parts) >= 5:
-                                file_idx = int(extra_parts[3]) if extra_parts[3].isdigit() else 0
-                                total_files = int(extra_parts[4]) if extra_parts[4].isdigit() else 0
-                                cur_name = os.path.basename(extra_parts[0])
-                                cur_size = int(extra_parts[1]) if extra_parts[1].isdigit() else 0
-                                cur_sent = int(extra_parts[2]) if extra_parts[2].isdigit() else 0
-                                cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
-                                cur_mb = cur_size / 1048576
-                                total_display = total_files if total_files > 0 else '未知'
-                                msg = (f'<{button_name}> 下载中... 总进度{pct}% ({total_mb:.1f}MB) '
-                                       f'文件{file_idx + 1}/{total_display}: {cur_name} {cur_pct}% ({cur_mb:.1f}MB)')
-                            else:
-                                msg = f'<{button_name}> 下载中... {pct}% ({total_mb:.1f}MB)'
-                    elif phase == 'done':
-                        msg = f'<{button_name}> {("|".join(extra_parts))}'
-                    elif phase == 'error':
-                        msg = f'<{button_name}> 错误: {("|".join(extra_parts))}'
-                    if msg:
-                        self.update_run_info_progress(f"{exec_id}_{phase}", msg)
-                return
-            for pat in skip_phrases:
-                if re.search(pat, text):
-                    return
-            self.update_run_info(f'<{button_name}> {text}', level)
-
         def progress_cb(phase, current, total, extra=''):
-            print(f"__PROGRESS__:{phase}|{current}|{total}|{extra}")
+            log_progress(self.logger, phase, current, total, extra)
 
         def execute_download():
             result = ssh_tool.get_files(source_items, local_dir, progress_cb=progress_cb)
@@ -2092,8 +1891,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 self.update_run_info(f'<{button_name}> 执行失败', 'ERROR')
             thread.quit()
 
-        worker = qthread_worker.OneClickWorker(execute_download)
-        worker.log_signal.connect(get_log_wrapper)
+        worker = qthread_worker.OneClickWorker(
+            execute_download, op_name=button_name, op_id=exec_id
+        )
 
         self.thread_count += 1
         thread_name = f'sc_thread_{self.thread_count}'
@@ -2751,7 +2551,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 self.server_comboBox.setEnabled(True)
                 # 退出终端模式
                 self._stop_terminal_mode()
-                self.update_run_info('SSH 已断开')
+                self.update_run_info('退出终端模式')
                 # 关闭文件浏览器
                 if hasattr(self, 'file_browser'):
                     self.file_browser.set_ssh_tool(None)
@@ -2775,8 +2575,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             # 将worker移动到线程中
             worker.moveToThread(thread)
 
-            # 绑定信号槽
-            worker.log_signal.connect(self.update_run_info)
+            # 绑定信号槽（连接过程日志通过 logger 自动进入运行信息面板）
             worker.echo_signal.connect(self._on_terminal_output)
             worker.info_signal.connect(update_connect_button)
             worker.finished.connect(on_worker_finished)
@@ -2810,8 +2609,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             # 将worker移动到线程中
             worker.moveToThread(thread)
 
-            # 绑定信号槽
-            worker.log_signal.connect(self.update_run_info)
+            # 绑定信号槽（断连日志通过 logger 自动进入运行信息面板）
             worker.finished.connect(thread.quit)
 
             # 绑定线程信号槽

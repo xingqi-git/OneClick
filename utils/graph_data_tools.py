@@ -181,7 +181,7 @@ def make_plot_figure(data_dic, action_name, time_start=None, time_end=None, filt
         import traceback
         error_msg = f"绘图失败：{str(e)}\n{traceback.format_exc()}"
         logger.error("make_plot_figure 异常: action=%s, error=%s", action_name, e, exc_info=True)
-        print(error_msg)
+        logger.debug(error_msg)
         return ("错误", f"绘图过程中发生异常：{str(e)}")
 
 
@@ -253,7 +253,7 @@ class Worker(QtCore.QObject):
             import traceback
             error_msg = f"数据处理失败：{str(e)}\n{traceback.format_exc()}"
             logger.error("Worker.data_process 异常: %s", e, exc_info=True)
-            print(error_msg)
+            logger.debug(error_msg)
             self.finished.emit(("错误", f"数据处理失败：{str(e)}"))
 
     def _load_and_merge_files(self, file_paths, proc_name):
@@ -299,7 +299,7 @@ class Worker(QtCore.QObject):
 
                 dfs.append(df)
             except Exception as e:
-                print(f"读取文件 {fpath} 失败: {e}")
+                logger.warning(f"读取文件 {fpath} 失败: {e}")
                 continue
 
         if not dfs:

@@ -3,6 +3,9 @@ import os
 import re
 import shutil
 from utils.windows_tools import WindowsTools
+from utils.logger import get_logger
+
+logger = get_logger("ssh")
 
 
 class SSHTools(object):
@@ -41,19 +44,19 @@ class SSHTools(object):
             self.channel.setblocking(0)
             if self.username == "root":
                 self.sudo = True
-            print("ssh连接成功")
+            logger.info("ssh连接成功")
             self.transport = self.ssh.get_transport()
             self.transport.set_keepalive(5)
             return True
         except Exception as e:
-            print(f"ssh连接失败: {e}")
+            logger.error(f"ssh连接失败: {e}")
             return False
 
     def get_root_priority(self):
         if not self.is_connected():
             return False
         if self.username != 'root':
-            print(f"当前非root用户登录，尝试使用{self.username}密码切换到root权限")
+            logger.info(f"当前非root用户登录，尝试使用{self.username}密码切换到root权限")
             try:
                 # 发送sudo -i命令
                 # 读取输出，判断是否需要输入sudo密码（通常提示"Password:"或"密码："）
@@ -64,21 +67,21 @@ class SSHTools(object):
                     self.send_command_interactive(self.password)
                     whoami_output = self.send_get_output_once("whoami", False)
                     if "root" in whoami_output:
-                        print("非root用户已切换root权限")
+                        logger.info("非root用户已切换root权限")
                         self.sudo = True
                         return True
                     else:
-                        print(f"root切换失败")
+                        logger.error(f"root切换失败")
                         return False
                 else:
-                    print(f"不支持sudo -i，切换root权限失败{output}")
+                    logger.error(f"不支持sudo -i，切换root权限失败{output}")
                     return False
             except Exception as e:
-                print(f"切换root权限失败{e}")
+                logger.error(f"切换root权限失败{e}")
                 return False
         else:
             self.sudo = True
-            print("当前已是root用户，拥有root权限")
+            logger.info("当前已是root用户，拥有root权限")
             return True
 
     def disconnect(self):
@@ -86,7 +89,7 @@ class SSHTools(object):
             self.sudo = False
             self.transfer_stat = 0
             self.win_tool.transfer_stat = 0
-            print('ssh断开成功')
+            logger.info('ssh断开成功')
             return True
         if self.channel is not None:
             self.channel.close()
@@ -97,7 +100,7 @@ class SSHTools(object):
         self.sudo = False
         self.transfer_stat = 0
         self.win_tool.transfer_stat = 0
-        print('ssh断开成功')
+        logger.info('ssh断开成功')
         return True
 
     def is_connected(self):
@@ -143,10 +146,10 @@ class SSHTools(object):
     def send_command(self, cmd):
         if self.is_connected():
             self.ssh.exec_command(cmd)
-            print(f"指令发送成功：{cmd}")
+            logger.info(f"指令发送成功：{cmd}")
             return True
         else:
-            print("未连接到服务器，请先连接")
+            logger.warning("未连接到服务器，请先连接")
             return False
 
     def send_command_interactive(self, cmd):
@@ -161,15 +164,15 @@ class SSHTools(object):
                     self.channel.send(f"{cmd}\n")
                 # 按下停止指令时，cmd传递过来的时chr(3)
                 if cmd == chr(3):
-                    print(f"已发送中止请求ctrl+c，请稍等...")
+                    logger.info(f"已发送中止请求ctrl+c，请稍等...")
                 else:
-                    print(f"指令发送成功：{cmd}")
+                    logger.info(f"指令发送成功：{cmd}")
                     return True
             except Exception as e:
-                print(f"指令发送失败：{e}")
+                logger.error(f"指令发送失败：{e}")
                 return False
         else:
-            print("未连接到服务器，请先连接")
+            logger.warning("未连接到服务器，请先连接")
             return False
 
     def send_get_output_once(self, cmd, only=True):
@@ -213,7 +216,7 @@ class SSHTools(object):
         raw=True 时不做任何纯化，直接发原始字节字符串给 echo_signal（给终端模拟器用）
         """
         if not self.is_connected():
-            print("未连接到服务器，请先连接。")
+            logger.warning("未连接到服务器，请先连接。")
             return False
         try:
             timeout_count = 0
@@ -243,14 +246,14 @@ class SSHTools(object):
                         timeout_count += 1
                         # 无数据超时退出
                         if timeout_count > timeout * 30:
-                            print(f"超时({timeout}秒)无内容，回显退出")
+                            logger.info(f"超时({timeout}秒)无内容，回显退出")
                             break
                 except (AttributeError, EOFError):
                     # 断开操作把 channel 设为 None 时，直接退出
                     break
             return True
         except Exception as e:
-            print(f"执行命令时出错: {e}")
+            logger.error(f"执行命令时出错: {e}")
             return False
 
     def get_path_mode(self, path):
@@ -271,7 +274,7 @@ class SSHTools(object):
                         output = self.send_get_output_once(f'stat -c %a {path}')
                         return output
                 except Exception as e:
-                    print(f"获取路径的用户权限失败{e}")
+                    logger.error(f"获取路径的用户权限失败{e}")
                     return False
             else:
                 return False
@@ -308,7 +311,7 @@ class SSHTools(object):
             exit_status = stdout.channel.recv_exit_status()
 
             if exit_status != 0:
-                print(f"执行sudo命令失败 [{cmd}]: {stderr_content}")
+                logger.error(f"执行sudo命令失败 [{cmd}]: {stderr_content}")
                 return None
 
             # --- 清洗 ---
@@ -327,12 +330,12 @@ class SSHTools(object):
         stat_output = exec_sudo_cmd(stat_cmd)
         if stat_output is None:
             # 执行失败：密码错、无权限、命令错误
-            print(f"获取路径信息失败：命令执行失败")
+            logger.error(f"获取路径信息失败：命令执行失败")
             return []
 
         if not stat_output:
             # stat执行成功，但输出为空 = 路径不存在
-            print(f"路径不存在：{remote_path}")
+            logger.warning(f"路径不存在：{remote_path}")
             return []
         # 把输出按空格切开，例如：
         # ['directory', '1739999999']
@@ -522,7 +525,7 @@ class SSHTools(object):
             self.transfer_stat = 0 时立即中止传输并清理临时文件
         """
         if not self.is_connected():
-            print("未连接到服务器，请先连接")
+            logger.warning("未连接到服务器，请先连接")
             return False
 
         remote_path = remote_path.replace('\\', '/').rstrip('/')
@@ -542,7 +545,7 @@ class SSHTools(object):
         for item in source_items:
             path = item['路径'].replace('\\', '/').rstrip('/')
             if not os.path.exists(path):
-                print(f"上传失败，本地路径不存在: {path}")
+                logger.error(f"上传失败，本地路径不存在: {path}")
                 return False
 
         # 检查远程目标路径
@@ -555,13 +558,13 @@ class SSHTools(object):
         stderr.read()
         exit_status = stdout.channel.recv_exit_status()
         if exit_status != 0 or 'not exists' in dir_check_result:
-            print(f"上传失败，远程目标路径不存在或不是文件夹: {remote_path}")
+            logger.error(f"上传失败，远程目标路径不存在或不是文件夹: {remote_path}")
             return False
 
         # 标记传输状态为进行中
         self.transfer_stat = 1
 
-        print("开始查找符合条件的文件...")
+        logger.debug("开始查找符合条件的文件...")
         time_now = time.time()
         # 生成毫秒级本地时间戳，用于临时目录命名，避免重名
         local_timestamp_ms = f"{int(time_now * 1000)}"
@@ -590,16 +593,16 @@ class SSHTools(object):
                 all_file_list.append((f, src_path))
 
             if self.transfer_stat == 0:
-                print('上传被中止！')
+                logger.warning('上传被中止！')
                 return False
 
         # 没有符合条件的项，直接返回
         if not all_dir_list and not all_file_list:
-            print(f"上传完成，未上传任何文件，待上传路径无符合条件的项")
+            logger.info(f"上传完成，未上传任何文件，待上传路径无符合条件的项")
             self.transfer_stat = 0
             return True
 
-        print(f"找到{len(all_dir_list)}个目录, {len(all_file_list)}个文件")
+        logger.debug(f"找到{len(all_dir_list)}个目录, {len(all_file_list)}个文件")
         if progress_cb:
             progress_cb('find', 0, len(all_file_list), f'找到{len(all_file_list)}个文件')
 
@@ -634,10 +637,10 @@ class SSHTools(object):
         sorted_dirs = sorted(all_dirs, key=lambda x: len(x), reverse=True)
         created_dirs = set()
 
-        print("开始创建服务器临时目录")
+        logger.debug("开始创建服务器临时目录")
         for dst_dir in sorted_dirs:
             if self.transfer_stat == 0:
-                print('上传被中止！')
+                logger.warning('上传被中止！')
                 rm_cmd = f"rm -rf \"{temp_remote_dir}\""
                 stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
                 stdout.read()
@@ -661,7 +664,7 @@ class SSHTools(object):
                 mkdir_err = stderr.read().decode('utf-8').strip()
                 exit_status = stdout.channel.recv_exit_status()
                 if exit_status != 0:
-                    print(f"创建目录失败: {mkdir_err}")
+                    logger.error(f"创建目录失败: {mkdir_err}")
                     return False
                 created_dirs.add(dst_dir)
 
@@ -676,7 +679,7 @@ class SSHTools(object):
 
         # 所有目录创建完成，开始上传文件
         file_count = len(all_file_list)
-        print(f"开始上传文件到服务器临时目录，共{file_count}个文件")
+        logger.debug(f"开始上传文件到服务器临时目录，共{file_count}个文件")
 
         up_count = 0
         failed_files = []
@@ -707,7 +710,7 @@ class SSHTools(object):
 
         for f_path, src_root in all_file_list:
             if self.transfer_stat == 0:
-                print('上传被中止！')
+                logger.warning('上传被中止！')
                 rm_cmd = f"rm -rf \"{temp_remote_dir}\""
                 stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
                 stdout.read()
@@ -736,10 +739,10 @@ class SSHTools(object):
                         extra = f"{os.path.basename(f_path)}|{file_size}|{file_size}|{up_count}|{file_count}"
                         progress_cb('upload', _upload_state['accumulated'], total_size, extra)
                 else:
-                    print(f"大文件上传: {file_size} 字节")
+                    logger.debug(f"大文件上传: {file_size} 字节")
                     with self._SCPClient(self.transport, progress=lambda n, s, se, fp=f_path: _scp_upload_progress(os.path.basename(fp), s, se)) as client:
                         if self.transfer_stat == 0:
-                            print("上传被中止")
+                            logger.warning("上传被中止")
                             rm_cmd = f"rm -rf \"{temp_remote_dir}\""
                             stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
                             stdout.read()
@@ -748,7 +751,7 @@ class SSHTools(object):
                             return False
                         self._last_progress = -1
                         client.put(f_path, dst_path)
-                print(f"已上传到临时目录 {up_count}/{file_count}: {f_path} -> {dst_path}")
+                logger.debug(f"已上传到临时目录 {up_count}/{file_count}: {f_path} -> {dst_path}")
             except Exception as e:
                 err_msg = str(e)
                 real_failed = True
@@ -762,7 +765,7 @@ class SSHTools(object):
                     except Exception:
                         pass
                 if real_failed:
-                    print(f"上传到临时目录失败 {up_count}/{file_count}: {f_path} -> {dst_path},原因: {e}")
+                    logger.error(f"上传到临时目录失败 {up_count}/{file_count}: {f_path} -> {dst_path},原因: {e}")
                     failed_files.append({"文件": f_path, "原因": err_msg})
 
         # 打印上传失败汇总
@@ -770,7 +773,7 @@ class SSHTools(object):
             fail_lines = [f"上传失败{len(failed_files)}个文件："]
             for idx, f_item in enumerate(failed_files, 1):
                 fail_lines.append(f"  {idx}. {f_item['文件']} - {f_item['原因']}")
-            print("\n".join(fail_lines))
+            logger.info("\n".join(fail_lines))
 
         # 设置临时目录权限为777
         if self.username != 'root':
@@ -782,7 +785,7 @@ class SSHTools(object):
         stderr.read()
 
         # 移动文件到目标目录：一次性 cp -a，更快
-        print("上传完成，开始移动文件到目标目录...")
+        logger.debug("上传完成，开始移动文件到目标目录...")
         if progress_cb:
             progress_cb('move', 0, 0, '移动文件到目标目录...')
 
@@ -796,7 +799,7 @@ class SSHTools(object):
         mv_err = stderr.read().decode('utf-8').strip()
         exit_status = stdout.channel.recv_exit_status()
         if exit_status != 0:
-            print(f"移动文件失败: {mv_err}")
+            logger.error(f"移动文件失败: {mv_err}")
             rm_cmd = f"rm -rf \"{temp_remote_dir}\""
             stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
             stdout.read()
@@ -809,9 +812,9 @@ class SSHTools(object):
         stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
         stdout.read()
         stderr.read()
-        print("临时目录已删除")
+        logger.debug("临时目录已删除")
 
-        print(f"上传完毕！文件已保存到: {remote_path}")
+        logger.debug(f"上传完毕！文件已保存到: {remote_path}")
         self.transfer_stat = 0
         return True
 
@@ -882,7 +885,7 @@ class SSHTools(object):
         dir_err = stderr.read().decode('utf-8').strip()
         exit_status = stdout.channel.recv_exit_status()
         if exit_status != 0:
-            print(f"查找目录失败: {dir_err}")
+            logger.error(f"查找目录失败: {dir_err}")
             return dir_list, file_list
 
         # 执行文件查找
@@ -891,7 +894,7 @@ class SSHTools(object):
         file_err = stderr.read().decode('utf-8').strip()
         exit_status = stdout.channel.recv_exit_status()
         if exit_status != 0:
-            print(f"查找文件失败: {file_err}")
+            logger.error(f"查找文件失败: {file_err}")
             return dir_list, file_list
 
         # Python端精细过滤名称（多关键词和/或逻辑）
@@ -946,13 +949,13 @@ class SSHTools(object):
             self.transfer_stat = 0 时立即中止传输并清理临时文件
         """
         if not self.is_connected():
-            print("未连接到服务器，请先连接")
+            logger.warning("未连接到服务器，请先连接")
             return False
 
         local_path = local_path.replace('\\', '/').rstrip('/')
 
         if not os.path.exists(local_path) or not os.path.isdir(local_path):
-            print(f"下载失败，本地路径不存在或不是文件夹: {local_path}")
+            logger.error(f"下载失败，本地路径不存在或不是文件夹: {local_path}")
             return False
 
         # 修改时间映射（秒）
@@ -984,7 +987,7 @@ class SSHTools(object):
             stderr.read()
             exit_status = stdout.channel.recv_exit_status()
             if exit_status != 0 or 'not exists' in check_result:
-                print(f"下载失败，远程路径不存在: {path}")
+                logger.error(f"下载失败，远程路径不存在: {path}")
                 return False
 
         # 标记传输状态为进行中
@@ -1003,7 +1006,7 @@ class SSHTools(object):
         base_dir = work_dir if work_dir else f"/home/{self.username}"
         temp_remote_path = f"{base_dir}/OneClick_temp{local_timestamp_ms}"
 
-        print("开始查找符合条件的文件...")
+        logger.debug("开始查找符合条件的文件...")
 
         # 多源路径合并后的文件/目录列表，每项带源路径信息用于计算相对路径
         all_file_list = []  # [(full_path, source_root)]
@@ -1051,12 +1054,12 @@ class SSHTools(object):
                 all_file_list.append((f, src_path))
 
             if self.transfer_stat == 0:
-                print('下载被中止！')
+                logger.warning('下载被中止！')
                 return False
 
         # 没有符合条件的项，直接返回
         if not all_dir_list and not all_file_list and not direct_copy_dirs:
-            print(f"下载完成，未下载任何文件，待下载路径无符合条件的项")
+            logger.info(f"下载完成，未下载任何文件，待下载路径无符合条件的项")
             self.transfer_stat = 0
             return True
 
@@ -1073,7 +1076,7 @@ class SSHTools(object):
             if count_out.isdigit():
                 direct_copy_file_count += int(count_out)
 
-        print(f"找到{len(all_dir_list)}个目录, {len(all_file_list)}个文件, {len(direct_copy_dirs)}个直接复制目录")
+        logger.debug(f"找到{len(all_dir_list)}个目录, {len(all_file_list)}个文件, {len(direct_copy_dirs)}个直接复制目录")
         if progress_cb:
             total_files = len(all_file_list) + direct_copy_file_count
             if not all_file_list and direct_copy_dirs:
@@ -1111,10 +1114,10 @@ class SSHTools(object):
         sorted_dirs = sorted(all_dirs, key=lambda x: len(x), reverse=True)
         created_dirs = set()
 
-        print("开始创建目录")
+        logger.debug("开始创建目录")
         for dst_dir in sorted_dirs:
             if self.transfer_stat == 0:
-                print('下载被中止！')
+                logger.warning('下载被中止！')
                 rm_cmd = f"rm -rf \"{temp_remote_path}\""
                 stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
                 stdout.read()
@@ -1148,7 +1151,7 @@ class SSHTools(object):
 
         # 复制文件到临时目录
         file_count = len(all_file_list)
-        print(f"开始复制文件到远程临时目录，共{file_count}个文件, {len(direct_copy_dirs)}个直接复制目录")
+        logger.debug(f"开始复制文件到远程临时目录，共{file_count}个文件, {len(direct_copy_dirs)}个直接复制目录")
 
         # 先创建临时目录根目录（直接复制目录需要）
         if self.username != 'root':
@@ -1162,7 +1165,7 @@ class SSHTools(object):
         # 先处理直接复制的目录（cp -a 整个目录）
         for dir_path, src_root in direct_copy_dirs:
             if self.transfer_stat == 0:
-                print('下载被中止！')
+                logger.warning('下载被中止！')
                 rm_cmd = f"rm -rf \"{temp_remote_path}\""
                 stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
                 stdout.read()
@@ -1195,9 +1198,9 @@ class SSHTools(object):
             stdout.read()
             exit_status = stdout.channel.recv_exit_status()
             if exit_status != 0:
-                print(f"直接复制目录失败: {dir_path} -> {dst_path},原因: {cp_err}")
+                logger.error(f"直接复制目录失败: {dir_path} -> {dst_path},原因: {cp_err}")
             else:
-                print(f"复制目录完成: {dir_path} -> {dst_path}")
+                logger.info(f"复制目录完成: {dir_path} -> {dst_path}")
                 if progress_cb:
                     progress_cb('copy', 0, 0, f'复制目录{os.path.basename(dir_path)}完成')
 
@@ -1206,7 +1209,7 @@ class SSHTools(object):
         failed_files = []
         for file_path, src_root in all_file_list:
             if self.transfer_stat == 0:
-                print('下载被中止！')
+                logger.warning('下载被中止！')
                 rm_cmd = f"rm -rf \"{temp_remote_path}\""
                 stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
                 stdout.read()
@@ -1229,10 +1232,10 @@ class SSHTools(object):
             stdout.read()
             exit_status = stdout.channel.recv_exit_status()
             if exit_status != 0:
-                print(f"复制到临时目录失败 {cp_count}/{file_count}: {file_path} -> {dst_path},原因: {cp_err}")
+                logger.debug(f"复制到临时目录失败 {cp_count}/{file_count}: {file_path} -> {dst_path},原因: {cp_err}")
                 failed_files.append({"文件": file_path, "原因": cp_err})
             else:
-                print(f"已复制到临时目录 {cp_count}/{file_count}: {file_path} -> {dst_path}")
+                logger.debug(f"已复制到临时目录 {cp_count}/{file_count}: {file_path} -> {dst_path}")
                 if progress_cb:
                     progress_cb('copy', cp_count, file_count, os.path.basename(file_path))
 
@@ -1241,10 +1244,10 @@ class SSHTools(object):
             fail_lines = [f"复制失败{len(failed_files)}个文件："]
             for idx, f_item in enumerate(failed_files, 1):
                 fail_lines.append(f"  {idx}. {f_item['文件']} - {f_item['原因']}")
-            print("\n".join(fail_lines))
+            logger.info("\n".join(fail_lines))
 
         if self.transfer_stat == 0:
-            print('下载被中止！')
+            logger.warning('下载被中止！')
             rm_cmd = f"rm -rf \"{temp_remote_path}\""
             stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
             stdout.read()
@@ -1282,9 +1285,9 @@ class SSHTools(object):
                     dst_size = int(output)
 
         if dst_size > 0:
-            print(f"开始下载，大小: {dst_size/1048576:.2f} M")
+            logger.debug(f"开始下载，大小: {dst_size/1048576:.2f} M")
         else:
-            print(f"开始下载（无法获取大小）")
+            logger.warning(f"开始下载（无法获取大小）")
 
         try:
             # 直接复制目录的文件数 + 逐文件复制的文件数
@@ -1339,7 +1342,7 @@ class SSHTools(object):
                 progress_cb('download', dst_size, dst_size,
                             f"{last_name}|{last_size}|{last_size}|{last_idx}|{last_total}")
         except Exception as e:
-            print(f"\n下载失败: {e}")
+            logger.error(f"\n下载失败: {e}")
             rm_cmd = f"rm -rf \"{temp_remote_path}\""
             stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
             stdout.read()
@@ -1352,7 +1355,7 @@ class SSHTools(object):
         stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
         stdout.read()
         stderr.read()
-        print("远程临时目录已删除")
+        logger.debug("远程临时目录已删除")
 
         # 将本地下载的 temp 目录内容移动到 local_path，去掉多余的一层 temp 目录名
         temp_basename = os.path.basename(temp_remote_path)
@@ -1371,7 +1374,7 @@ class SSHTools(object):
             # 删除空的 temp 目录
             os.rmdir(local_temp_dir)
 
-        print(f"下载完毕！文件已保存到: {local_path}")
+        logger.debug(f"下载完毕！文件已保存到: {local_path}")
         self.transfer_stat = 0
         self._download_progress_cb = None
         return True
@@ -1397,11 +1400,11 @@ class SSHTools(object):
             bar = '-' * progress + ' ' * (10 - progress)
             if '-' not in bar:
                 return
-            print(f"传输进度: |{bar}|")
+            logger.debug(f"传输进度: |{bar}|")
 
             # 传输完成时换行，避免后续输出覆盖
             if progress == 10:
-                print()
+                logger.info()
 
     def clean_empty_dir(self, sftp, path, f_name=''):
         """将linux目录中的空文件夹删除，如果文件夹的名字包含f_name则不删除，注意需要传入一个已经open的sftp"""
@@ -1430,7 +1433,7 @@ class SSHTools(object):
 
     def mkdir(self, path):
         if not self.is_connected():
-            print("未连接到服务器，请先连接")
+            logger.warning("未连接到服务器，请先连接")
             return False
         if self.username != 'root':
             mkdir_cmd = f"echo {self.password} | sudo -S mkdir -p \"{path}\""
@@ -1441,7 +1444,7 @@ class SSHTools(object):
         mkdir_err = stderr.read().decode('utf-8').strip()
         exit_status = stdout.channel.recv_exit_status()
         if exit_status != 0:
-            print(f"创建目标目录失败 {path}，原因: {mkdir_err}")
+            logger.error(f"创建目标目录失败 {path}，原因: {mkdir_err}")
             return False
         return True
 

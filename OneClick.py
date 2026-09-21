@@ -42,13 +42,18 @@ if __name__ == '__main__':
         # Windows 任务栏需要设置 AppUserModelID，否则可能显示默认图标且不与窗口图标关联
         try:
             import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('OneClick.V2.3')
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('OneClick.V2.4')
         except Exception:
             pass
 
+        # 日志系统：最早初始化，确保后续所有日志都能走对路径
+        import logging
+        from utils.logger import setup_logging
+        setup_logging(log_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs"))
+
         app = QApplication(sys.argv)
         app.setApplicationName("OneClick")
-        app.setApplicationVersion("V2.3")
+        app.setApplicationVersion("V2.4")
 
         # 设置应用程序图标（任务栏显示）
         icon_path = resource_path("app.ico")

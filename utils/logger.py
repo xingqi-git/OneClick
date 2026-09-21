@@ -15,10 +15,55 @@
     log_emitter.log_signal.connect(main_window.append_log)
 """
 
+import contextvars
 import logging
 import logging.handlers
+import os
 import queue
 import sys
+
+# 自定义进度级别（介于 INFO=20 和 WARNING=30 之间）
+# 文件(DEBUG+)全量记录，控制台过滤掉，UI 走单独的 progress_signal
+PROGRESS = 21
+logging.addLevelName(PROGRESS, "PROGRESS")
+
+# 当前操作上下文（在 Worker 线程内设置）：(操作名/按钮名, 唯一执行ID)
+_op_context = contextvars.ContextVar('op_context', default=('', ''))
+
+
+class operation_context:
+    """操作上下文管理器：让该线程内产生的日志自动带上操作名和执行ID
+
+    用法（OneClickWorker.run_task 内）:
+        with operation_context('文件下载', 'fb_download_1695...'):
+            func(...)
+    """
+    def __init__(self, name='', op_id=''):
+        self.name = name
+        self.op_id = op_id
+        self._token = None
+
+    def __enter__(self):
+        self._token = _op_context.set((self.name, self.op_id))
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        _op_context.reset(self._token)
+        return False
+
+
+def log_progress(logger, phase, current, total, extra=''):
+    """记录一条进度日志
+
+    - 日志文件：人类可读的全量记录（PROGRESS 级别）
+    - 运行信息面板：通过 progress_signal 结构化下发，由 UI 更新同一行
+    """
+    if logger.isEnabledFor(PROGRESS):
+        human_msg = f"[{phase}] {current}/{total} {extra}".rstrip()
+        logger.log(
+            PROGRESS, human_msg,
+            extra={'progress': (phase, str(current), str(total), str(extra))}
+        )
 
 # 颜色映射（供 UI 根据级别渲染颜色）
 LOG_COLORS = {
@@ -41,6 +86,7 @@ LOG_LEVEL_NAMES = {
 _log_queue = None
 _log_listener = None
 _qt_emitter = None
+_file_handler = None
 
 
 class QtLogEmitter:
@@ -66,23 +112,52 @@ class QtLogEmitter:
         from PyQt5.QtCore import QObject, pyqtSignal
 
         class _Emitter(QObject):
-            log_signal = pyqtSignal(str, str, int)  # (时间, 模块名, 级别, 消息)
+            log_signal = pyqtSignal(str, str, int, str)       # (消息, 颜色, 级别, 操作名)
+            progress_signal = pyqtSignal(str, str, str, str, str, str)
+            # (操作名, 执行ID, phase, current, total, extra)
 
         self._emitter = _Emitter()
         self.log_signal = self._emitter.log_signal
+        self.progress_signal = self._emitter.progress_signal
 
     def emit(self, record: logging.LogRecord):
-        """将 LogRecord 转换为信号发射（UI 简化格式：只显示时间 + 消息）"""
+        """将 LogRecord 转换为信号发射（UI 简化格式：只显示消息，时间由 UI 自己加）"""
         color = LOG_COLORS.get(record.levelno, "#000000")
-        # 只提取时:分:秒
-        time_str = logging.Formatter("%(asctime)s", datefmt="%H:%M:%S").format(record)
-        msg = f"[{time_str}] {record.getMessage()}"
-        self.log_signal.emit(msg, color, record.levelno)
+        op_name = getattr(record, 'op_name', '') or ''
+        self.log_signal.emit(record.getMessage(), color, record.levelno, op_name)
+
+    def emit_progress(self, record: logging.LogRecord):
+        """发射结构化进度信号"""
+        phase, current, total, extra = record.progress
+        self.progress_signal.emit(
+            getattr(record, 'op_name', '') or '',
+            getattr(record, 'op_id', '') or '',
+            phase, current, total, extra
+        )
 
 
 class QueueHandler(logging.handlers.QueueHandler):
     """线程安全的日志队列 Handler，直接包装标准库实现"""
     pass
+
+
+class _OpContextFilter(logging.Filter):
+    """在【日志产生线程】执行：把当前操作上下文注入 record
+
+    必须挂在 QueueHandler 上（producer 侧），不能挂在 listener 侧的 handler 上，
+    因为操作上下文是线程局部的。
+    """
+    def filter(self, record):
+        op_name, op_id = _op_context.get()
+        record.op_name = op_name
+        record.op_id = op_id
+        return True
+
+
+class _SuppressProgressFilter(logging.Filter):
+    """控制台不打印高频进度（文件全量、UI 单独通道）"""
+    def filter(self, record):
+        return record.levelno != PROGRESS
 
 
 class _QtBridgeHandler(logging.Handler):
@@ -96,7 +171,10 @@ class _QtBridgeHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord):
         try:
-            self.emitter.emit(record)
+            if hasattr(record, 'progress'):
+                self.emitter.emit_progress(record)
+            else:
+                self.emitter.emit(record)
         except Exception:
             self.handleError(record)
 
@@ -141,9 +219,14 @@ def setup_logging(
     for h in root.handlers[:]:
         root.removeHandler(h)
 
-    # 1) QueueHandler：工作线程写入队列
+    # 干掉第三方库的噪音（paramiko transport DEBUG 包分析全丢）
+    logging.getLogger('paramiko').setLevel(logging.WARNING)
+    logging.getLogger('paramiko.transport').setLevel(logging.WARNING)
+
+    # 1) QueueHandler：工作线程写入队列（filter 在产生线程执行，注入操作上下文）
     queue_handler = QueueHandler(_log_queue)
     queue_handler.setLevel(logging.DEBUG)
+    queue_handler.addFilter(_OpContextFilter())
     root.addHandler(queue_handler)
 
     # 2) 准备 listener 的 handlers（在主线程中执行）
@@ -157,17 +240,17 @@ def setup_logging(
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(console_level)
     console_handler.setFormatter(console_fmt)
+    console_handler.addFilter(_SuppressProgressFilter())
     listener_handlers.append(console_handler)
 
     # 文件输出（按大小轮转，可选）
     if enable_file_logging:
         if log_dir is None:
-            import os
             log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
         os.makedirs(log_dir, exist_ok=True)
 
         file_fmt = logging.Formatter(
-            "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
+            "[%(asctime)s] [%(levelname)s] [%(name)s] [%(funcName)s:%(lineno)d] %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
         file_handler = logging.handlers.RotatingFileHandler(
@@ -179,14 +262,15 @@ def setup_logging(
         file_handler.setLevel(file_level)
         file_handler.setFormatter(file_fmt)
         listener_handlers.append(file_handler)
+        global _file_handler
+        _file_handler = file_handler
 
-    # Qt 桥接（可选）
+    # Qt 桥接（可选，UI 只看 INFO+）
     if enable_qt_bridge:
         try:
             _qt_emitter = QtLogEmitter()
             qt_handler = _QtBridgeHandler(_qt_emitter)
-            qt_handler.setLevel(logging.DEBUG)
-            qt_handler.setFormatter(file_fmt)
+            qt_handler.setLevel(logging.INFO)  # UI 只看 INFO 及以上，DEBUG 不刷屏
             listener_handlers.append(qt_handler)
         except Exception:
             pass
@@ -197,7 +281,6 @@ def setup_logging(
     )
     _log_listener.start()
 
-    logging.info("日志系统初始化完成")
     return _qt_emitter
 
 
@@ -209,19 +292,76 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
+def get_emitter():
+    """获取全局 QtLogEmitter（setup_logging 后可用），供对话框订阅 progress_signal"""
+    return _qt_emitter
+
+
+def subscribe_progress(op_id, callback):
+    """订阅指定操作的进度信号，返回退订函数
+
+    Qt 信号跨线程自动排队，callback 在 GUI 主线程执行。
+    只有 op_id 完全匹配的进度才会触发回调。
+    """
+    if _qt_emitter is None:
+        return lambda: None
+
+    def _handler(_op_name, _op_id, phase, current, total, extra):
+        if _op_id == op_id:
+            callback(phase, current, total, extra)
+
+    _qt_emitter.progress_signal.connect(_handler)
+
+    def _unsubscribe():
+        try:
+            _qt_emitter.progress_signal.disconnect(_handler)
+        except Exception:
+            pass
+
+    return _unsubscribe
+
+
 def shutdown_logging():
     """
     关闭日志系统。程序退出前调用，确保所有日志都写入完毕。
     支持重新初始化（setup_logging 可再次调用）。
     """
-    global _log_listener, _log_queue, _qt_emitter
+    global _log_listener, _log_queue, _qt_emitter, _file_handler
     if _log_listener is not None:
         _log_listener.stop()
         _log_listener = None
     _log_queue = None
     _qt_emitter = None
+    _file_handler = None
     # 清理 root logger 的 handler，避免重复
     root = logging.getLogger()
     for h in root.handlers[:]:
         root.removeHandler(h)
     logging.shutdown()
+
+
+def set_file_logging(enabled: bool):
+    """运行时开关文件日志（动态生效，无需重启）"""
+    if _file_handler is None:
+        return False
+    if enabled:
+        _file_handler.setLevel(logging.DEBUG)
+    else:
+        # 禁用：设成一个不可能的级别（CRITICAL 以上）
+        _file_handler.setLevel(logging.CRITICAL + 1)
+    return True
+
+
+def set_file_log_level(level: int):
+    """运行时调整文件日志级别（DEBUG/INFO/WARNING/ERROR）"""
+    if _file_handler is None:
+        return False
+    _file_handler.setLevel(level)
+    return True
+
+
+def is_file_logging_enabled() -> bool:
+    """查询文件日志是否开启"""
+    if _file_handler is None:
+        return False
+    return _file_handler.level <= logging.CRITICAL

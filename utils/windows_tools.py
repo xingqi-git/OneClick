@@ -2,6 +2,10 @@ import os
 import time
 import shutil
 
+from utils.logger import get_logger
+
+logger = get_logger("windows")
+
 
 class WindowsTools(object):
     def __init__(self):
@@ -115,7 +119,7 @@ class WindowsTools(object):
 
         target_path = target_path.replace('\\', '/').rstrip('/')
         if not os.path.exists(target_path):
-            print(f"复制失败，目的路径不存在: {target_path}")
+            logger.error(f"复制失败，目的路径不存在: {target_path}")
             return False
 
         self.transfer_stat = 1
@@ -128,7 +132,7 @@ class WindowsTools(object):
 
         for item in source_items:
             if self.transfer_stat == 0:
-                print('复制被中止！')
+                logger.warning('复制被中止！')
                 return False
 
             src_path = item['路径']
@@ -156,13 +160,13 @@ class WindowsTools(object):
 
         # 没有符合条件的项，直接返回
         if not all_dir_list and not all_file_list:
-            print(f"复制完成，未复制任何文件，无符合条件的项")
+            logger.info(f"复制完成，未复制任何文件，无符合条件的项")
             self.transfer_stat = 0
             if progress_cb:
                 progress_cb('find', 0, 0, '找到0个文件')
             return True
 
-        print(f"找到{len(all_dir_list)}个目录, {len(all_file_list)}个文件")
+        logger.debug(f"找到{len(all_dir_list)}个目录, {len(all_file_list)}个文件")
         if progress_cb:
             total_files = len(all_file_list)
             progress_cb('find', 0, total_files, f'找到{total_files}个文件')
@@ -185,10 +189,10 @@ class WindowsTools(object):
         sorted_dirs = sorted(all_dirs, key=lambda x: len(x), reverse=True)
         created_dirs = set()
 
-        print(f"开始创建目录")
+        logger.debug(f"开始创建目录")
         for dst_dir in sorted_dirs:
             if self.transfer_stat == 0:
-                print('复制被中止！')
+                logger.warning('复制被中止！')
                 return False
 
             # 检查当前目录是否是某个已创建目录的父路径，如果是就跳过
@@ -204,7 +208,7 @@ class WindowsTools(object):
 
         # 所有目录创建完成，直接复制文件，不用再创建目录
         file_count = len(all_file_list)
-        print(f"开始复制文件到目的目录，共{file_count}个文件")
+        logger.debug(f"开始复制文件到目的目录，共{file_count}个文件")
 
         failed_files = []
         cp_count = 0
@@ -223,7 +227,7 @@ class WindowsTools(object):
 
         for f_path in all_file_list:
             if self.transfer_stat == 0:
-                print('复制被中止！')
+                logger.warning('复制被中止！')
                 return False
 
             cp_count += 1
@@ -243,16 +247,16 @@ class WindowsTools(object):
                     total_pct = int(copied_size / total_size * 100)
                     progress_cb('copy', total_pct, file_count,
                                 f'总进度{total_pct}% (共{total_mb:.1f}MB)  文件{cp_count}/{file_count}: {f_name} 100% ({size_mb:.1f}MB)')
-                print(f"已复制 {cp_count}/{file_count}: {f_path} -> {dst_path}")
+                logger.debug(f"已复制 {cp_count}/{file_count}: {f_path} -> {dst_path}")
             except Exception as e:
                 failed_files.append((f_path, str(e)))
-                print(f"复制失败 {cp_count}/{file_count}: {f_path} -> {dst_path},原因: {e}")
+                logger.error(f"复制失败 {cp_count}/{file_count}: {f_path} -> {dst_path},原因: {e}")
 
         # 打印失败汇总
         if failed_files:
-            print(f"\n复制失败{len(failed_files)}个文件：")
+            logger.error(f"复制失败{len(failed_files)}个文件：")
             for i, (f, reason) in enumerate(failed_files, 1):
-                print(f"  {i}. {f} - {reason}")
+                logger.error(f"  {i}. {f} - {reason}")
 
         # 最后补一次100%进度
         if progress_cb and total_size > 0 and cp_count > 0:

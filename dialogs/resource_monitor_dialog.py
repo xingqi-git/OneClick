@@ -10,9 +10,13 @@ from PyQt5.QtWidgets import QDialog, QMessageBox, QProgressDialog
 from UI import resource_monitor_dlg
 from utils import ssh_tools, qthread_worker
 from utils import log_cleaner
+from utils.logger import get_logger, log_progress, subscribe_progress
 from .base_dialog import SendCMDDialog, sc_class2str
 from .clean_range_dialog import CleanRangeDialog
 from .download_range_dialog import DownloadRangeDialog
+
+
+logger = get_logger("resource_monitor")
 
 
 class ResourceMonitorDialog1(SendCMDDialog):
@@ -476,7 +480,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
 
         # worker用于定时检查ssh连接状态
-        worker = qthread_worker.OneClickWorker(do_ssh_monitor_check)
+        worker = qthread_worker.OneClickWorker(do_ssh_monitor_check, op_name=self.button_name)
 
         thread = QThread()
 
@@ -678,7 +682,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                         '名称不包含': {'关键词': [], '逻辑': '和'}
                     }]
                     def upload_progress_cb(phase, current, total, extra=''):
-                        print(f'__PROGRESS__:{phase}|{current}|{total}|{extra}')
+                        log_progress(logger, phase, current, total, extra)
                     send_result = ssh_client.send_files(
                         source_items, f"{user_path}", work_dir=work_dir, progress_cb=upload_progress_cb
                     )
@@ -741,7 +745,10 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 self.parent.sc_threads.pop(self.work_thread_id)
                 self.work_thread_id = None
 
-            worker = qthread_worker.OneClickWorker(do_ssh_monitor_worker)
+            op_id = f"rm_upload_{int(time.time()*1000)}"
+            worker = qthread_worker.OneClickWorker(
+                do_ssh_monitor_worker, op_name=self.button_name, op_id=op_id
+            )
             thread = QThread()
 
             # 保存线程和worker
@@ -755,8 +762,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             worker.moveToThread(thread)
 
             worker.info_signal.connect(self.message_info_box)
-            upload_log_wrapper = self._make_upload_log_wrapper(self.button_name)
-            worker.log_signal.connect(upload_log_wrapper)
             worker.finished.connect(on_ssh_worker_finished)
             worker.finished.connect(worker.deleteLater)
 
@@ -830,7 +835,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 self.parent.sc_threads.pop(self.work_thread_id)
                 self.work_thread_id = None
 
-            worker = qthread_worker.OneClickWorker(do_stop_monitor)
+            worker = qthread_worker.OneClickWorker(do_stop_monitor, op_name=self.button_name)
             thread = QThread()
 
             # 保存线程和worker
@@ -933,7 +938,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 self.parent.sc_threads.pop(self.work_thread_id)
                 self.work_thread_id = None
 
-            worker = qthread_worker.OneClickWorker(do_stop_monitor)
+            worker = qthread_worker.OneClickWorker(do_stop_monitor, op_name=self.button_name)
             thread = QThread()
 
             # 保存线程和worker
@@ -1045,7 +1050,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             if self.work_thread_id == thread_id:
                 self.work_thread_id = None
 
-        worker = qthread_worker.OneClickWorker(do_clean)
+        worker = qthread_worker.OneClickWorker(do_clean, op_name=self.button_name)
         thread = QThread()
 
         self.parent.thread_count += 1
@@ -1312,7 +1317,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     if self.work_thread_id == s_thread_id:
                         self.work_thread_id = None
 
-                worker = qthread_worker.OneClickWorker(do_clean_cmd)
+                worker = qthread_worker.OneClickWorker(do_clean_cmd, op_name=self.button_name)
                 thread = QThread()
 
                 self.parent.thread_count += 1
@@ -1488,8 +1493,8 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
                     # 下载（共用的下载逻辑）
                     def progress_cb(phase, current, total, extra=''):
-                        """进度回调：通过 print 输出到日志通道，由 wrapper 统一处理"""
-                        print(f'__PROGRESS__:{phase}|{current}|{total}|{extra}')
+                        """进度回调：走统一日志体系，UI 进度由全局 progress_signal 订阅"""
+                        log_progress(logger, phase, current, total, extra)
 
                     get_result = ssh_client.get_files(
                         [{'路径': remote_download_path, '修改时间': '全部',
@@ -1612,6 +1617,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
         def on_download_data_finished(result):
             success, err_msg = result
+            unsubscribe_progress()
             def _update_ui():
                 progress_dialog.close()
                 if success:
@@ -1631,7 +1637,45 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             self.parent.sc_threads.pop(self.work_thread_id)
             self.work_thread_id = None
 
-        worker = qthread_worker.OneClickWorker(do_download_data)
+        op_id = f"rm_download_{int(time.time()*1000)}"
+
+        # 订阅本次下载进度，只更新弹窗（运行信息由主窗口统一渲染）
+        def _on_progress(phase, current, total, extra):
+            try:
+                current_i = int(current)
+                total_i = int(total)
+            except (TypeError, ValueError):
+                return
+            if phase == 'find':
+                progress_dialog.setLabelText(f"查找中... 找到{total_i}个文件")
+                progress_dialog.setRange(0, 0)
+            elif phase == 'download' and total_i > 0:
+                pct = int(current_i * 100 / total_i)
+                progress_dialog.setRange(0, 100)
+                progress_dialog.setValue(pct)
+                total_mb = total_i / 1048576
+                parts = extra.split('|') if extra else []
+                if len(parts) >= 5:
+                    cur_name = parts[0]
+                    cur_size = int(parts[1]) if parts[1].isdigit() else 0
+                    cur_sent = int(parts[2]) if parts[2].isdigit() else 0
+                    file_idx = int(parts[3]) if parts[3].isdigit() else 0
+                    total_files = int(parts[4]) if parts[4].isdigit() else 0
+                    cur_mb = cur_size / 1048576
+                    cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
+                    short_name = cur_name.split('/')[-1] if '/' in cur_name else cur_name
+                    progress_dialog.setLabelText(
+                        f"下载中... {pct}% (共{total_mb:.1f}MB)\n"
+                        f"文件 {file_idx + 1}/{total_files}: {short_name} ({cur_pct}%, {cur_mb:.1f}MB)"
+                    )
+                else:
+                    progress_dialog.setLabelText(f"下载中... {pct}% ({total_mb:.1f}MB)")
+
+        unsubscribe_progress = subscribe_progress(op_id, _on_progress)
+
+        worker = qthread_worker.OneClickWorker(
+            do_download_data, op_name=self.button_name, op_id=op_id
+        )
         thread = QThread()
 
         self.parent.thread_count += 1
@@ -1644,8 +1688,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         worker.moveToThread(thread)
 
         worker.info_signal.connect(on_info)
-        download_log_wrapper = self._make_download_log_wrapper(self.button_name, progress_dialog=progress_dialog)
-        worker.log_signal.connect(download_log_wrapper)
         worker.finished.connect(on_download_data_finished)
         worker.finished.connect(worker.deleteLater)
 
@@ -1745,197 +1787,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             self.parent.update_run_info(text, level)
         else:
             self.parent.update_run_info(f'<{self.button_name}> {text}', level)
-
-    def _make_upload_log_wrapper(self, button_name, progress_dialog=None, exec_id=None):
-        """创建上传日志处理函数（与发送文件按钮格式一致，同时更新弹窗进度）"""
-        import os
-        import time
-        if exec_id is None:
-            exec_id = f"rm_upload_{int(time.time()*1000)}"
-
-        # 过滤刷屏日志（与发送文件按钮一致）
-        skip_phrases = [
-            '已上传到临时目录',
-            '开始上传文件到服务器临时目录，共',
-            '开始查找符合条件的文件',
-            '上传完成，开始移动文件到目标目录',
-            '开始创建服务器临时目录',
-            '大文件上传:',
-            '临时目录已删除',
-            '上传完毕！',
-            '个目录, ',
-        ]
-
-        def wrapper(text, level='INFO'):
-            if text.startswith('__PROGRESS__:'):
-                content = text[len('__PROGRESS__:'):]
-                parts = content.split('|')
-                if len(parts) >= 3:
-                    phase = parts[0]
-                    current = int(parts[1]) if parts[1].isdigit() else 0
-                    total = int(parts[2]) if parts[2].isdigit() else 0
-                    extra_parts = parts[3:]
-                    extra = '|'.join(extra_parts)
-                    msg = None
-                    if phase == 'find':
-                        msg = f'<{button_name}> 查找中... 找到{total}个文件'
-                    elif phase == 'upload':
-                        if total > 0:
-                            pct = int(current * 100 / total) if total > 0 else 0
-                            total_mb = total / 1048576
-                            if len(extra_parts) >= 5:
-                                file_idx = int(extra_parts[3]) if extra_parts[3].isdigit() else 0
-                                total_files = int(extra_parts[4]) if extra_parts[4].isdigit() else 0
-                                cur_name = os.path.basename(extra_parts[0])
-                                cur_size = int(extra_parts[1]) if extra_parts[1].isdigit() else 0
-                                cur_sent = int(extra_parts[2]) if extra_parts[2].isdigit() else 0
-                                cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
-                                cur_mb = cur_size / 1048576
-                                msg = (f'<{button_name}> 上传中... 总进度{pct}% (共{total_mb:.1f}MB)  '
-                                       f'文件{file_idx}/{total_files}: {cur_name} {cur_pct}% ({cur_mb:.1f}MB)')
-                            else:
-                                msg = f'<{button_name}> 上传中... {pct}% (共{total_mb:.1f}MB)'
-                    elif phase == 'move':
-                        if total > 0 and isinstance(current, (int, float)):
-                            pct = int(current * 100 / total)
-                            msg = f'<{button_name}> 移动中... {pct}% ({current}/{total}) {extra}'
-                        else:
-                            msg = f'<{button_name}> 移动中... {extra}'
-                    if msg:
-                        self.parent.update_run_info_progress(f"{exec_id}_{phase}", msg)
-                    # 同时更新弹窗进度
-                    if progress_dialog is not None:
-                        def _update_dialog():
-                            if phase == 'find':
-                                progress_dialog.setLabelText(f"查找中... 找到{total}个文件")
-                                progress_dialog.setRange(0, 0)
-                            elif phase == 'upload' and total > 0:
-                                pct = int(current * 100 / total) if total > 0 else 0
-                                progress_dialog.setRange(0, 100)
-                                progress_dialog.setValue(pct)
-                                total_mb = total / 1048576
-                                if len(extra_parts) >= 5:
-                                    file_idx = int(extra_parts[3]) if extra_parts[3].isdigit() else 0
-                                    total_files = int(extra_parts[4]) if extra_parts[4].isdigit() else 0
-                                    cur_name = os.path.basename(extra_parts[0])
-                                    cur_size = int(extra_parts[1]) if extra_parts[1].isdigit() else 0
-                                    cur_sent = int(extra_parts[2]) if extra_parts[2].isdigit() else 0
-                                    cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
-                                    cur_mb = cur_size / 1048576
-                                    progress_dialog.setLabelText(
-                                        f"上传中... {pct}% (共{total_mb:.1f}MB)\n"
-                                        f"文件 {file_idx}/{total_files}: {cur_name} ({cur_pct}%, {cur_mb:.1f}MB)"
-                                    )
-                                else:
-                                    progress_dialog.setLabelText(f"上传中... {pct}% ({total_mb:.1f}MB)")
-                            elif phase == 'move':
-                                progress_dialog.setLabelText(f"移动中... {extra}")
-                                progress_dialog.setRange(0, 0)
-                        from PyQt5 import QtCore
-                        QtCore.QTimer.singleShot(0, _update_dialog)
-                return
-            # 过滤刷屏日志
-            for p in skip_phrases:
-                if p in text:
-                    return
-            # 普通日志：加前缀输出到主窗口
-            if text.startswith(f'<{button_name}>'):
-                self.parent.update_run_info(text, level)
-            else:
-                self.parent.update_run_info(f'<{button_name}> {text}', level)
-        return wrapper
-
-    def _make_download_log_wrapper(self, button_name, progress_dialog=None, exec_id=None):
-        """创建下载日志处理函数（与获取文件按钮格式一致，同时更新弹窗进度）"""
-        import os
-        import re
-        import time
-        if exec_id is None:
-            exec_id = f"rm_download_{int(time.time()*1000)}"
-
-        # 过滤刷屏日志（与获取文件按钮一致）
-        skip_phrases = [
-            '已复制到临时目录',
-            '复制到临时目录失败',
-            '传输进度:',
-            '开始复制文件到远程临时目录，共',
-            '开始查找符合条件的文件',
-            '找到.*个目录',
-            '开始创建目录',
-            '开始下载',
-            '远程临时目录已删除',
-            '下载完毕！',
-        ]
-
-        def wrapper(text, level='INFO'):
-            if text.startswith('__PROGRESS__:'):
-                content = text[len('__PROGRESS__:'):]
-                parts = content.split('|')
-                if len(parts) >= 3:
-                    phase = parts[0]
-                    current = int(parts[1]) if parts[1].isdigit() else 0
-                    total = int(parts[2]) if parts[2].isdigit() else 0
-                    extra_parts = parts[3:]
-                    extra = '|'.join(extra_parts)
-                    msg = None
-                    if phase == 'find':
-                        msg = f'<{button_name}> 查找中... 找到{total}个文件'
-                    elif phase == 'download':
-                        if total > 0:
-                            pct = int(current * 100 / total) if total > 0 else 0
-                            total_mb = total / 1048576
-                            if len(extra_parts) >= 5:
-                                file_idx = int(extra_parts[3]) if extra_parts[3].isdigit() else 0
-                                total_files = int(extra_parts[4]) if extra_parts[4].isdigit() else 0
-                                cur_name = os.path.basename(extra_parts[0])
-                                cur_size = int(extra_parts[1]) if extra_parts[1].isdigit() else 0
-                                cur_sent = int(extra_parts[2]) if extra_parts[2].isdigit() else 0
-                                cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
-                                cur_mb = cur_size / 1048576
-                                msg = (f'<{button_name}> 下载中... 总进度{pct}% (共{total_mb:.1f}MB)  '
-                                       f'文件{file_idx}/{total_files}: {cur_name} {cur_pct}% ({cur_mb:.1f}MB)')
-                            else:
-                                msg = f'<{button_name}> 下载中... {pct}% (共{total_mb:.1f}MB)'
-                    if msg:
-                        self.parent.update_run_info_progress(f"{exec_id}_{phase}", msg)
-                    # 同时更新弹窗进度
-                    if progress_dialog is not None:
-                        def _update_dialog():
-                            if phase == 'find':
-                                progress_dialog.setLabelText(f"查找中... 找到{total}个文件")
-                                progress_dialog.setRange(0, 0)
-                            elif phase == 'download' and total > 0:
-                                pct = int(current * 100 / total) if total > 0 else 0
-                                progress_dialog.setRange(0, 100)
-                                progress_dialog.setValue(pct)
-                                total_mb = total / 1048576
-                                if len(extra_parts) >= 5:
-                                    file_idx = int(extra_parts[3]) if extra_parts[3].isdigit() else 0
-                                    total_files = int(extra_parts[4]) if extra_parts[4].isdigit() else 0
-                                    cur_name = os.path.basename(extra_parts[0])
-                                    cur_size = int(extra_parts[1]) if extra_parts[1].isdigit() else 0
-                                    cur_sent = int(extra_parts[2]) if extra_parts[2].isdigit() else 0
-                                    cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
-                                    cur_mb = cur_size / 1048576
-                                    progress_dialog.setLabelText(
-                                        f"下载中... {pct}% (共{total_mb:.1f}MB)\n"
-                                        f"文件 {file_idx}/{total_files}: {cur_name} ({cur_pct}%, {cur_mb:.1f}MB)"
-                                    )
-                                else:
-                                    progress_dialog.setLabelText(f"下载中... {pct}% ({total_mb:.1f}MB)")
-                        from PyQt5 import QtCore
-                        QtCore.QTimer.singleShot(0, _update_dialog)
-                return
-            # 过滤刷屏日志
-            for pat in skip_phrases:
-                if re.search(pat, text):
-                    return
-            # 普通日志：加前缀输出到主窗口
-            if text.startswith(f'<{button_name}>'):
-                self.parent.update_run_info(text, level)
-            else:
-                self.parent.update_run_info(f'<{button_name}> {text}', level)
-        return wrapper
 
     def display_resource(self):
         """打开监控绘图窗口（直接打开，按需加载数据）"""
