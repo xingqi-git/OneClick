@@ -1,4 +1,4 @@
-﻿import time
+import time
 import os
 import re
 import shutil
@@ -104,12 +104,19 @@ class SSHTools(object):
         return True
 
     def is_connected(self):
+        """检查SSH连接是否存活
+        先快速判断 transport 状态，不存活直接返回 False；
+        存活时再用轻量命令探活，避免每次都阻塞。
+        """
         if not (self.ssh and self.transport and self.transport.is_active()):
             return False
+        # transport 看起来活着，再用一个极轻量命令确认
         try:
-            # 尝试执行一个极简单的命令来探测连接
-            stdin, stdout, stderr = self.ssh.exec_command("echo -n", timeout=2)
-            stdout.read()  # 必须读取输出，确保命令执行完毕
+            transport = self.ssh.get_transport()
+            if transport is None or not transport.is_active():
+                return False
+            # 用 send_ignore 探活，比 exec_command 轻量得多，不会新建 channel
+            transport.send_ignore()
             return True
         except Exception:
             return False
@@ -224,11 +231,15 @@ class SSHTools(object):
                 time.sleep(0.1)
                 if self.channel is None:
                     break
-                if not self.is_connected():
+                # 用 transport.is_active() 快速判断，避免每次循环都 exec_command 阻塞
+                if not (self.transport and self.transport.is_active()):
                     break
                 try:
                     if self.channel.recv_ready():
                         output_bytes = self.channel.recv(4096)
+                        # EOF：对端关闭写方向，recv 返回空串
+                        if not output_bytes:
+                            break
                         if raw:
                             # 原始模式：直接发字符串（带 \r\n 和 ANSI），给 pyte 处理
                             output = output_bytes.decode('utf-8', errors='replace')
@@ -245,7 +256,7 @@ class SSHTools(object):
                     else:
                         timeout_count += 1
                         # 无数据超时退出
-                        if timeout_count > timeout * 30:
+                        if timeout is not None and timeout_count > timeout * 30:
                             logger.info(f"超时({timeout}秒)无内容，回显退出")
                             break
                 except (AttributeError, EOFError):

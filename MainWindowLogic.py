@@ -2595,11 +2595,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             thread.start()
 
         else:
-            if not self.current_ssh['tool'].is_connected():
-                self.connect_pushButton.setText('连接')
-                self.connect_pushButton.setEnabled(True)
-                self.server_comboBox.setEnabled(True)
-                return
+            # 断开操作：disconnect 内部自行判断连接状态，主线程不做阻塞式检查
             # 初始化worker
             worker = qthread_worker.OneClickWorker(self.current_ssh['tool'].disconnect)
 
