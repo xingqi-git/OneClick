@@ -56,6 +56,32 @@ class CopyFilesDialog(QDialog, copy_local_files_dlg.Ui_Dialog):
         # 默认列表为空
         self.source_list.setCurrentRow(-1)
 
+        # 调整 tab 顺序：按视觉从上到下、从左到右
+        self._set_tab_order()
+
+    def _set_tab_order(self):
+        """设置 tab 顺序，确保按视觉从上到下、从左到右"""
+        # 源路径区域（第一个可聚焦控件是列表）
+        self.setTabOrder(self.source_list, self.add_file_btn)
+        self.setTabOrder(self.add_file_btn, self.add_dir_btn)
+        self.setTabOrder(self.add_dir_btn, self.del_source_btn)
+        # 筛选条件区域
+        self.setTabOrder(self.del_source_btn, self.time_comboBox)
+        self.setTabOrder(self.time_comboBox, self.include_lineEdit)
+        self.setTabOrder(self.include_lineEdit, self.include_radio_and)
+        self.setTabOrder(self.include_radio_and, self.include_radio_or)
+        self.setTabOrder(self.include_radio_or, self.exclude_lineEdit)
+        self.setTabOrder(self.exclude_lineEdit, self.exclude_radio_and)
+        self.setTabOrder(self.exclude_radio_and, self.exclude_radio_or)
+        # 目的路径 → 快捷按钮名称 → 底部按钮
+        self.setTabOrder(self.exclude_radio_or, self.target_path_pushButton)
+        self.setTabOrder(self.target_path_pushButton, self.sc_name_lineEdit)
+        self.setTabOrder(self.sc_name_lineEdit, self.save_pushButton)
+        self.setTabOrder(self.save_pushButton, self.reset_pushButton)
+        self.setTabOrder(self.reset_pushButton, self.close_pushButton)
+        # 设置初始焦点在第一个可聚焦控件
+        self.source_list.setFocus()
+
     def _rebuild_source_and_target(self):
         """
         重建源路径/目的路径区域：
@@ -84,10 +110,12 @@ class CopyFilesDialog(QDialog, copy_local_files_dlg.Ui_Dialog):
         self.source_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # 添加/删除按钮
-        self.add_source_btn = QPushButton("添加")
+        self.add_file_btn = QPushButton("添加文件")
+        self.add_dir_btn = QPushButton("添加文件夹")
         self.del_source_btn = QPushButton("删除")
         btn_layout = QHBoxLayout()
-        btn_layout.addWidget(self.add_source_btn)
+        btn_layout.addWidget(self.add_file_btn)
+        btn_layout.addWidget(self.add_dir_btn)
         btn_layout.addWidget(self.del_source_btn)
         btn_layout.addStretch()
 
@@ -113,7 +141,8 @@ class CopyFilesDialog(QDialog, copy_local_files_dlg.Ui_Dialog):
         self.label_10.setFont(font_bold)
 
         # 连接信号
-        self.add_source_btn.clicked.connect(self._on_add_source)
+        self.add_file_btn.clicked.connect(self._on_add_file)
+        self.add_dir_btn.clicked.connect(self._on_add_dir)
         self.del_source_btn.clicked.connect(self._on_del_source)
         self.source_list.currentRowChanged.connect(self._on_source_selected)
         self.source_list.itemDoubleClicked.connect(self._on_source_double_clicked)
@@ -250,9 +279,18 @@ class CopyFilesDialog(QDialog, copy_local_files_dlg.Ui_Dialog):
         self._update_item_display(row)
         return row
 
-    def _on_add_source(self):
-        """添加按钮：选择本地文件/文件夹"""
-        path = self._select_path_dialog()
+    def _on_add_file(self):
+        """添加文件按钮：打开原生文件选择对话框"""
+        from PyQt5.QtWidgets import QFileDialog
+        paths, _ = QFileDialog.getOpenFileNames(self, "选择源文件", "", "")
+        for path in paths:
+            row = self._add_source_item(path)
+            self.source_list.setCurrentRow(row)
+
+    def _on_add_dir(self):
+        """添加文件夹按钮：打开原生文件夹选择对话框"""
+        from PyQt5.QtWidgets import QFileDialog
+        path = QFileDialog.getExistingDirectory(self, "选择源文件夹")
         if path:
             row = self._add_source_item(path)
             self.source_list.setCurrentRow(row)
@@ -323,20 +361,22 @@ class CopyFilesDialog(QDialog, copy_local_files_dlg.Ui_Dialog):
         self.source_items[row]['修改时间'] = self.time_comboBox.currentText()
 
     def _on_source_double_clicked(self, item):
-        """双击条目：重新选择路径"""
+        """双击条目：重新选择路径（按原路径类型弹对应对话框）"""
+        import os
+        from PyQt5.QtWidgets import QFileDialog
         row = self.source_list.row(item)
         if row < 0:
             return
-        path = self._select_path_dialog()
+        old_path = self.source_items[row]['路径']
+        default_dir = os.path.dirname(old_path)
+        if os.path.isdir(old_path):
+            path = QFileDialog.getExistingDirectory(self, "选择源文件夹", default_dir)
+        else:
+            file_path, _ = QFileDialog.getOpenFileName(self, "选择源文件", default_dir, "")
+            path = file_path
         if path:
             self.source_items[row]['路径'] = path
             self._update_item_display(row)
-
-    def _select_path_dialog(self):
-        """弹出文件/文件夹选择对话框，返回选择的路径或空字符串"""
-        from utils.qt_dialog_tools import select_path_dialog
-        paths = select_path_dialog(self, title="选择源路径")
-        return paths[0] if paths else ""
 
     def create_sc(self):
         # 每次点生成快捷方式按钮时，都先初始化所有输入框的样式
@@ -432,8 +472,8 @@ class CopyFilesDialog(QDialog, copy_local_files_dlg.Ui_Dialog):
         pass
 
     def select_target_path(self):
-        from utils.qt_dialog_tools import select_dir_dialog
-        path = select_dir_dialog(self, title="选择目的路径")
+        from PyQt5.QtWidgets import QFileDialog
+        path = QFileDialog.getExistingDirectory(self, "选择目的路径")
         if path:
             self.target_path_pushButton.setText(path)
             self.target_path_pushButton.setToolTip(path)

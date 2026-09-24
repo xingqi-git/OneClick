@@ -77,6 +77,36 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
         # 默认列表为空
         self.source_list.setCurrentRow(-1)
 
+        # 调整 tab 顺序：按视觉从上到下、从左到右
+        self._set_tab_order()
+
+    def _set_tab_order(self):
+        """设置 tab 顺序，确保按视觉从上到下、从左到右"""
+        # 服务器信息区域
+        self.setTabOrder(self.server_comboBox, self.linux_ip_lineEdit)
+        self.setTabOrder(self.linux_ip_lineEdit, self.sshport_lineEdit)
+        self.setTabOrder(self.sshport_lineEdit, self.username_lineEdit)
+        self.setTabOrder(self.username_lineEdit, self.passwd_lineEdit)
+        self.setTabOrder(self.passwd_lineEdit, self.work_dir_lineEdit)
+        # 源路径列表 + 按钮
+        self.setTabOrder(self.work_dir_lineEdit, self.source_list)
+        self.setTabOrder(self.source_list, self.add_source_btn)
+        self.setTabOrder(self.add_source_btn, self.del_source_btn)
+        # 筛选条件区域
+        self.setTabOrder(self.del_source_btn, self.time_comboBox)
+        self.setTabOrder(self.time_comboBox, self.include_lineEdit)
+        self.setTabOrder(self.include_lineEdit, self.include_radio_and)
+        self.setTabOrder(self.include_radio_and, self.include_radio_or)
+        self.setTabOrder(self.include_radio_or, self.exclude_lineEdit)
+        self.setTabOrder(self.exclude_lineEdit, self.exclude_radio_and)
+        self.setTabOrder(self.exclude_radio_and, self.exclude_radio_or)
+        # 目的路径 → 快捷按钮名称 → 底部按钮
+        self.setTabOrder(self.exclude_radio_or, self.local_path_pushButton)
+        self.setTabOrder(self.local_path_pushButton, self.sc_name_lineEdit)
+        self.setTabOrder(self.sc_name_lineEdit, self.save_pushButton)
+        self.setTabOrder(self.save_pushButton, self.reset_pushButton)
+        self.setTabOrder(self.reset_pushButton, self.close_pushButton)
+
     def _build_source_list_ui(self):
         """将原来的源路径行改造成带标题的列表 + 添加/删除按钮
         同时把目的路径行也先拿出来，后面统一摆放顺序
@@ -490,8 +520,8 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
     # 保留原来的选择路径方法（选择本地目的路径）
     def select_path(self):
         """获取文件时本地路径只能选择文件夹"""
-        from utils.qt_dialog_tools import select_dir_dialog
-        path = select_dir_dialog(self, title="选择目的路径")
+        from PyQt5.QtWidgets import QFileDialog
+        path = QFileDialog.getExistingDirectory(self, "选择目的路径")
         if path:
             self.local_path_pushButton.setText(path)
             self.local_path_pushButton.setToolTip(path)

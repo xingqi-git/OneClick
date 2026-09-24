@@ -61,11 +61,17 @@ class FileBrowserWidget(QtWidgets.QWidget):
         self.refresh_btn.clicked.connect(self.refresh)
         tool_row.addWidget(self.refresh_btn)
 
-        self.upload_btn = QtWidgets.QPushButton("上传", self)
-        self.upload_btn.setFixedWidth(50)
-        self.upload_btn.setToolTip("上传文件/文件夹到当前目录")
-        self.upload_btn.clicked.connect(self._on_upload_clicked)
-        tool_row.addWidget(self.upload_btn)
+        self.upload_file_btn = QtWidgets.QPushButton("传文件", self)
+        self.upload_file_btn.setFixedWidth(55)
+        self.upload_file_btn.setToolTip("上传文件到当前目录")
+        self.upload_file_btn.clicked.connect(self._on_upload_file_clicked)
+        tool_row.addWidget(self.upload_file_btn)
+
+        self.upload_dir_btn = QtWidgets.QPushButton("传文件夹", self)
+        self.upload_dir_btn.setFixedWidth(65)
+        self.upload_dir_btn.setToolTip("上传文件夹到当前目录")
+        self.upload_dir_btn.clicked.connect(self._on_upload_dir_clicked)
+        tool_row.addWidget(self.upload_dir_btn)
 
         self.download_btn = QtWidgets.QPushButton("下载", self)
         self.download_btn.setFixedWidth(50)
@@ -453,17 +459,29 @@ class FileBrowserWidget(QtWidgets.QWidget):
             new_path = self._full_path(name)
             self._load_path(new_path)
 
-    def _on_upload_clicked(self):
-        """上传文件/文件夹到当前目录"""
+    def _on_upload_file_clicked(self):
+        """上传文件到当前目录"""
         if not self.is_connected():
             QtWidgets.QMessageBox.information(self, "提示", "请先连接服务器")
             return
 
-        from utils.qt_dialog_tools import select_path_dialog
-        paths = select_path_dialog(self, title="选择要上传的文件或文件夹")
+        from PyQt5.QtWidgets import QFileDialog
+        paths, _ = QFileDialog.getOpenFileNames(self, "选择要上传的文件", "", "")
         if not paths:
             return
         self.upload_requested.emit(self._current_path, paths)
+
+    def _on_upload_dir_clicked(self):
+        """上传文件夹到当前目录"""
+        if not self.is_connected():
+            QtWidgets.QMessageBox.information(self, "提示", "请先连接服务器")
+            return
+
+        from PyQt5.QtWidgets import QFileDialog
+        folder = QFileDialog.getExistingDirectory(self, "选择要上传的文件夹")
+        if not folder:
+            return
+        self.upload_requested.emit(self._current_path, [folder])
 
     def _on_download_clicked(self):
         """下载选中的文件/文件夹"""
@@ -476,8 +494,8 @@ class FileBrowserWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.information(self, "提示", "请先选择要下载的文件")
             return
 
-        from utils.qt_dialog_tools import select_dir_dialog
-        local_dir = select_dir_dialog(self, title="选择保存到的本地文件夹")
+        from PyQt5.QtWidgets import QFileDialog
+        local_dir = QFileDialog.getExistingDirectory(self, "选择保存到的本地文件夹")
         if not local_dir:
             return
 
@@ -491,7 +509,8 @@ class FileBrowserWidget(QtWidgets.QWidget):
     def _set_buttons_enabled(self, enabled):
         self.up_btn.setEnabled(enabled)
         self.refresh_btn.setEnabled(enabled)
-        self.upload_btn.setEnabled(enabled)
+        self.upload_file_btn.setEnabled(enabled)
+        self.upload_dir_btn.setEnabled(enabled)
         self.download_btn.setEnabled(enabled)
         self.path_edit.setEnabled(enabled)
         self.tree.setEnabled(enabled)

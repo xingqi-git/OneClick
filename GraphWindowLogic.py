@@ -1043,8 +1043,8 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                 self.apply_time_filter()
 
     def on_load_other_folder(self):
-        from utils.qt_dialog_tools import select_dir_dialog
-        folder = select_dir_dialog(self, title="选择监控数据文件夹", default_dir=self.data_path)
+        from PyQt5.QtWidgets import QFileDialog
+        folder = QFileDialog.getExistingDirectory(self, "选择监控数据文件夹", self.data_path)
         if not folder:
             return
         self._switch_data_source(folder)

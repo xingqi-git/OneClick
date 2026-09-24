@@ -79,6 +79,37 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         # 默认不添加条目，列表为空
         self.source_list.setCurrentRow(-1)
 
+        # 调整 tab 顺序：按视觉从上到下、从左到右
+        self._set_tab_order()
+
+    def _set_tab_order(self):
+        """设置 tab 顺序，确保按视觉从上到下、从左到右"""
+        # 服务器信息区域
+        self.setTabOrder(self.server_comboBox, self.linux_ip_lineEdit)
+        self.setTabOrder(self.linux_ip_lineEdit, self.sshport_lineEdit)
+        self.setTabOrder(self.sshport_lineEdit, self.username_lineEdit)
+        self.setTabOrder(self.username_lineEdit, self.passwd_lineEdit)
+        self.setTabOrder(self.passwd_lineEdit, self.work_dir_lineEdit)
+        # 源路径列表 + 按钮
+        self.setTabOrder(self.work_dir_lineEdit, self.source_list)
+        self.setTabOrder(self.source_list, self.add_file_btn)
+        self.setTabOrder(self.add_file_btn, self.add_dir_btn)
+        self.setTabOrder(self.add_dir_btn, self.del_source_btn)
+        # 筛选条件区域
+        self.setTabOrder(self.del_source_btn, self.time_comboBox)
+        self.setTabOrder(self.time_comboBox, self.include_lineEdit)
+        self.setTabOrder(self.include_lineEdit, self.include_radio_and)
+        self.setTabOrder(self.include_radio_and, self.include_radio_or)
+        self.setTabOrder(self.include_radio_or, self.exclude_lineEdit)
+        self.setTabOrder(self.exclude_lineEdit, self.exclude_radio_and)
+        self.setTabOrder(self.exclude_radio_and, self.exclude_radio_or)
+        # 目的路径 → 快捷按钮名称 → 底部按钮
+        self.setTabOrder(self.exclude_radio_or, self.server_path_lineEdit)
+        self.setTabOrder(self.server_path_lineEdit, self.sc_name_lineEdit)
+        self.setTabOrder(self.sc_name_lineEdit, self.save_pushButton)
+        self.setTabOrder(self.save_pushButton, self.reset_pushButton)
+        self.setTabOrder(self.reset_pushButton, self.close_pushButton)
+
     def _build_source_list_ui(self):
         """将原来的源路径行改造成带标题的列表 + 添加/删除按钮"""
         # 从 gridLayout 中移除原来的源路径控件
@@ -102,14 +133,17 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         self.source_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # 创建按钮
-        self.add_source_btn = QPushButton("添加")
-        self.add_source_btn.setObjectName("add_source_btn")
+        self.add_file_btn = QPushButton("添加文件")
+        self.add_file_btn.setObjectName("add_file_btn")
+        self.add_dir_btn = QPushButton("添加文件夹")
+        self.add_dir_btn.setObjectName("add_dir_btn")
         self.del_source_btn = QPushButton("删除")
         self.del_source_btn.setObjectName("del_source_btn")
 
         # 按钮布局
         btn_layout = QHBoxLayout()
-        btn_layout.addWidget(self.add_source_btn)
+        btn_layout.addWidget(self.add_file_btn)
+        btn_layout.addWidget(self.add_dir_btn)
         btn_layout.addWidget(self.del_source_btn)
         btn_layout.addStretch()
 
@@ -126,7 +160,8 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         self.gridLayout.addWidget(container, 1, 0, 1, 2)
 
         # 连接信号
-        self.add_source_btn.clicked.connect(self._on_add_source)
+        self.add_file_btn.clicked.connect(self._on_add_file)
+        self.add_dir_btn.clicked.connect(self._on_add_dir)
         self.del_source_btn.clicked.connect(self._on_del_source)
         self.source_list.currentRowChanged.connect(self._on_source_selected)
         self.source_list.itemDoubleClicked.connect(self._on_source_double_clicked)
@@ -268,9 +303,18 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         self._update_item_display(row)
         return row
 
-    def _on_add_source(self):
-        """添加按钮：打开选择对话框，选择后添加到列表"""
-        path = self._select_path_dialog()
+    def _on_add_file(self):
+        """添加文件按钮：打开原生文件选择对话框"""
+        from PyQt5.QtWidgets import QFileDialog
+        paths, _ = QFileDialog.getOpenFileNames(self, "选择源文件", "", "")
+        for path in paths:
+            row = self._add_source_item(path)
+            self.source_list.setCurrentRow(row)
+
+    def _on_add_dir(self):
+        """添加文件夹按钮：打开原生文件夹选择对话框"""
+        from PyQt5.QtWidgets import QFileDialog
+        path = QFileDialog.getExistingDirectory(self, "选择源文件夹")
         if path:
             row = self._add_source_item(path)
             self.source_list.setCurrentRow(row)
@@ -351,20 +395,22 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         self.source_items[row]['修改时间'] = self.time_comboBox.currentText()
 
     def _on_source_double_clicked(self, item):
-        """双击条目：重新选择路径"""
+        """双击条目：重新选择路径（按原路径类型弹对应对话框）"""
+        import os
+        from PyQt5.QtWidgets import QFileDialog
         row = self.source_list.row(item)
         if row < 0:
             return
-        path = self._select_path_dialog()
+        old_path = self.source_items[row]['路径']
+        default_dir = os.path.dirname(old_path)
+        if os.path.isdir(old_path):
+            path = QFileDialog.getExistingDirectory(self, "选择源文件夹", default_dir)
+        else:
+            file_path, _ = QFileDialog.getOpenFileName(self, "选择源文件", default_dir, "")
+            path = file_path
         if path:
             self.source_items[row]['路径'] = path
             self._update_item_display(row)
-
-    def _select_path_dialog(self):
-        """弹出文件/文件夹选择对话框，返回选择的路径或空字符串"""
-        from utils.qt_dialog_tools import select_path_dialog
-        paths = select_path_dialog(self, title="选择源路径")
-        return paths[0] if paths else ""
 
     def _on_ip_changed(self, ip):
         """手动填写IP时，自动生成快捷按钮名称"""

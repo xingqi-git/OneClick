@@ -87,6 +87,10 @@ _log_queue = None
 _log_listener = None
 _qt_emitter = None
 _file_handler = None
+_console_handler = None
+_qt_handler = None
+_log_dir = None
+_max_bytes = None
 
 
 class QtLogEmitter:
@@ -242,12 +246,17 @@ def setup_logging(
     console_handler.setFormatter(console_fmt)
     console_handler.addFilter(_SuppressProgressFilter())
     listener_handlers.append(console_handler)
+    global _console_handler
+    _console_handler = console_handler
 
     # 文件输出（按大小轮转，可选）
     if enable_file_logging:
         if log_dir is None:
             log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
         os.makedirs(log_dir, exist_ok=True)
+        global _log_dir, _max_bytes
+        _log_dir = log_dir
+        _max_bytes = max_bytes
 
         file_fmt = logging.Formatter(
             "[%(asctime)s] [%(levelname)s] [%(name)s] [%(funcName)s:%(lineno)d] %(message)s",
@@ -272,6 +281,8 @@ def setup_logging(
             qt_handler = _QtBridgeHandler(_qt_emitter)
             qt_handler.setLevel(logging.INFO)  # UI 只看 INFO 及以上，DEBUG 不刷屏
             listener_handlers.append(qt_handler)
+            global _qt_handler
+            _qt_handler = qt_handler
         except Exception:
             pass
 
@@ -365,3 +376,69 @@ def is_file_logging_enabled() -> bool:
     if _file_handler is None:
         return False
     return _file_handler.level <= logging.CRITICAL
+
+
+def set_panel_level(level: int):
+    """运行时调整运行信息面板（UI）的日志级别"""
+    if _qt_handler is None:
+        return False
+    _qt_handler.setLevel(level)
+    return True
+
+
+def get_panel_level() -> int:
+    """查询面板日志级别"""
+    if _qt_handler is None:
+        return logging.INFO
+    return _qt_handler.level
+
+
+def set_console_level(level: int):
+    """运行时调整控制台日志级别"""
+    if _console_handler is None:
+        return False
+    _console_handler.setLevel(level)
+    return True
+
+
+def set_file_backup_count(count: int):
+    """运行时调整日志文件保留个数（重建 file handler）"""
+    global _file_handler, _log_listener
+    if _file_handler is None or _log_dir is None:
+        return False
+    count = max(1, int(count))
+    old_level = _file_handler.level
+    old_formatter = _file_handler.formatter
+    old_filename = _file_handler.baseFilename
+    try:
+        new_handler = logging.handlers.RotatingFileHandler(
+            filename=old_filename,
+            maxBytes=_max_bytes if _max_bytes else 10 * 1024 * 1024,
+            backupCount=count,
+            encoding="utf-8",
+        )
+        new_handler.setLevel(old_level)
+        new_handler.setFormatter(old_formatter)
+
+        # 在 listener 中替换 handler：先停 listener，替换后重启
+        if _log_listener is not None:
+            _log_listener.stop()
+            handlers = list(_log_listener.handlers)
+            for i, h in enumerate(handlers):
+                if h is _file_handler:
+                    handlers[i] = new_handler
+                    break
+            _file_handler.close()
+            _file_handler = new_handler
+            _log_listener.handlers = handlers
+            _log_listener.start()
+        return True
+    except Exception:
+        return False
+
+
+def get_file_backup_count() -> int:
+    """查询日志文件保留个数"""
+    if _file_handler is None:
+        return 5
+    return getattr(_file_handler, 'backupCount', 5)

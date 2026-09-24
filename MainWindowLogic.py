@@ -98,7 +98,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.copy_local_action.triggered.connect(self.copy_file_dialog)  # 复制本地文件编辑框
         self.resource_monitor_action.triggered.connect(self.resource_monitor_dialog)  # 资源监控编辑框
         self.weak_net_action.triggered.connect(self.weak_net_dialog)  # 弱网编辑框
-        self.get_sc_from_cfg_action.triggered.connect(self.load_sc_config)  # 从配置文件获取快捷按钮
         
         # 添加服务器检查菜单项，放到弱网下面
         from PyQt5.QtWidgets import QAction
@@ -114,10 +113,13 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self.menu.insertAction(actions[weak_net_idx + 1], self.server_check_action)
         else:
             self.menu.addAction(self.server_check_action)
+        # 隐藏已迁移/废弃的菜单项（从配置文件批量添加 → 统一在设置→导入配置）
+        self.get_sc_from_cfg_action.setVisible(False)
+        self.get_server_from_cfg_action.setVisible(False)
+
         self.server_check_action.triggered.connect(self.server_check_dialog)
 
         self.edit_server_action.triggered.connect(self.server_cfg_dialog)  # 服务器列表的编辑框
-        self.get_server_from_cfg_action.triggered.connect(self.load_server_config)  # 从配置文件获取服务器
 
         self.save_action.triggered.connect(self.save_config)  # 保存配置到当前配置文件
         self.save_to_action_2.triggered.connect(self.save_config_to)  # 另存为配置到文件夹
@@ -129,17 +131,24 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # ---- 替换 scrollArea_2 为 QTabWidget（分组标签页） ----
         self.group_tabWidget = QTabWidget(self.centralwidget)
         self.group_tabWidget.setTabsClosable(True)
+        self.group_tabWidget.setMovable(True)  # 允许拖拽排序
         self.group_tabWidget.tabCloseRequested.connect(self.on_tab_close_requested)
         self.group_tabWidget.tabBarDoubleClicked.connect(self.on_tab_bar_double_clicked)
+        self.group_tabWidget.tabBar().tabMoved.connect(self.on_tab_moved)
         # 标签栏右键菜单
         self.group_tabWidget.tabBar().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.group_tabWidget.tabBar().customContextMenuRequested.connect(self.on_tab_bar_context_menu)
-        # 左上角"+"新建分组按钮（标签页最前面），紧贴标签无间隙
+        # 左上角"+"新建分组按钮（用容器包装，按钮靠右贴紧标签）
         self.add_group_btn = QPushButton("+", self.centralwidget)
         self.add_group_btn.setFixedSize(24, 24)
         self.add_group_btn.setToolTip("新建分组")
         self.add_group_btn.clicked.connect(self.add_new_group)
-        self.group_tabWidget.setCornerWidget(self.add_group_btn, QtCore.Qt.Corner.TopLeftCorner)
+        add_btn_container = QWidget(self.centralwidget)
+        add_btn_layout = QHBoxLayout(add_btn_container)
+        add_btn_layout.setContentsMargins(0, 0, 0, 0)
+        add_btn_layout.addStretch()
+        add_btn_layout.addWidget(self.add_group_btn)
+        self.group_tabWidget.setCornerWidget(add_btn_container, QtCore.Qt.Corner.TopLeftCorner)
         # 消除corner widget与tab之间的间隙
         self.group_tabWidget.tabBar().setStyleSheet("QTabBar { qproperty-usesScrollButtons: 1; }")
         # 替换布局中的 scrollArea_2
@@ -197,7 +206,11 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         # 日志系统：OneClick.py 入口已统一初始化好，这里直接连接 Qt 信号
         # setup_logging() 内部有防重复调用保护，这里再调一次只是为了拿到 emitter
-        from utils.logger import setup_logging, get_logger, set_file_logging, set_file_log_level, is_file_logging_enabled, log_progress
+        from utils.logger import (
+            setup_logging, get_logger, set_file_logging, set_file_log_level,
+            is_file_logging_enabled, log_progress, set_panel_level, get_panel_level,
+            set_file_backup_count, get_file_backup_count,
+        )
         import logging as _logging
         self._log_emitter = setup_logging()  # OneClick.py 已初始化，返回已有的 emitter
         self.logger = get_logger("MainWindow")
@@ -207,38 +220,68 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self._log_emitter.log_signal.connect(self._on_qt_log_message)
             self._log_emitter.progress_signal.connect(self._on_qt_progress)
 
-        # 从配置文件读取初始状态
-        self._log_level_config = {
-            'DEBUG': _logging.DEBUG,
-            'INFO': _logging.INFO,
-            'WARNING': _logging.WARNING,
-            'ERROR': _logging.ERROR,
+        # 日志配置：读取默认配置文件并应用
+        self._log_config = {
+            '文件日志': True,
+            '文件日志级别': 'INFO',
+            '面板日志级别': 'INFO',
+            '文件保留个数': 5,
         }
-        initial_log_enabled = is_file_logging_enabled()
+        _level_map = {'DEBUG': _logging.DEBUG, 'INFO': _logging.INFO,
+                      'WARNING': _logging.WARNING, 'ERROR': _logging.ERROR}
         if os.path.exists(self.default_config_path):
             try:
                 with open(self.default_config_path, 'r', encoding='utf-8') as f:
                     import json
                     cfg_data = json.load(f)
                     if '日志配置' in cfg_data:
-                        initial_log_enabled = cfg_data['日志配置'].get('文件日志', True)
-                        # 读取日志级别配置（整数：DEBUG=10, INFO=20, ...）
-                        for level_name in self._log_level_config:
-                            if level_name in cfg_data['日志配置']:
-                                self._log_level_config[level_name] = cfg_data['日志配置'][level_name]
+                        log_cfg = cfg_data['日志配置']
+                        if '文件日志' in log_cfg:
+                            self._log_config['文件日志'] = log_cfg['文件日志']
+                        if '文件日志级别' in log_cfg:
+                            self._log_config['文件日志级别'] = log_cfg['文件日志级别']
+                        if '面板日志级别' in log_cfg:
+                            self._log_config['面板日志级别'] = log_cfg['面板日志级别']
+                        if '文件保留个数' in log_cfg:
+                            self._log_config['文件保留个数'] = log_cfg['文件保留个数']
             except Exception:
                 pass
 
         # 应用配置到 logger
-        set_file_logging(initial_log_enabled)
-        # 找到配置中最小的级别（比如只开 INFO+WARNING+ERROR 那就是 INFO=20）
-        active_levels = [v for v in self._log_level_config.values() if isinstance(v, int)]
-        if active_levels:
-            set_file_log_level(min(active_levels))
+        set_file_logging(self._log_config['文件日志'])
+        set_file_log_level(_level_map.get(self._log_config['文件日志级别'], _logging.INFO))
+        set_panel_level(_level_map.get(self._log_config['面板日志级别'], _logging.INFO))
+        set_file_backup_count(self._log_config['文件保留个数'])
 
-        # 勾选框：现在只做开关日志的触发
-        self.log_file_checkBox.stateChanged.connect(set_file_logging)
-        self.log_file_checkBox.setChecked(initial_log_enabled)
+        # 隐藏旧的勾选框（功能移到设置菜单）
+        self.log_file_checkBox.setVisible(False)
+
+        # 设置菜单（动态插入到"帮助"之前）
+        self.settings_menu = QtWidgets.QMenu("设置", self)
+        self.log_settings_action = self.settings_menu.addAction("日志设置")
+        self.log_settings_action.triggered.connect(self.open_log_settings)
+        self.settings_menu.addSeparator()
+        self.import_append_action = self.settings_menu.addAction("导入配置（追加）")
+        self.import_append_action.triggered.connect(lambda: self.import_config_dialog(append=True))
+        self.import_overwrite_action = self.settings_menu.addAction("导入配置（覆盖）")
+        self.import_overwrite_action.triggered.connect(lambda: self.import_config_dialog(append=False))
+        self.settings_menu.addSeparator()
+        self.export_action = self.settings_menu.addAction("导出配置")
+        self.export_action.triggered.connect(self.export_config_dialog)
+        # 找到 menubar 中"帮助"菜单的位置，插在它前面
+        menubar = self.menuBar()
+        actions = menubar.actions()
+        for act in actions:
+            if act.text() == "帮助":
+                menubar.insertMenu(act, self.settings_menu)
+                break
+        else:
+            menubar.addMenu(self.settings_menu)
+        # 隐藏原"配置保存"菜单（功能已迁移到设置菜单）
+        for act in menubar.actions():
+            if act.text() == "配置保存":
+                act.setVisible(False)
+                break
 
         # ---- 三列布局改造：按钮区 | 文件区 | 终端区 ----
         # 用 QSplitter 水平分割，可拖动调整宽度
@@ -346,8 +389,12 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 如果有默认配置文件，则获取
         if os.path.exists(self.default_config_path):
             self.update_run_info('存在默认配置文件，开始添加服务器和快捷按钮')
-            self.load_server_config(self.default_config_path)
-            self.load_sc_config(self.default_config_path)
+            self._loading_config = True
+            try:
+                self.load_server_config(self.default_config_path)
+                self.load_sc_config(self.default_config_path)
+            finally:
+                self._loading_config = False
 
         # 如果没有任何分组，则创建默认分组
         if not self._groups:
@@ -542,6 +589,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 显示弹出窗口（模态显示，阻止操作主窗口）
         if s_cfg_dlg.exec_() == QtWidgets.QDialog.DialogCode.Accepted:
             self.update_run_info('服务器列表编辑 成功')
+            self._save_config_auto()
         else:
             self.update_run_info('服务器列表编辑 取消')
 
@@ -661,6 +709,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             'tab_page': tab_page,
         }
         self._group_order.append(group_name)
+        self._save_config_auto()
         return group_name
 
     def add_new_group(self):
@@ -697,6 +746,19 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             for bid in group_info['buttons']:
                 self.sc_buttons[bid]['group'] = new_name
             self.update_run_info(f'分组<{old_name}>重命名为<{new_name}>')
+            self._save_config_auto()
+
+    def on_tab_moved(self, from_index, to_index):
+        """标签页拖拽移动后，同步更新 _group_order 和各分组的 tab_index"""
+        # 按当前标签页顺序重建 _group_order
+        new_order = []
+        for i in range(self.group_tabWidget.count()):
+            gname = self.group_tabWidget.tabText(i)
+            new_order.append(gname)
+            if gname in self._groups:
+                self._groups[gname]['tab_index'] = i
+        self._group_order = new_order
+        self._save_config_auto()
 
     def on_tab_close_requested(self, index):
         """关闭标签页（删除分组）"""
@@ -729,6 +791,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         for gname, ginfo in self._groups.items():
             ginfo['tab_index'] = self.group_tabWidget.indexOf(ginfo['tab_page'])
         self.update_run_info(f'删除分组<{group_name}>成功')
+        self._save_config_auto()
 
     def on_tab_bar_context_menu(self, pos):
         """标签栏右键菜单"""
@@ -840,6 +903,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         }
         group_info['buttons'].append(button_id)
         config_data['位置'] = len(group_info['buttons'])
+        self._save_config_auto()
 
     def edit_button(self, config_data, button_id):
         self.sc_buttons[button_id]['config'].update(config_data)  # 更新按钮字典内容
@@ -851,6 +915,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             btn.setStyleSheet(self.get_button_style(cmd_type))
             btn.style().unpolish(btn)
             btn.style().polish(btn)
+        self._save_config_auto()
 
     def _on_drag_started(self, button, button_id, container):
         """拖动开始"""
@@ -1975,6 +2040,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.sc_buttons[button_id]['widget'].setParent(new_group_info['button_container'])
         btn_name = self.sc_buttons[button_id]['config']['指令名称']
         self.update_run_info(f'按钮<{btn_name}>已移动到分组<{target_group}>')
+        self._save_config_auto()
 
     def copy_button(self, button_id):
         """复制按钮"""
@@ -2035,6 +2101,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         btn_info['widget'].deleteLater()
         del self.sc_buttons[button_id]
         self.update_run_info(f"删除<{btn_text}>快捷按钮成功")
+        self._save_config_auto()
 
     def delete_button(self, button_id):
         confirm_dialog = QMessageBox()
@@ -2197,6 +2264,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self._delete_button_internal(bid)
         if deletable:
             self.update_run_info(f'分组<{group_name}>已删除{len(deletable)}个按钮')
+            self._save_config_auto()
 
     def execute_all_buttons(self):
         """全部执行所有标签页的所有按钮（跳过不支持批量执行的类型）"""
@@ -2267,26 +2335,217 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         current_path = current_path.replace('\\', '/')
         return current_path
 
+    def open_log_settings(self):
+        """打开日志设置对话框"""
+        from dialogs.log_settings_dialog import LogSettingsDialog
+        from utils.logger import set_file_logging, set_file_log_level, set_panel_level, set_file_backup_count
+        import logging as _logging
+        _level_map = {'DEBUG': _logging.DEBUG, 'INFO': _logging.INFO,
+                      'WARNING': _logging.WARNING, 'ERROR': _logging.ERROR}
+        dlg = LogSettingsDialog(self, self._log_config)
+        if dlg.exec_() == QtWidgets.QDialog.DialogCode.Accepted:
+            new_cfg = dlg.get_config()
+            self._log_config = new_cfg
+            # 应用到 logger
+            set_file_logging(new_cfg['文件日志'])
+            set_file_log_level(_level_map.get(new_cfg['文件日志级别'], _logging.INFO))
+            set_panel_level(_level_map.get(new_cfg['面板日志级别'], _logging.INFO))
+            set_file_backup_count(new_cfg['文件保留个数'])
+            # 保存到默认配置文件
+            self._save_log_config_to_file()
+            self.update_run_info("日志设置已更新")
+
+    def _save_log_config_to_file(self):
+        """把当前日志配置写入默认配置文件（保留其他配置不变）"""
+        if os.path.exists(self.default_config_path):
+            try:
+                with open(self.default_config_path, 'r', encoding='utf-8') as f:
+                    import json
+                    cfg_data = json.load(f)
+            except Exception:
+                cfg_data = {}
+        else:
+            cfg_data = {}
+        cfg_data['日志配置'] = self._log_config.copy()
+        try:
+            with open(self.default_config_path, 'w', encoding='utf-8') as f:
+                import json
+                json.dump(cfg_data, f, ensure_ascii=False, indent=4)
+        except Exception:
+            pass
+
+    def _save_config_auto(self):
+        """自动保存配置到默认配置文件，失败只记日志不弹框"""
+        if getattr(self, '_loading_config', False):
+            return
+        try:
+            self.save_config_to(self.default_config_path)
+        except Exception as e:
+            self.logger.warning(f"自动保存配置失败: {e}")
+
     def save_config(self):
-        """菜单-保存"""
+        """菜单-保存（保留兼容，自动保存后基本用不到）"""
         self.save_config_to(self.default_config_path)
 
-    def save_config_to(self, path):
-        """保存功能调用，如果点击菜单-另存为按钮来调用时，传入的是False，弹出对话框"""
-        if not path:
-            from utils.qt_dialog_tools import save_file_dialog
-            file_path = save_file_dialog(
-                self,
-                title="另存为配置",
-                default_name="自定义配置",
-                suffix="json",
-                file_filter="JSON Files (*.json)"
+    def export_config_dialog(self):
+        """导出配置：弹出保存对话框，另存为 JSON 文件"""
+        from PyQt5.QtWidgets import QFileDialog
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "导出配置",
+            "OneClick配置",
+            "JSON Files (*.json)"
+        )
+        if not file_path:
+            self.update_run_info("导出配置 取消")
+            return
+        if not file_path.endswith('.json'):
+            file_path += '.json'
+        self.save_config_to(file_path)
+
+    def import_config_dialog(self, append=True):
+        """
+        导入配置
+        append=True:  追加模式（分组重名跳过，按钮/服务器/指令一律追加）
+        append=False: 覆盖模式（全部清空后导入）
+        """
+        from PyQt5.QtWidgets import QFileDialog, QMessageBox
+        files, _ = QFileDialog.getOpenFileName(
+            self,
+            "导入配置（追加）" if append else "导入配置（覆盖）",
+            "",
+            "JSON Files (*.json)"
+        )
+        if not files:
+            self.update_run_info("导入配置 取消")
+            return
+        file_path = files
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                processed_content = content.replace("\\", "/")
+                data = json.loads(processed_content)
+                if not isinstance(data, dict):
+                    raise ValueError("配置文件格式错误：不是字典类型")
+        except (json.JSONDecodeError, IOError, ValueError) as e:
+            self.update_run_info(f"导入配置失败: {str(e)}", 'WARNING')
+            QMessageBox.warning(self, "导入失败", f"配置文件解析失败:\n{e}")
+            return
+
+        # 覆盖模式：确认后清空现有数据
+        if not append:
+            reply = QMessageBox.question(
+                self, "确认覆盖",
+                "覆盖模式将清空所有现有按钮、分组、服务器和指令，是否继续？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
             )
-            if not file_path:
-                self.update_run_info(f"另存为配置 取消")
+            if reply != QMessageBox.StandardButton.Yes:
+                self.update_run_info("导入配置 取消")
                 return
-        else:
-            file_path = path
+            # 清空所有数据
+            self._clear_all_config()
+
+        # 设置加载标志，避免过程中反复保存
+        self._loading_config = True
+        try:
+            # ---- 收集数据 ----
+            sc_buttons_list = []
+            group_set = set()
+            servers = []
+            commands = []
+            for key in data:
+                if '快捷按钮' in key:
+                    btn_cfg = data[key]
+                    gname = btn_cfg.get('分组', '默认分组')
+                    pos = btn_cfg.get('位置', 99999)
+                    sc_buttons_list.append((gname, pos, btn_cfg))
+                    group_set.add(gname)
+                elif '服务器' in key:
+                    servers.append(data[key])
+                elif key == '指令':
+                    commands = data[key] if isinstance(data[key], list) else []
+
+            # ---- 分组处理 ----
+            group_order_cfg = data.get('分组顺序', [])
+            if isinstance(group_order_cfg, list) and group_order_cfg:
+                ordered = [g for g in group_order_cfg if g in group_set]
+                remaining = sorted([g for g in group_set if g not in group_order_cfg])
+                ordered_groups = ordered + remaining
+            else:
+                ordered_groups = sorted(group_set)
+
+            if not append:
+                # 覆盖模式：按导入的分组顺序重建
+                for gname in ordered_groups:
+                    self._ensure_group(gname)
+            else:
+                # 追加模式：已有的分组跳过，新的追加到末尾
+                for gname in ordered_groups:
+                    self._ensure_group(gname)
+
+            # ---- 按钮处理 ----
+            group_order_map = {g: i for i, g in enumerate(ordered_groups)}
+            sc_buttons_list.sort(key=lambda x: (group_order_map.get(x[0], 99999), x[1]))
+            btn_added = 0
+            for gname, pos, btn_cfg in sc_buttons_list:
+                clean_cfg = btn_cfg.copy()
+                if '位置' in clean_cfg:
+                    del clean_cfg['位置']
+                self.add_button(clean_cfg)
+                btn_added += 1
+
+            # ---- 服务器处理 ----
+            srv_added = 0
+            for srv in servers:
+                self.servers_cfg.append(srv)
+                srv_added += 1
+            if srv_added > 0:
+                self.update_server_combobox()
+
+            # ---- 指令处理 ----
+            cmd_added = 0
+            for cmd in commands:
+                if cmd not in self.commands:
+                    self.commands.append(cmd)
+                    cmd_added += 1
+
+            # 同步到 UI（指令列表在打开管理对话框时会刷新）
+            mode_name = "追加" if append else "覆盖"
+            self.update_run_info(
+                f"导入配置（{mode_name}）成功，来自{file_path}\n"
+                f"  分组：{len(group_set)} 个，按钮：{btn_added} 个，"
+                f"服务器：{srv_added} 个，指令：{cmd_added} 条"
+            )
+
+            # 选中第一个分组
+            if self.group_tabWidget.count() > 0:
+                self.group_tabWidget.setCurrentIndex(0)
+        finally:
+            self._loading_config = False
+            # 导入完成后保存一次
+            self._save_config_auto()
+
+    def _clear_all_config(self):
+        """清空所有配置（按钮、分组、服务器、指令），用于覆盖导入"""
+        # 清空按钮和分组
+        self.sc_buttons.clear()
+        self._groups.clear()
+        self._group_order.clear()
+        # 清空所有标签页（从后往前删，避免索引问题）
+        while self.group_tabWidget.count() > 0:
+            self.group_tabWidget.removeTab(self.group_tabWidget.count() - 1)
+        # 清空服务器
+        self.servers_cfg.clear()
+        self.update_server_combobox()
+        # 清空指令
+        self.commands.clear()
+
+    def save_config_to(self, path):
+        """保存配置到指定路径"""
+        file_path = path
+        if not file_path.endswith('.json'):
+            file_path += '.json'
         # 获取所有配置
         cfg_dic = {}
         server_count = 1
@@ -2294,6 +2553,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         for server in self.servers_cfg:
             cfg_dic[f'服务器{server_count}'] = server
             server_count += 1
+        # 保存分组顺序
+        cfg_dic['分组顺序'] = self._group_order.copy()
         # 按分组顺序保存按钮配置，每个按钮配置中包含"位置"和"分组"字段
         for gname in self._group_order:
             for i, button_id in enumerate(self._groups[gname]['buttons']):
@@ -2304,35 +2565,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 button_count += 1
         if len(self.commands) != 0:
             cfg_dic['指令'] = self.commands
-        # 保存日志配置
-        # 如果配置文件已存在，读取原有的日志级别配置并保留
-        existing_log_cfg = {}
-        if os.path.exists(file_path):
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    old_cfg = json.load(f)
-                    if '日志配置' in old_cfg:
-                        existing_log_cfg = old_cfg['日志配置']
-            except Exception:
-                pass
-        
-        # 构建新的日志配置
-        new_log_cfg = {
-            '文件日志': self.log_file_checkBox.isChecked()
-        }
-        # 如果已有级别配置，保留；否则设置默认值（DEBUG=False，其他=True）
-        if 'DEBUG' in existing_log_cfg:
-            new_log_cfg['DEBUG'] = existing_log_cfg['DEBUG']
-            new_log_cfg['INFO'] = existing_log_cfg.get('INFO', True)
-            new_log_cfg['WARNING'] = existing_log_cfg.get('WARNING', True)
-            new_log_cfg['ERROR'] = existing_log_cfg.get('ERROR', True)
-        else:
-            new_log_cfg['DEBUG'] = False
-            new_log_cfg['INFO'] = True
-            new_log_cfg['WARNING'] = True
-            new_log_cfg['ERROR'] = True
-        
-        cfg_dic['日志配置'] = new_log_cfg
+        # 保存日志配置（用当前内存中的配置）
+        cfg_dic['日志配置'] = self._log_config.copy()
 
         # 写入到json文件
         try:
@@ -2343,20 +2577,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self.update_run_info(f"保存配置失败: {str(e)}", 'WARNING')
 
     def load_sc_config(self, path):
-        """启动时如果有默认配置会调用，传入默认配置路径，手动点的时候传入的是False，弹出对话框"""
-        if not path:
-            from utils.qt_dialog_tools import open_file_dialog
-            files = open_file_dialog(
-                self,
-                title="加载快捷按钮配置",
-                file_filter="JSON Files (*.json)"
-            )
-            if not files:
-                self.update_run_info('批量添加快捷按钮 取消')
-                return
-            file_path = files[0]
-        else:
-            file_path = path
+        """启动时从默认配置文件加载快捷按钮、分组、指令"""
+        file_path = path
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -2372,15 +2594,32 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             return
         # 先收集所有快捷按钮配置，按分组和位置排序
         sc_buttons_list = []
+        group_set = set()
         for key in data:
             if '快捷按钮' in key:
                 button_config = data[key]
                 group_name = button_config.get('分组', '默认分组')
                 position = button_config.get('位置', 99999)
                 sc_buttons_list.append((group_name, position, button_config))
+                group_set.add(group_name)
 
-        # 先按分组名排序（保证分组创建顺序），再按位置排序
-        sc_buttons_list.sort(key=lambda x: (x[0], x[1]))
+        # 读取分组顺序（如果配置中有，则按此顺序创建分组；否则按分组名字典序）
+        group_order_cfg = data.get('分组顺序', [])
+        if isinstance(group_order_cfg, list) and group_order_cfg:
+            # 配置中有的分组按配置顺序，没在配置里的分组追加到后面
+            ordered_groups = [g for g in group_order_cfg if g in group_set]
+            remaining = sorted([g for g in group_set if g not in group_order_cfg])
+            ordered_groups.extend(remaining)
+        else:
+            ordered_groups = sorted(group_set)
+
+        # 先按顺序创建所有分组（确保分组顺序正确）
+        for gname in ordered_groups:
+            self._ensure_group(gname)
+
+        # 按分组顺序 + 组内位置排序
+        group_order_map = {gname: idx for idx, gname in enumerate(ordered_groups)}
+        sc_buttons_list.sort(key=lambda x: (group_order_map.get(x[0], 99999), x[1]))
         for group_name, position, button_config in sc_buttons_list:
             button_config_clean = button_config.copy()
             if '位置' in button_config_clean:
@@ -2396,18 +2635,10 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 for cmd in data[key]:  # data[key]=['top','pwd']
                     self.commands.append(cmd)
                 self.update_run_info(f"批量添加指令 成功，来自{file_path}")
-            elif key == '日志配置':
-                log_cfg = data[key]
-                if log_cfg.get('文件日志', False):
-                    self.log_file_checkBox.setChecked(True)
-                else:
-                    self.log_file_checkBox.setChecked(False)
-                # 读取日志级别配置（如果有）
-                for level in self._log_level_config:
-                    if level in log_cfg:
-                        self._log_level_config[level] = log_cfg[level]
-            elif key == '按钮顺序':  # 旧版本的key，忽略
+            elif key == '日志配置':  # 跳过，日志配置在启动时单独加载
                 pass
+            elif key == '分组顺序':
+                pass  # 分组排序，上面已处理
             else:
                 self.update_run_info(f'{key}无法识别的数据类型', 'WARNING')
         self.update_run_info(f"批量添加快捷按钮 成功，来自{file_path}")
@@ -2416,20 +2647,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self.group_tabWidget.setCurrentIndex(0)
 
     def load_server_config(self, path):
-        """启动时如果有默认配置会调用，传入默认配置路径，手动点的时候传入的是False，弹出对话框"""
-        if not path:  # 手动点的情况
-            from utils.qt_dialog_tools import open_file_dialog
-            files = open_file_dialog(
-                self,
-                title="加载服务器配置",
-                file_filter="JSON Files (*.json)"
-            )
-            if not files:
-                self.update_run_info('批量添加服务器 取消')
-                return
-            file_path = files[0]
-        else:
-            file_path = path
+        """启动时从默认配置文件加载服务器列表"""
+        file_path = path
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -2478,27 +2697,13 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 button_count += 1
         if len(self.commands) != 0:
             current_cfg['指令'] = self.commands
-        # 加入日志配置状态
-        # 如果文件中已有日志级别配置，保留；否则用内存中的配置
-        current_log_cfg = {
-            '文件日志': self.log_file_checkBox.isChecked()
-        }
-        if '日志配置' in file_cfg and 'DEBUG' in file_cfg['日志配置']:
-            # 保留文件中的日志级别配置
-            current_log_cfg['DEBUG'] = file_cfg['日志配置']['DEBUG']
-            current_log_cfg['INFO'] = file_cfg['日志配置'].get('INFO', True)
-            current_log_cfg['WARNING'] = file_cfg['日志配置'].get('WARNING', True)
-            current_log_cfg['ERROR'] = file_cfg['日志配置'].get('ERROR', True)
-        else:
-            # 用内存中的配置（首次保存）
-            current_log_cfg['DEBUG'] = self._log_level_config['DEBUG']
-            current_log_cfg['INFO'] = self._log_level_config['INFO']
-            current_log_cfg['WARNING'] = self._log_level_config['WARNING']
-            current_log_cfg['ERROR'] = self._log_level_config['ERROR']
-        current_cfg['日志配置'] = current_log_cfg
+        # 加入日志配置（日志设置即时保存，不参与修改检测）
+        current_cfg['日志配置'] = self._log_config.copy()
 
-        # 直接比较两个字典是否完全相等
-        return current_cfg != file_cfg
+        # 比较时忽略日志配置（日志设置即时保存，不触发修改提示）
+        current_cmp = {k: v for k, v in current_cfg.items() if k != '日志配置'}
+        file_cmp = {k: v for k, v in file_cfg.items() if k != '日志配置'}
+        return current_cmp != file_cmp
 
     def update_server_combobox(self):
         self.server_comboBox.clear()
@@ -2623,11 +2828,14 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
     def open_cmd_manage_dialog(self):
         """打开指令管理对话框"""
+        old_commands = self.commands.copy()
         dlg = CmdManageDialog(commands=self.commands, parent=self)
         dlg.insert_cmd_signal.connect(self._insert_cmd_to_terminal)
         dlg.exec_()
         # 对话框关闭后，同步指令列表
         self.commands = dlg.get_all_commands()
+        if self.commands != old_commands:
+            self._save_config_auto()
 
     def _insert_cmd_to_terminal(self, cmd):
         """插入指令到终端（直接发送给服务器，不自动回车）"""
@@ -2644,41 +2852,28 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
     def closeEvent(self, event):
         """
-        重写窗口关闭事件，弹出三按钮确认框
+        重写窗口关闭事件：检测运行中的按钮，提示用户确认
         """
-        if self.is_config_changed(self.default_config_path):
-            # 创建消息框实例
+        running_count = len(self.sc_threads)
+        if running_count > 0:
             msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("保存确认")
-            msg_box.setText("当前配置未保存，是否保存更改后退出？")
-            msg_box.setIcon(QMessageBox.Icon.Question)
-
-            # 添加三个按钮 (保存 / 不保存 / 取消)
-            btn_save = msg_box.addButton("保存并退出", QMessageBox.ButtonRole.ActionRole)
-            btn_discard = msg_box.addButton("不保存退出", QMessageBox.ButtonRole.DestructiveRole)
+            msg_box.setWindowTitle("确认退出")
+            msg_box.setText(f"有 {running_count} 个快捷按钮正在运行，是否直接退出？")
+            msg_box.setInformativeText("直接退出会强制中断正在执行的操作。")
+            msg_box.setIcon(QMessageBox.Icon.Warning)
+            btn_exit = msg_box.addButton("直接退出", QMessageBox.ButtonRole.DestructiveRole)
             btn_cancel = msg_box.addButton("取消", QMessageBox.ButtonRole.RejectRole)
-
-            # 设置默认选中按钮（可选，比如默认选中"取消"比较安全）
             msg_box.setDefaultButton(btn_cancel)
-
-            # 弹出对话框并等待用户点击
             msg_box.exec_()
-
-            # 判断用户点击了哪个按钮
-            clicked_btn = msg_box.clickedButton()
-
-            if clicked_btn == btn_save:
-                # --- 点击了"保存" ---
-                self.save_config()
-                event.accept()
-            elif clicked_btn == btn_discard:
-                # --- 点击了"不保存" ---
+            if msg_box.clickedButton() == btn_exit:
+                # 自动保存后退出
+                self._save_config_auto()
                 event.accept()
             else:
-                # --- 点击了"取消" 或 关闭了对话框 ---
                 event.ignore()
         else:
-            # 配置没变动，直接退出
+            # 没有运行中的任务，自动保存后退出
+            self._save_config_auto()
             event.accept()
 
     def show_help_dialog(self):
