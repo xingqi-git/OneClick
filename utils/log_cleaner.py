@@ -256,7 +256,14 @@ def clean_local_logs(dir_path, start_time, end_time, progress_cb=None):
                 pass
 
         first_time, last_time = get_log_time_range(filepath)
+        # 空文件或只有表头（无数据）的文件，直接删除（垃圾文件清理，不受时间范围限制）
         if first_time is None or last_time is None:
+            try:
+                if os.path.getsize(filepath) <= 500:  # 小文件才删，避免误删大文件
+                    os.remove(filepath)
+                    deleted_files += 1
+            except OSError as e:
+                errors.append(f"{os.path.basename(filepath)}: {e}")
             continue
 
         # 完全在区间之前或之后，跳过

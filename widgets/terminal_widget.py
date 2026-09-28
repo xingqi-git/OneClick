@@ -250,7 +250,13 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
         super().keyPressEvent(event)
 
     def wheelEvent(self, event):
+        sb = self.verticalScrollBar()
+        old_value = sb.value()
         super().wheelEvent(event)
+        # value 变小 = 向上滚动 = 用户在回看历史，停止自动跟随
+        # 用滚动条实际位置判断，比 angleDelta 方向更可靠（跨平台一致）
+        if sb.value() < old_value:
+            self._auto_scroll = False
 
     def contextMenuEvent(self, event):
         """右键菜单：有选中时显示复制，否则显示粘贴+全选。只读模式下 Qt 不提供这些项，自己加。"""
@@ -366,6 +372,13 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
         self._deferred_render = False
         screen = self._screen
 
+        # 非自动跟随模式下，保存滚动位置，防止文档修改导致 QPlainTextEdit 自动滚到底
+        sb = self.verticalScrollBar()
+        save_scroll = not self._auto_scroll
+        if save_scroll:
+            saved_value = sb.value()
+            sb.blockSignals(True)  # 防止恢复位置时触发 _on_scrollbar_changed 改回 _auto_scroll
+
         # 历史行数
         history_count = len(screen.history.top) if hasattr(screen, 'history') else 0
 
@@ -376,6 +389,9 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
             self._rendered_history_count = history_count
             if self._auto_scroll:
                 self._scroll_to_bottom()
+            elif save_scroll:
+                sb.setValue(saved_value)
+                sb.blockSignals(False)
             return
 
         doc = self.document()
@@ -431,6 +447,10 @@ class TerminalEdit(QtWidgets.QPlainTextEdit):
 
         if self._auto_scroll:
             self._scroll_to_bottom()
+        elif save_scroll:
+            # 恢复用户的滚动位置
+            sb.setValue(saved_value)
+            sb.blockSignals(False)
 
     def _full_redraw(self, screen, history_count):
         """全量重绘（首次或清屏后）"""
