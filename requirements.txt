@@ -1,5 +1,4 @@
-# 适配Python 3.8 + Win7/Win10/WinServer 版本要求
-# 所有版本均经过验证，可正常使用pyinstaller 4.10打包为单文件exe
+# Python 3.8.10
 PyQt5==5.15.2
 PyQt5-sip==12.9.1
 paramiko==2.10.4
