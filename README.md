@@ -1,10 +1,8 @@
 # OneClick - 一键式服务器运维管理工具
 
-一个基于 PyQt5 开发的图形化 SSH 服务器运维管理工具，支持多服务器管理、命令批量执行、文件传输、资源监控等功能。
+一个终端远程工具，内置常用指令保存功能。支持一键命令批量执行、文件传输、资源监控、弱网、服务器检查等功能。
 
 ## 项目简介
-
-OneClick 是一款专为 Windows 平台设计的服务器运维管理工具，旨在简化日常服务器运维操作。通过图形化界面，用户可以方便地管理多台 Linux 服务器，执行命令、传输文件、监控资源使用情况等。
 
 ## 主要功能
 
@@ -51,22 +49,11 @@ OneClick 是一款专为 Windows 平台设计的服务器运维管理工具，�
 - 快捷按钮配置保存
 - 支持多配置文件（JSON格式）
 
-## 技术栈
-
-- **GUI 框架**: PyQt5 5.15.2
-- **SSH 协议**: paramiko 2.10.4
-- **文件传输**: scp 0.14.4
-- **数据可视化**: matplotlib 3.4.3
-- **系统监控**: psutil 5.9.0
-- **打包工具**: pyinstaller 4.10
-- **加密**: cryptography 3.4.8, bcrypt 3.2.2
-- **Windows API**: pywin32 306
-
 ## 环境要求
 
 - Python 3.8+
 - Windows 7 / Windows 10 / Windows Server
-- 支持 pyinstaller 4.10（打包验证通过
+- 支持 pyinstaller 4.10
 
 ## 安装与运行
 
@@ -186,40 +173,7 @@ OneClick/
 
 监控数据会自动保存到 local/OneClick/ 目录下的 .log 文件中，可通过图表功能查看历史数据。
 
-## UI 文件更新
-
-如需修改 UI 界面，使用 Qt Designer 编辑 .ui 文件后执行以下命令更新：
-
-```bash
-# 更新主窗口
-python -m PyQt5.uic.pyuic ./UI/MainWindow.ui -o ./UI/MainWindow.py
-
-# 更新其他对话框
-python -m PyQt5.uic.pyuic ./UI/send_cmd_dlg.ui -o ./UI/send_cmd_dlg.py
-python -m PyQt5.uic.pyuic ./UI/send_files_dlg.ui -o ./UI/send_files_dlg.py
-python -m PyQt5.uic.pyuic ./UI/get_files_dlg.ui -o ./UI/get_files_dlg.py
-python -m PyQt5.uic.pyuic ./UI/copy_local_files_dlg.ui -o ./UI/copy_local_files_dlg.py
-python -m PyQt5.uic.pyuic ./UI/edit_servers_dlg.ui -o ./UI/edit_servers_dlg.py
-python -m PyQt5.uic.pyuic ./UI/resource_monitor_dlg.ui -o ./UI/resource_monitor_dlg.py
-python -m PyQt5.uic.pyuic ./UI/weak_net_control_dlg.ui -o ./UI/weak_net_control_dlg.py
-python -m PyQt5.uic.pyuic ./UI/GraphMainWindow.ui -o ./UI/GraphMainWindow.py
-```
-
-## 开发说明
-
-- 项目使用面向对象设计，各对话框类继承自对应的 UI 类
-- 所有耗时操作均在独立线程中执行，避免界面卡顿
-- SSH 连接使用 keepalive 保持连接活跃
-- 支持非 root 用户可自动尝试 sudo 切换到 root 权限
 
 ## 许可证
 
 本项目仅供内部使用。
-
-## 注意事项
-
-1. 请妥善保管服务器密码，配置文件包含敏感信息
-2. 建议使用非 root 用户进行日常操作
-3. 监控数据日志文件会随时间增长，请注意定期清理
-4. 弱网功能仅在 Linux 服务器上有效，需要 root 权限或 sudo 权限
-5. 使用弱网功能前请确保了解当前网络环境，避免误操作导致连接中断
