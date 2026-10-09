@@ -1,7 +1,7 @@
 from UI import GraphMainWindow
 import os
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QMainWindow, QFileDialog, QTreeWidgetItem
+from PyQt5.QtWidgets import QMainWindow, QTreeWidgetItem
 import pandas as pd
 import logging
 
@@ -143,7 +143,9 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
 
         self.tree_widget = QtWidgets.QTreeWidget()
         self.tree_widget.setHeaderHidden(True)
+        self._toggle_in_progress = False  # 防点击切换时 itemChanged 重入
         self.tree_widget.itemChanged.connect(self.on_tree_item_changed)
+        self.tree_widget.itemClicked.connect(self.on_tree_item_clicked)
         left_layout.addWidget(self.tree_widget)
 
         splitter.addWidget(left_widget)
@@ -238,7 +240,6 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                     header_line = f.readline()
                     if not header_line:
                         continue
-                    import re
                     keys = [k.replace('\ufeff', '').strip() for k in header_line.split(',')]
                     # 格式校验：表头第一列必须是"系统时间"，否则跳过（非监控数据文件）
                     if not keys or keys[0] != '系统时间':
@@ -331,6 +332,23 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             self.tree_widget.expandItem(proc_item)
 
         self._updating_tree = False
+
+    def on_tree_item_clicked(self, item, column):
+        """点击整行都切换复选框，不用精准点中复选框"""
+        if self._toggle_in_progress:
+            return
+        flags = item.flags()
+        if not (flags & QtCore.Qt.ItemFlag.ItemIsUserCheckable):
+            return
+        self._toggle_in_progress = True
+        try:
+            current = item.checkState(0)
+            if current == QtCore.Qt.CheckState.Checked:
+                item.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
+            else:
+                item.setCheckState(0, QtCore.Qt.CheckState.Checked)
+        finally:
+            self._toggle_in_progress = False
 
     def on_tree_item_changed(self, item, column):
         if column != 0:

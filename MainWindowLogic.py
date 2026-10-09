@@ -3,20 +3,18 @@ import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import QThread, QTimer
 from PyQt5.QtWidgets import (QDialog, QPushButton, QWidget, QVBoxLayout, QHBoxLayout,
-                             QMenu, QFileDialog, QMessageBox, QMainWindow,
+                             QMenu, QMessageBox, QMainWindow,
                              QTabWidget, QCheckBox, QScrollArea, QInputDialog, QLineEdit)
 
 from UI import MainWindow
 from utils import ssh_tools, windows_tools, qthread_worker
 import json
 import datetime
-from utils.logger import setup_logging, get_logger, log_progress
+from utils.logger import log_progress
 from dialogs import (SendCMDDialog, SendCMD2Dialog, SendFilesDialog, GetFilesDialog, CopyFilesDialog,
                      SetServerDialog, ResourceMonitorDialog1, ResourceMonitorDialog2,
                      WeakNetDialog1, WeakNetControlDialog, HelpDialog, ServerCheckDialog,
                      ServerCheckRunDialog, CmdManageDialog)
-from widgets.terminal_widget import TerminalEdit
-
 
 class DraggableButton(QPushButton):
     """可拖动的按钮类，支持长按拖动改变位置"""
@@ -208,8 +206,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # setup_logging() 内部有防重复调用保护，这里再调一次只是为了拿到 emitter
         from utils.logger import (
             setup_logging, get_logger, set_file_logging, set_file_log_level,
-            is_file_logging_enabled, log_progress, set_panel_level, get_panel_level,
-            set_file_backup_count, get_file_backup_count,
+            log_progress, set_panel_level,
+            set_file_backup_count,
         )
         import logging as _logging
         self._log_emitter = setup_logging()  # OneClick.py 已初始化，返回已有的 emitter

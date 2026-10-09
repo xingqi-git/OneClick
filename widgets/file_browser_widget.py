@@ -10,7 +10,7 @@
 import os
 import stat
 import datetime
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5 import QtWidgets, QtCore
 
 
 class FileBrowserWidget(QtWidgets.QWidget):

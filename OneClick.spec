@@ -1,13 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
 OneClick PyInstaller 打包配置（体积优化版）
-效果与原始命令等价，在此基础上排除未用模块减小体积。
+同时生成单文件版和文件夹版，想用哪个发哪个。
 
 使用方法：
     .venv\Scripts\pyinstaller.exe OneClick.spec --clean
 
-原始命令参考：
-    pyinstaller -F -w OneClick.py -i app.ico --add-data "app.ico;."
+产物：
+    dist/OneClick.exe          单文件版
+    dist/OneClick/             文件夹版
 
 优化项：
 1. 排除 QtQml/QtQuick/QtLocation 等未用 Qt 模块（节省几 MB）
@@ -99,7 +100,8 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-exe = EXE(
+# ── 单文件版 ──────────────────────────────────────────
+exe_single = EXE(
     pyz,
     a.scripts,
     a.binaries,
@@ -119,4 +121,34 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon='app.ico',
+)
+
+# ── 文件夹版 ──────────────────────────────────────────
+exe_dir = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='OneClick',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=False,
+    disable_windowed_traceback=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon='app.ico',
+)
+
+collect = COLLECT(
+    exe_dir,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='OneClick',
 )

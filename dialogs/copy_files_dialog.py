@@ -1,5 +1,5 @@
 from PyQt5 import QtCore
-from PyQt5.QtWidgets import (QDialog, QFileDialog, QDialogButtonBox, QSizePolicy,
+from PyQt5.QtWidgets import (QDialog, QSizePolicy,
                              QListWidget, QListWidgetItem, QHBoxLayout, QPushButton,
                              QVBoxLayout, QWidget, QLabel, QLineEdit, QButtonGroup,
                              QRadioButton)

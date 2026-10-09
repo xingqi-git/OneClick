@@ -49,7 +49,11 @@ if __name__ == '__main__':
         # 日志系统：最早初始化，确保后续所有日志都能走对路径
         import logging
         from utils.logger import setup_logging
-        setup_logging(log_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs"))
+        if getattr(sys, 'frozen', False):
+            _base_dir = os.path.dirname(sys.executable)
+        else:
+            _base_dir = os.path.dirname(os.path.abspath(__file__))
+        setup_logging(log_dir=os.path.join(_base_dir, "logs"))
 
         app = QApplication(sys.argv)
         app.setApplicationName("OneClick")

@@ -2,7 +2,7 @@
 """
 日志设置对话框
 """
-from PyQt5 import QtCore, QtWidgets
+from PyQt5 import QtWidgets
 
 
 class LogSettingsDialog(QtWidgets.QDialog):
