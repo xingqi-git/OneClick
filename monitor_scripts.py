@@ -210,14 +210,43 @@ collect_single_pid_metrics() {
     echo "$sys_time,$proc_mem,$proc_data,$proc_vmpeak,$proc_vmsize,$proc_vmhwm,$proc_rssanon,$proc_vmswap,$proc_cpu,$proc_fds,$proc_socks"
 }
 
-# ---------------------- 更新日志表头（仅处理系统日志） ----------------------
-update_log_header() {
-    # 系统日志初始化（仅首次）
-    if [[ ! -f "$SYS_LOG_FILE" ]]; then
-        local sys_header=$(generate_sys_header)
-        echo "$sys_header" > "$SYS_LOG_FILE"
-        echo "系统日志文件已初始化：$SYS_LOG_FILE，表头：$sys_header"
+# ---------------------- 日志表头校验与修复 ----------------------
+# 用法: ensure_log_header <日志文件路径> <正确表头内容>
+# - 文件不存在: 新建并写入表头
+# - 文件存在且表头正确: 不做处理，直接追加
+# - 文件存在但表头损坏: 原文件备份为 xxx_bak_时间戳.log，新建干净文件写表头
+ensure_log_header() {
+    local log_file="$1"
+    local expected_header="$2"
+
+    # 文件不存在 → 直接创建
+    if [[ ! -f "$log_file" ]]; then
+        echo "$expected_header" > "$log_file"
+        return 0
     fi
+
+    # 文件存在，读第一行对比
+    local first_line=$(head -n 1 "$log_file" 2>/dev/null | tr -d '\r')
+    if [[ "$first_line" == "$expected_header" ]]; then
+        # 表头正确，无需处理
+        return 0
+    fi
+
+    # 表头损坏 → 备份旧文件，新建干净文件
+    local dir=$(dirname "$log_file")
+    local base=$(basename "$log_file" .log)
+    local timestamp=$(date "+%Y%m%d_%H%M%S")
+    local backup_file="$dir/${base}_bak_${timestamp}.log"
+    mv "$log_file" "$backup_file"
+    echo "[$(date "+%Y-%m-%d %H:%M:%S")] 表头损坏，已备份为: $backup_file，重建日志: $log_file" | tee -a "$RUN_LOG"
+    echo "$expected_header" > "$log_file"
+    return 0
+}
+
+# ---------------------- 更新日志表头（系统日志 + 进程日志共用 ensure_log_header） ----------------------
+update_log_header() {
+    local sys_header=$(generate_sys_header)
+    ensure_log_header "$SYS_LOG_FILE" "$sys_header"
 }
 
 # ---------------------- 系统级指标采集函数 ----------------------
@@ -292,12 +321,9 @@ main_monitor() {
                     
                     local proc_log_file="$OUTPUT_DIR/${safe_proc_name}_${pid}.log"
 
-                    # 日志文件不存在则创建并写入表头
-                    if [[ ! -f "$proc_log_file" ]]; then
-                        local pid_header=$(generate_single_pid_header "$real_proc_name" "$pid")
-                        echo "$pid_header" > "$proc_log_file"
-                        echo "[$sys_time] 进程 $real_proc_name (PID:$pid) 日志已创建：$proc_log_file" | tee -a "$RUN_LOG"
-                    fi
+                    # 日志文件表头校验：不存在则创建，表头损坏则备份重建
+                    local pid_header=$(generate_single_pid_header "$real_proc_name" "$pid")
+                    ensure_log_header "$proc_log_file" "$pid_header"
 
                     # 采集并写入该PID的指标
                     local pid_metrics=$(collect_single_pid_metrics "$real_proc_name" "$pid" "$sys_time")
@@ -546,10 +572,41 @@ function Main-Monitor {
         $logMsg | Out-File -FilePath $RUN_LOG -Encoding utf8 -Append
     }
 
-    # 初始化系统日志表头
-    if (-not (Test-Path $SYS_LOG_FILE)) {
-        Generate-SysHeader | Out-File -FilePath $SYS_LOG_FILE -Encoding utf8
+    # 日志表头校验与修复
+    # - 文件不存在: 新建并写入表头
+    # - 表头正确: 不做处理
+    # - 表头损坏: 原文件备份为 xxx_bak_时间戳.log，新建干净文件写表头
+    function Ensure-LogHeader {
+        param(
+            [string]$LogFile,
+            [string]$ExpectedHeader
+        )
+        if (-not (Test-Path $LogFile)) {
+            $ExpectedHeader | Out-File -FilePath $LogFile -Encoding utf8
+            return
+        }
+        # 读第一行对比（去除可能的 BOM 和尾部空白/换行）
+        $firstLine = (Get-Content -Path $LogFile -TotalCount 1 -Encoding utf8)
+        if ($firstLine -ne $null) {
+            $firstLine = $firstLine.Trim()
+        }
+        $expected = $ExpectedHeader.Trim()
+        if ($firstLine -eq $expected) {
+            return
+        }
+        # 表头损坏 → 备份旧文件，新建干净文件
+        $dir = Split-Path -Parent $LogFile
+        $base = [System.IO.Path]::GetFileNameWithoutExtension($LogFile)
+        $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+        $backupFile = Join-Path $dir "${base}_bak_${timestamp}.log"
+        Move-Item -Path $LogFile -Destination $backupFile -Force
+        Write-Log "表头损坏，已备份为: $backupFile，重建日志: $LogFile"
+        $ExpectedHeader | Out-File -FilePath $LogFile -Encoding utf8
     }
+
+    # 初始化系统日志表头（不存在则创建，表头损坏则备份重建）
+    $sysHeader = Generate-SysHeader
+    Ensure-LogHeader -LogFile $SYS_LOG_FILE -ExpectedHeader $sysHeader
 
     # 记录开始时间
     $startTime = Get-Date
@@ -592,10 +649,9 @@ function Main-Monitor {
                 foreach ($procData in $procDataList) {
                     $procLog = $procData.Log
                     $realProcName = $procData.RealProcName
-                    # 初始化进程日志表头（首次写入时）
-                    if (-not (Test-Path $procLog)) {
-                        Generate-ProcessHeader -ProcName $realProcName -ProcessPID $procData.PID | Out-File -FilePath $procLog -Encoding utf8
-                    }
+                    # 初始化进程日志表头（不存在则创建，表头损坏则备份重建）
+                    $procHeader = Generate-ProcessHeader -ProcName $realProcName -ProcessPID $procData.PID
+                    Ensure-LogHeader -LogFile $procLog -ExpectedHeader $procHeader
                     $procData.Data | Out-File -FilePath $procLog -Encoding utf8 -Append
                     Write-Log "进程$realProcName(PID:$($procData.PID))数据已写入：$procLog"
                 }
@@ -620,10 +676,9 @@ function Main-Monitor {
                     # 只取进程名中/后面的部分，避免路径异常
                     $safeName = if ($realName -contains '/') { $realName -split '/' | Select-Object -Last 1 } else { $realName }
                     $summaryLog = Join-Path $OUTPUT_DIR "${safeName}.log"
-                    # 初始化汇总表头（首次写入时）
-                    if (-not (Test-Path $summaryLog)) {
-                        Generate-ProcessSummaryHeader -ProcName $safeName | Out-File -FilePath $summaryLog -Encoding utf8
-                    }
+                    # 初始化汇总表头（不存在则创建，表头损坏则备份重建）
+                    $summaryHeader = Generate-ProcessSummaryHeader -ProcName $safeName
+                    Ensure-LogHeader -LogFile $summaryLog -ExpectedHeader $summaryHeader
                     # 组装汇总数据行
                     $g = $procGroups[$realName]
                     $summaryData = "$($sysResult.Time),$($g.MemMB.ToString('0.00')),$($g.Cpu.ToString('0.0')),$($g.Handle)"
@@ -927,9 +982,39 @@ collect_sys_metrics() {
     printf "%s,%d,%s,%d,%d,%d,%d,%d\n" "$now" "$mem_used" "$cpu_used" "$rd" "$wr" "$total_fd" "$total_sock" "$proc_cnt"
 }
 
+# 日志表头校验与修复（ash 简化版）
+# 用法: ensure_log_header <日志文件路径> <正确表头内容>
+ensure_log_header() {
+    local log_file="$1"
+    local expected_header="$2"
+
+    # 文件不存在 → 直接创建
+    if [ ! -f "$log_file" ]; then
+        echo "$expected_header" > "$log_file"
+        return 0
+    fi
+
+    # 读第一行对比（去掉末尾的回车）
+    local first_line=$(head -n 1 "$log_file" 2>/dev/null | tr -d '\r')
+    if [ "$first_line" = "$expected_header" ]; then
+        return 0
+    fi
+
+    # 表头损坏 → 备份旧文件，新建干净文件
+    local dir=$(dirname "$log_file")
+    local base=$(basename "$log_file" .log)
+    local timestamp=$(date "+%Y%m%d_%H%M%S")
+    local backup_file="${dir}/${base}_bak_${timestamp}.log"
+    mv "$log_file" "$backup_file"
+    echo "[$(date "+%Y-%m-%d %H:%M:%S")] 表头损坏，已备份为: $backup_file，重建日志: $log_file" | tee -a "$RUN_LOG"
+    echo "$expected_header" > "$log_file"
+    return 0
+}
+
 # 初始化系统日志表头
 update_log_header() {
-    [ ! -f "$SYS_LOG_FILE" ] && generate_sys_header > "$SYS_LOG_FILE"
+    local sys_header=$(generate_sys_header)
+    ensure_log_header "$SYS_LOG_FILE" "$sys_header"
 }
 
 # ---------------------- 主循环 ----------------------
@@ -984,10 +1069,9 @@ main_monitor() {
                     safe_proc_name=$(echo "$real_proc_name" | awk -F/ '{print $NF}')
                     
                     log_path="${OUTPUT_DIR}/${safe_proc_name}_${pid}.log"
-                    if [ ! -f "$log_path" ]; then
-                        generate_single_pid_header > "$log_path"
-                        echo "[$cur_time] 进程 $real_proc_name (PID:$pid) 日志已创建：$log_path" | tee -a "$RUN_LOG"
-                    fi
+                    # 校验表头：不存在则创建，表头损坏则备份重建
+                    local pid_header=$(generate_single_pid_header)
+                    ensure_log_header "$log_path" "$pid_header"
                     data=$(collect_single_pid_metrics "$real_proc_name" "$pid" "$cur_time" 2>/dev/null)
                     if [ -n "$data" ]; then
                         echo "$data" >> "$log_path"

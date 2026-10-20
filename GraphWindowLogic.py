@@ -31,6 +31,8 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         self.pid_map = {}  # {进程名: [pid1, pid2, ...]} 该进程包含的PID列表
         self.process_tree_items = {}
         self._updating_tree = False
+        self._pending_switch_action = None  # 点文字勾选时需要切换到的 action_name
+        self._press_item = None  # 鼠标按下时的 item，用于事件过滤器判断点击
 
         # 选中状态
         self.selected_indicators = {}  # {proc_name: {ind_name, ...}}
@@ -143,9 +145,9 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
 
         self.tree_widget = QtWidgets.QTreeWidget()
         self.tree_widget.setHeaderHidden(True)
-        self._toggle_in_progress = False  # 防点击切换时 itemChanged 重入
         self.tree_widget.itemChanged.connect(self.on_tree_item_changed)
-        self.tree_widget.itemClicked.connect(self.on_tree_item_clicked)
+        # 在 viewport 上安装事件过滤器，精确区分点复选框 vs 点文字
+        self.tree_widget.viewport().installEventFilter(self)
         left_layout.addWidget(self.tree_widget)
 
         splitter.addWidget(left_widget)
@@ -153,6 +155,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         self.tab_widget = QtWidgets.QTabWidget()
         self.tab_widget.setTabsClosable(True)
         self.tab_widget.tabCloseRequested.connect(self.on_tab_close_requested)
+        self.tab_widget.currentChanged.connect(self._on_tab_current_changed)
         splitter.addWidget(self.tab_widget)
 
         splitter.setStretchFactor(0, 0)
@@ -188,6 +191,23 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                 self._update_last_update_label()
         except Exception:
             pass
+
+    def _set_drawing_busy(self, busy):
+        """绘图期间禁用左侧树+切换等待光标，防止重入崩溃同时让界面能刷新
+        用计数器支持嵌套调用，只有最外层一对才真正改状态。
+        """
+        if not hasattr(self, '_drawing_busy_count'):
+            self._drawing_busy_count = 0
+        if busy:
+            self._drawing_busy_count += 1
+            if self._drawing_busy_count == 1:
+                self.tree_widget.setEnabled(False)
+                QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
+        else:
+            self._drawing_busy_count = max(0, self._drawing_busy_count - 1)
+            if self._drawing_busy_count == 0:
+                self.tree_widget.setEnabled(True)
+                QtWidgets.QApplication.restoreOverrideCursor()
 
     def _scan_files(self):
         """扫描数据文件夹，归并进程，读取表头和PID列表"""
@@ -333,22 +353,146 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
 
         self._updating_tree = False
 
-    def on_tree_item_clicked(self, item, column):
-        """点击整行都切换复选框，不用精准点中复选框"""
-        if self._toggle_in_progress:
+    def eventFilter(self, obj, event):
+        """在 viewport 上拦截鼠标事件，精确区分点复选框 vs 点文字"""
+        if obj is self.tree_widget.viewport():
+            if event.type() == QtCore.QEvent.Type.MouseButtonPress:
+                self._handle_tree_mouse_press(event)
+            elif event.type() == QtCore.QEvent.Type.MouseButtonRelease:
+                if self._handle_tree_mouse_release(event):
+                    return True  # 已处理，不再传递
+        return super().eventFilter(obj, event)
+
+    def _handle_tree_mouse_press(self, event):
+        """记录按下时的位置和点击项，用于后续判断点的是复选框还是文字"""
+        if event.button() != QtCore.Qt.MouseButton.LeftButton:
+            self._press_item = None
+            self._press_pos = None
             return
+        pos = event.pos()
+        item = self.tree_widget.itemAt(pos)
+        self._press_item = item
+        self._press_pos = pos
+
+    def _handle_tree_mouse_release(self, event):
+        """处理鼠标释放：
+        - 点复选框区域：交给 Qt 默认处理（自动翻转勾选 + itemChanged 增删图表），不切标签
+        - 点文字区域：已勾选 → 只切标签；未勾选 → 勾选 + 切标签
+        返回 True 表示事件已处理，不再传递给 Qt 默认逻辑
+        """
+        if event.button() != QtCore.Qt.MouseButton.LeftButton:
+            return False
+        pos = event.pos()
+        item = self.tree_widget.itemAt(pos)
+        if item is None:
+            return False
+        # 按下和释放必须是同一项才认为是点击
+        if item is not self._press_item:
+            return False
+        self._press_item = None
+        self._press_pos = None
+
         flags = item.flags()
         if not (flags & QtCore.Qt.ItemFlag.ItemIsUserCheckable):
+            return False
+
+        # 精确计算复选框矩形
+        cb_rect = self._get_checkbox_rect(item)
+        is_checkbox_click = cb_rect.contains(pos)
+
+        if is_checkbox_click:
+            # 点复选框：让 Qt 默认处理（翻转勾选 + itemChanged）
+            # itemChanged 里没有 switch_action，不会切标签
+            return False
+
+        # 点文字区域
+        action_name = self._get_action_name_for_item(item)
+        is_checked = item.checkState(0) == QtCore.Qt.CheckState.Checked
+
+        if is_checked:
+            # 已勾选：只切换标签页，不去勾选
+            if action_name and action_name in self.action_tab_map:
+                self.tab_widget.setCurrentIndex(self.action_tab_map[action_name])
+            # 阻止 Qt 默认行为，避免触发选中/编辑等
+            return True
+        else:
+            # 未勾选：先标记待切换，再翻转勾选状态
+            # 翻转会触发 itemChanged，里面会用 switch_action 切标签
+            if action_name:
+                self._pending_switch_action = action_name
+            item.setCheckState(0, QtCore.Qt.CheckState.Checked)
+            return True
+
+    def _get_checkbox_rect(self, item):
+        """获取某一项复选框的精确矩形（视口坐标）"""
+        # QTreeView 的 visualItemRect 是整行的矩形
+        item_rect = self.tree_widget.visualItemRect(item)
+        # 用 QStyle 计算指示器（复选框）矩形
+        opt = QtWidgets.QStyleOptionViewItem()
+        opt.rect = item_rect
+        opt.state |= QtWidgets.QStyle.StateFlag.State_Enabled
+        opt.features = QtWidgets.QStyleOptionViewItem.ViewItemFeature.HasCheckIndicator
+        opt.checkState = item.checkState(0)
+        style = self.tree_widget.style()
+        # subElementRect + SE_ItemViewItemCheckIndicator 得到复选框精确矩形
+        cb_rect = style.subElementRect(
+            QtWidgets.QStyle.SubElement.SE_ItemViewItemCheckIndicator,
+            opt,
+            self.tree_widget,
+        )
+        return cb_rect
+
+    def _get_action_name_for_item(self, item):
+        """根据树节点获取对应的 action_name（仅指标节点有直接对应的单图）
+        其他类型节点返回 None，按原有翻转逻辑处理。
+        """
+        data = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
+        if not data:
+            return None
+        node_type = data[0]
+        if node_type == 'indicator':
+            return f"{data[1]}-{data[2]}"
+        # process / pid_group / pid 没有单一对应的 action
+        return None
+
+    def _on_tab_current_changed(self, index):
+        """右侧标签页切换时，同步左侧树的选中状态"""
+        # 树正在更新/重建时不处理，避免访问无效节点
+        if self._updating_tree:
             return
-        self._toggle_in_progress = True
+        if index < 0 or index >= self.tab_widget.count():
+            return
+        action_name = self.tab_widget.tabText(index)
+        if not action_name:
+            return
         try:
-            current = item.checkState(0)
-            if current == QtCore.Qt.CheckState.Checked:
-                item.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
-            else:
-                item.setCheckState(0, QtCore.Qt.CheckState.Checked)
-        finally:
-            self._toggle_in_progress = False
+            self._select_tree_item_by_action(action_name)
+        except Exception as e:
+            logger.debug("切换标签同步树选中状态时异常: %s", e)
+
+    def _select_tree_item_by_action(self, action_name):
+        """根据 action_name 在左侧树中找到对应指标节点并选中"""
+        parts = action_name.rsplit('-', 1)
+        if len(parts) != 2:
+            return
+        proc_name, ind_name = parts
+
+        # 找到进程节点
+        proc_item = self.process_tree_items.get(proc_name)
+        if not proc_item:
+            return
+
+        # 找到指标子节点
+        for i in range(proc_item.childCount()):
+            child = proc_item.child(i)
+            data = child.data(0, QtCore.Qt.ItemDataRole.UserRole)
+            if not data:
+                continue
+            if data[0] == 'indicator' and data[2] == ind_name:
+                self.tree_widget.setCurrentItem(child)
+                # 确保节点可见
+                self.tree_widget.scrollToItem(child)
+                return
 
     def on_tree_item_changed(self, item, column):
         if column != 0:
@@ -365,6 +509,10 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         node_type = data[0]
         checked = item.checkState(0) == QtCore.Qt.CheckState.Checked
         logger.debug("勾选变化: node_type=%s, data=%s, checked=%s", node_type, data, checked)
+
+        # 取出待切换的 action（可能为 None）
+        switch_action = self._pending_switch_action
+        self._pending_switch_action = None
 
         if node_type == 'process':
             # 进程节点勾选：同步所有指标子节点的勾选状态 + 更新 selected_indicators
@@ -387,7 +535,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                     else:
                         self.selected_indicators[proc_name].discard(ind_name)
             # 触发变更处理
-            self._handle_selection_change(proc_name)
+            self._handle_selection_change(proc_name, switch_action)
 
         elif node_type == 'indicator':
             # 指标节点勾选/取消
@@ -405,7 +553,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             # 更新父节点状态
             self._update_process_check_state(item.parent())
             # 处理绘图变化
-            self._handle_selection_change(proc_name)
+            self._handle_selection_change(proc_name, switch_action)
 
         elif node_type == 'pid_group':
             # PID分组节点勾选：同步所有子PID
@@ -423,7 +571,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                         self.selected_pids[proc_name].add(pid)
                     else:
                         self.selected_pids[proc_name].discard(pid)
-            self._handle_selection_change(proc_name)
+            self._handle_selection_change(proc_name, switch_action)
 
         elif node_type == 'pid':
             # PID节点勾选/取消
@@ -444,7 +592,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                 self._update_pid_group_state(pid_group)
 
             # 处理绘图变化
-            self._handle_selection_change(proc_name)
+            self._handle_selection_change(proc_name, switch_action)
 
         self._updating_tree = False
 
@@ -496,8 +644,10 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         else:
             pid_group_item.setCheckState(0, QtCore.Qt.CheckState.PartiallyChecked)
 
-    def _handle_selection_change(self, proc_name):
-        """指标或PID选择变化时，更新对应的图表"""
+    def _handle_selection_change(self, proc_name, switch_action=None):
+        """指标或PID选择变化时，更新对应的图表
+        switch_action: 如果有指定的 action_name，新增/更新后自动切换到该标签页
+        """
         indicators = self.selected_indicators.get(proc_name, set())
         pids = self.selected_pids.get(proc_name, set())
         logger.debug("选择变化: proc=%s, indicators=%d, pids=%d", proc_name, len(indicators), len(pids))
@@ -507,15 +657,15 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         if is_system_or_single:
             if indicators and proc_name not in self.loaded_processes:
                 self._load_process_data(proc_name,
-                                        on_finished=lambda ok: self._redraw_proc_charts(proc_name) if ok else None)
+                                        on_finished=lambda ok: self._redraw_proc_charts(proc_name, switch_action) if ok else None)
             else:
-                self._redraw_proc_charts(proc_name)
+                self._redraw_proc_charts(proc_name, switch_action)
             return
 
         # 多PID进程类：按需加载选中的PID
         if not indicators:
             # 没选中指标，直接重绘（关图）
-            self._redraw_proc_charts(proc_name)
+            self._redraw_proc_charts(proc_name, switch_action)
             return
 
         # 有指标，计算需要新加载的PID
@@ -526,47 +676,55 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         if new_pids:
             # 有新PID需要加载
             self._load_pid_data(proc_name, new_pids,
-                                on_finished=lambda ok: self._redraw_proc_charts(proc_name) if ok else None)
+                                on_finished=lambda ok: self._redraw_proc_charts(proc_name, switch_action) if ok else None)
         else:
             # 所有选中的PID都加载过了，直接重绘
-            self._redraw_proc_charts(proc_name)
+            self._redraw_proc_charts(proc_name, switch_action)
 
-    def _redraw_proc_charts(self, proc_name):
-        """重绘某个进程的所有图表（根据当前选中的指标+PID）"""
-        indicators = self.selected_indicators.get(proc_name, set())
-        pids = self.selected_pids.get(proc_name, set())
-        is_system_or_single = (proc_name == '系统' or len(self.pid_map.get(proc_name, [])) == 0)
+    def _redraw_proc_charts(self, proc_name, switch_action=None):
+        """重绘某个进程的所有图表（根据当前选中的指标+PID）
+        switch_action: 如果指定，该 action 对应的图新增/更新后自动切换到该标签页
+        """
+        self._set_drawing_busy(True)
+        try:
+            indicators = self.selected_indicators.get(proc_name, set())
+            pids = self.selected_pids.get(proc_name, set())
+            is_system_or_single = (proc_name == '系统' or len(self.pid_map.get(proc_name, [])) == 0)
 
-        # 系统类或单PID进程：直接画图
-        if is_system_or_single:
+            # 系统类或单PID进程：直接画图
+            if is_system_or_single:
+                for ind_name in list(indicators):
+                    action_name = f"{proc_name}-{ind_name}"
+                    if action_name not in self.action_tab_map:
+                        switch = (action_name == switch_action)
+                        self._draw_indicator(action_name, switch_tab=switch)
+                # 取消的关图
+                all_inds = self.indicator_map.get(proc_name, [])
+                for ind_name in all_inds:
+                    action_name = f"{proc_name}-{ind_name}"
+                    if ind_name not in indicators and action_name in self.action_tab_map:
+                        self.remove_plot_tab(action_name)
+                return
+
+            # 多PID进程类：指标 + 选中PID 组合出图
             for ind_name in list(indicators):
                 action_name = f"{proc_name}-{ind_name}"
                 if action_name not in self.action_tab_map:
-                    self._draw_indicator(action_name)
-            # 取消的关图
+                    # 新图：从头画（可以是空图）
+                    switch = (action_name == switch_action)
+                    self._draw_indicator(action_name, pids=pids, switch_tab=switch)
+                else:
+                    # 已有图：在原图上动态增删曲线
+                    self._update_plot_pids(action_name, pids)
+
+            # 取消了的指标，关图
             all_inds = self.indicator_map.get(proc_name, [])
             for ind_name in all_inds:
                 action_name = f"{proc_name}-{ind_name}"
                 if ind_name not in indicators and action_name in self.action_tab_map:
                     self.remove_plot_tab(action_name)
-            return
-
-        # 多PID进程类：指标 + 选中PID 组合出图
-        for ind_name in list(indicators):
-            action_name = f"{proc_name}-{ind_name}"
-            if action_name not in self.action_tab_map:
-                # 新图：从头画（可以是空图）
-                self._draw_indicator(action_name, pids=pids)
-            else:
-                # 已有图：在原图上动态增删曲线
-                self._update_plot_pids(action_name, pids)
-
-        # 取消了的指标，关图
-        all_inds = self.indicator_map.get(proc_name, [])
-        for ind_name in all_inds:
-            action_name = f"{proc_name}-{ind_name}"
-            if ind_name not in indicators and action_name in self.action_tab_map:
-                self.remove_plot_tab(action_name)
+        finally:
+            self._set_drawing_busy(False)
 
     def _load_process_data(self, proc_name, on_finished=None):
         """加载指定进程的所有文件数据（系统类或单PID进程用）"""
@@ -716,9 +874,10 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         thread.started.connect(worker.data_process)
         thread.start()
 
-    def _draw_indicator(self, action_name, pids=None):
+    def _draw_indicator(self, action_name, pids=None, switch_tab=False):
         """绘图（从 self.data_dic 读数据，主线程直接画）
         pids: set/list，只画这些 PID；None 表示画全部（系统类或单PID进程用None）
+        switch_tab: 绘图完成后是否切换到该标签页
         """
         if action_name in self.action_tab_map:
             return
@@ -751,7 +910,8 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             tab_content.setLayout(tab_layout)
             tab_index = self.tab_widget.addTab(tab_content, action_name)
             self.action_tab_map[action_name] = tab_index
-            self.tab_widget.setCurrentIndex(tab_index)
+            if switch_tab:
+                self.tab_widget.setCurrentIndex(tab_index)
 
             # 保存图信息用于后续动态更新
             lines = {}  # {pid: line}
@@ -772,8 +932,10 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                 'lines': lines,
                 'color_idx': len(lines),
             }
-            # 强制绘制一次，确保 figure 完全渲染后再返回
+            # 强制绘制一次，确保 figure 完全渲染
             canvas.draw()
+            # 每图画完刷新一次界面，避免多图连续绘制时界面假死
+            # （左侧树已被禁用，不会重入绘图逻辑）
             QtWidgets.QApplication.processEvents()
             logger.info("绘图完成: %s, 曲线数=%d", action_name, len(lines))
         except Exception as e:
@@ -793,123 +955,126 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         """
         if action_name not in self.fig_objects:
             return
-        info = self.fig_objects[action_name]
-        ax = info['ax']
-        canvas = info['canvas']
-        lines = info['lines']
+        try:
+            info = self.fig_objects[action_name]
+            ax = info['ax']
+            canvas = info['canvas']
+            lines = info['lines']
 
-        new_pid_set = set(str(p) for p in new_pids)
-        current_pid_set = set(lines.keys())
+            new_pid_set = set(str(p) for p in new_pids)
+            current_pid_set = set(lines.keys())
 
-        # 需要删除的PID
-        pids_to_remove = current_pid_set - new_pid_set
-        for pid in pids_to_remove:
-            line = lines.pop(pid, None)
-            if line is not None:
-                line.remove()
-        logger.debug("动态更新曲线: %s, 删除PID=%d个, 剩余=%d个", action_name, len(pids_to_remove), len(lines))
+            # 需要删除的PID
+            pids_to_remove = current_pid_set - new_pid_set
+            for pid in pids_to_remove:
+                line = lines.pop(pid, None)
+                if line is not None:
+                    line.remove()
+            logger.debug("动态更新曲线: %s, 删除PID=%d个, 剩余=%d个", action_name, len(pids_to_remove), len(lines))
 
-        # 需要新增的PID
-        pids_to_add = new_pid_set - current_pid_set
+            # 需要新增的PID
+            pids_to_add = new_pid_set - current_pid_set
 
-        if not pids_to_add and not pids_to_remove:
-            return
+            if not pids_to_add and not pids_to_remove:
+                return
 
-        # 新增的在主线程直接从 data_dic 取数据画线
-        # 数据量不大（已降采样），直接画不会卡
-        parts = action_name.rsplit('-', 1)
-        if len(parts) != 2:
-            return
-        proc_name = parts[0]
-        ind_name = parts[1]
+            # 新增的在主线程直接从 data_dic 取数据画线
+            # 数据量不大（已降采样），直接画不会卡
+            parts = action_name.rsplit('-', 1)
+            if len(parts) != 2:
+                return
+            proc_name = parts[0]
+            ind_name = parts[1]
 
-        df = self.data_dic.get(proc_name)
-        if df is None or len(df) == 0 or ind_name not in df.columns:
-            return
+            df = self.data_dic.get(proc_name)
+            if df is None or len(df) == 0 or ind_name not in df.columns:
+                return
 
-        time_col = None
-        for c in df.columns:
-            if '时间' in c:
-                time_col = c
-                break
-        if time_col is None:
-            return
+            time_col = None
+            for c in df.columns:
+                if '时间' in c:
+                    time_col = c
+                    break
+            if time_col is None:
+                return
 
-        import matplotlib.cm as cm
-        colors = cm.tab10.colors
+            import matplotlib.cm as cm
+            colors = cm.tab10.colors
 
-        # 移除空图提示文字（如果存在）
-        if not current_pid_set and pids_to_add:
-            for text in list(ax.texts):
-                if text.get_text() == "请在左侧勾选要查看的 PID":
-                    text.remove()
+            # 移除空图提示文字（如果存在）
+            if not current_pid_set and pids_to_add:
+                for text in list(ax.texts):
+                    if text.get_text() == "请在左侧勾选要查看的 PID":
+                        text.remove()
 
-        logger.debug("开始新增PID曲线: %s, 新增=%d个", action_name, len(pids_to_add))
-        for pid in sorted(pids_to_add):
-            if '_pid' in df.columns:
-                group = df[df['_pid'] == pid]
+            logger.debug("开始新增PID曲线: %s, 新增=%d个", action_name, len(pids_to_add))
+            for pid in sorted(pids_to_add):
+                if '_pid' in df.columns:
+                    group = df[df['_pid'] == pid]
+                else:
+                    group = df
+                if len(group) == 0:
+                    continue
+                ts = group[time_col]
+                vs = group[ind_name]
+
+                # 时间过滤
+                if self.current_time_start:
+                    mask = ts >= pd.Timestamp(self.current_time_start)
+                    ts = ts[mask]
+                    vs = vs[mask]
+                if self.current_time_end:
+                    mask = ts <= pd.Timestamp(self.current_time_end)
+                    ts = ts[mask]
+                    vs = vs[mask]
+
+                if len(ts) == 0:
+                    continue
+
+                # 降采样
+                max_points = 5000
+                if len(ts) > max_points:
+                    step = max(1, len(ts) // max_points)
+                    ts = ts.iloc[::step]
+                    vs = vs.iloc[::step]
+
+                label = f"{proc_name}_{pid}"
+                color = colors[info['color_idx'] % len(colors)]
+                info['color_idx'] += 1
+                line, = ax.plot(ts.values, vs.values, label=label, color=color)
+                line.set_picker(True)
+                line.set_pickradius(10)
+                lines[pid] = line
+
+            # 更新图例
+            logger.debug("更新图例: %s, 总曲线数=%d", action_name, len(lines))
+            if lines:
+                # 如果是从空变有，重新建图例；否则更新图例
+                line_list = list(lines.values())
+                if len(line_list) <= 20:
+                    legend = ax.legend()
+                else:
+                    legend = ax.legend(ncol=min(4, len(line_list)//10 + 1), fontsize=7)
+                legend.set_draggable(True)
+                for leg_line, leg_text in zip(legend.get_lines(), legend.get_texts()):
+                    leg_line.set_picker(True)
+                    leg_text.set_picker(True)
             else:
-                group = df
-            if len(group) == 0:
-                continue
-            ts = group[time_col]
-            vs = group[ind_name]
+                # 全部删光了，显示提示
+                ax.text(0.5, 0.5, "请在左侧勾选要查看的 PID",
+                        transform=ax.transAxes, ha='center', va='center',
+                        fontsize=14, color='#999')
+                if ax.get_legend():
+                    ax.get_legend().remove()
 
-            # 时间过滤
-            if self.current_time_start:
-                mask = ts >= pd.Timestamp(self.current_time_start)
-                ts = ts[mask]
-                vs = vs[mask]
-            if self.current_time_end:
-                mask = ts <= pd.Timestamp(self.current_time_end)
-                ts = ts[mask]
-                vs = vs[mask]
-
-            if len(ts) == 0:
-                continue
-
-            # 降采样
-            max_points = 5000
-            if len(ts) > max_points:
-                step = max(1, len(ts) // max_points)
-                ts = ts.iloc[::step]
-                vs = vs.iloc[::step]
-
-            label = f"{proc_name}_{pid}"
-            color = colors[info['color_idx'] % len(colors)]
-            info['color_idx'] += 1
-            line, = ax.plot(ts.values, vs.values, label=label, color=color)
-            line.set_picker(True)
-            line.set_pickradius(10)
-            lines[pid] = line
-
-        # 更新图例
-        logger.debug("更新图例: %s, 总曲线数=%d", action_name, len(lines))
-        if lines:
-            # 如果是从空变有，重新建图例；否则更新图例
-            line_list = list(lines.values())
-            if len(line_list) <= 20:
-                legend = ax.legend()
-            else:
-                legend = ax.legend(ncol=min(4, len(line_list)//10 + 1), fontsize=7)
-            legend.set_draggable(True)
-            for leg_line, leg_text in zip(legend.get_lines(), legend.get_texts()):
-                leg_line.set_picker(True)
-                leg_text.set_picker(True)
-        else:
-            # 全部删光了，显示提示
-            ax.text(0.5, 0.5, "请在左侧勾选要查看的 PID",
-                    transform=ax.transAxes, ha='center', va='center',
-                    fontsize=14, color='#999')
-            if ax.get_legend():
-                ax.get_legend().remove()
-
-        # 自动调整坐标轴范围
-        ax.relim()
-        ax.autoscale_view()
-        logger.debug("触发重绘: %s", action_name)
-        canvas.draw_idle()
-        logger.debug("动态更新曲线完成: %s", action_name)
+            # 自动调整坐标轴范围
+            ax.relim()
+            ax.autoscale_view()
+            logger.debug("触发重绘: %s", action_name)
+            canvas.draw_idle()
+            logger.debug("动态更新曲线完成: %s", action_name)
+        except Exception as e:
+            logger.error("动态更新曲线异常: %s, %s", action_name, e, exc_info=True)
 
     def _sync_check_from_action(self, action_name, checked):
         """根据 action_name 同步树节点勾选状态 + 更新 selected_indicators"""
@@ -956,22 +1121,32 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         if action_name not in self.action_tab_map:
             return
         logger.info("移除图表: %s", action_name)
-        tab_index = self.action_tab_map[action_name]
-        self.tab_widget.removeTab(tab_index)
-        del self.action_tab_map[action_name]
-        # 清理图对象
-        if action_name in self.fig_objects:
-            info = self.fig_objects.pop(action_name)
-            import matplotlib.pyplot as plt
-            try:
-                plt.close(info['fig'])
-                logger.debug("已关闭 figure: %s", action_name)
-            except Exception as e:
-                logger.warning("关闭 figure 异常: %s, %s", action_name, e)
-        new_map = {}
-        for name, idx in self.action_tab_map.items():
-            new_map[name] = idx - 1 if idx > tab_index else idx
-        self.action_tab_map = new_map
+        try:
+            tab_index = self.action_tab_map[action_name]
+            current_index = self.tab_widget.currentIndex()
+            self.tab_widget.removeTab(tab_index)
+            del self.action_tab_map[action_name]
+            # 如果关掉的是当前显示的标签页，切到前一个（或最后一个）
+            if current_index == tab_index and self.tab_widget.count() > 0:
+                prev_index = max(0, tab_index - 1)
+                if prev_index >= self.tab_widget.count():
+                    prev_index = self.tab_widget.count() - 1
+                self.tab_widget.setCurrentIndex(prev_index)
+            # 清理图对象
+            if action_name in self.fig_objects:
+                info = self.fig_objects.pop(action_name)
+                import matplotlib.pyplot as plt
+                try:
+                    plt.close(info['fig'])
+                    logger.debug("已关闭 figure: %s", action_name)
+                except Exception as e:
+                    logger.warning("关闭 figure 异常: %s, %s", action_name, e)
+            new_map = {}
+            for name, idx in self.action_tab_map.items():
+                new_map[name] = idx - 1 if idx > tab_index else idx
+            self.action_tab_map = new_map
+        except Exception as e:
+            logger.error("移除图表异常: %s, %s", action_name, e, exc_info=True)
 
     def on_tab_close_requested(self, tab_index):
         action_name = None
