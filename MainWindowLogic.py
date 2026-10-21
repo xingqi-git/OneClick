@@ -198,7 +198,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.current_ssh = {}  # 'config':{"服务器名称": ,"IP": ...},'ssh':,'receive_thread':,
 
         # 发送指令、保存指令、删除指令按钮逻辑
-        self.commands = []
+        self.commands = []  # 新格式：[{'name': 'xxx', 'content': 'xxx'}, ...]
         # 配置文件的默认路径
         self.default_config_path = self.get_default_path() + '/' + 'config.json'
 
@@ -366,6 +366,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 终端按键发送信号
         self.terminal_widget.key_sent.connect(self._on_terminal_key)
         self.terminal_widget.paste_sent.connect(self._on_terminal_paste)
+        self.terminal_widget.resize_requested.connect(self._on_terminal_resize)
 
         # 文件浏览器信号
         self.file_browser.upload_requested.connect(self._fb_upload)
@@ -1806,6 +1807,15 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if hasattr(self, 'terminal_widget'):
             self.terminal_widget.set_terminal_mode(True)
             self.update_run_info('进入终端模式')
+            # 同步 pty 大小到终端控件实际尺寸
+            cols = getattr(self.terminal_widget, '_cols', 120)
+            rows = getattr(self.terminal_widget, '_rows', 40)
+            if ('tool' in self.current_ssh and self.current_ssh['tool'] and
+                    self.current_ssh['tool'].channel):
+                try:
+                    self.current_ssh['tool'].channel.resize_pty(width=cols, height=rows)
+                except Exception:
+                    pass
         # 联动文件浏览器
         if hasattr(self, 'file_browser') and 'tool' in self.current_ssh:
             self.file_browser.set_ssh_tool(self.current_ssh['tool'])
@@ -1818,6 +1828,17 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
     def _on_terminal_output(self, text):
         """接收到服务器回显，追加到终端"""
         self.update_linux_print(text, insert=True)
+
+    def _on_terminal_resize(self, cols, rows):
+        """终端窗口大小变化：通知远端调整 pty"""
+        if (self.connect_pushButton.text() == '断开' and
+                'tool' in self.current_ssh and self.current_ssh['tool']):
+            try:
+                channel = self.current_ssh['tool'].channel
+                if channel and channel.active:
+                    channel.resize_pty(width=cols, height=rows)
+            except Exception as e:
+                self.update_run_info(f'调整终端大小失败: {e}', 'ERROR')
 
     def _on_terminal_key(self, key_text):
         """终端按键：发送给服务器"""
@@ -2421,8 +2442,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-                processed_content = content.replace("\\", "/")
-                data = json.loads(processed_content)
+                data = json.loads(content)
                 if not isinstance(data, dict):
                     raise ValueError("配置文件格式错误：不是字典类型")
         except (json.JSONDecodeError, IOError, ValueError) as e:
@@ -2504,8 +2524,11 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             # ---- 指令处理 ----
             cmd_added = 0
             for cmd in commands:
-                if cmd not in self.commands:
-                    self.commands.append(cmd)
+                normalized = self._normalize_command(cmd)
+                if not normalized['content']:
+                    continue
+                if not self._cmd_content_exists(normalized['content']):
+                    self.commands.append(normalized)
                     cmd_added += 1
 
             # 同步到 UI（指令列表在打开管理对话框时会刷新）
@@ -2580,10 +2603,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-                # 将内容中的\替换为/
-                processed_content = content.replace("\\", "/")
-                # 解析处理后的内容
-                data = json.loads(processed_content)
+                # 解析内容
+                data = json.loads(content)
                 # 确保是字典类型
                 if not isinstance(data, dict):
                     raise ValueError("配置文件格式错误：不是字典类型")
@@ -2630,8 +2651,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             elif '快捷按钮' in key:
                 pass  # 已经处理过了
             elif '指令' in key:
-                for cmd in data[key]:  # data[key]=['top','pwd']
-                    self.commands.append(cmd)
+                for cmd in data[key]:
+                    self.commands.append(self._normalize_command(cmd))
                 self.update_run_info(f"批量添加指令 成功，来自{file_path}")
             elif key == '日志配置':  # 跳过，日志配置在启动时单独加载
                 pass
@@ -2650,10 +2671,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-                # 将内容中的\替换为/
-                processed_content = content.replace("\\", "/")
-                # 解析处理后的内容
-                data = json.loads(processed_content)
+                # 解析内容
+                data = json.loads(content)
                 # 确保是字典类型
                 if not isinstance(data, dict):
                     raise ValueError("配置文件格式错误：不是字典类型")
@@ -2823,6 +2842,44 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 }
             )
             thread.start()
+
+    @staticmethod
+    def _normalize_command(cmd):
+        """把一条指令统一成 {'name': ..., 'content': ...} 格式。
+        支持旧格式纯字符串 -> 新格式dict的向下兼容转换。"""
+        if isinstance(cmd, dict):
+            name = str(cmd.get('name', '')).strip()
+            content = str(cmd.get('content', '')).strip()
+            if not name:
+                # 名称为空，用内容第一行自动生成
+                first_line = content.splitlines()[0].strip() if content else ''
+                if not first_line:
+                    first_line = content.strip()[:20]
+                if len(first_line) > 40:
+                    first_line = first_line[:40] + '...'
+                name = first_line or '(空)'
+            return {'name': name, 'content': content}
+        else:
+            # 旧格式：纯字符串
+            content = str(cmd).strip()
+            first_line = content.splitlines()[0].strip() if content else ''
+            if not first_line:
+                first_line = content[:20]
+            if len(first_line) > 40:
+                first_line = first_line[:40] + '...'
+            name = first_line or '(空)'
+            return {'name': name, 'content': content}
+
+    def _cmd_content_exists(self, content):
+        """判断某条指令内容是否已经存在（按content去重）"""
+        for cmd in self.commands:
+            if isinstance(cmd, dict):
+                if cmd.get('content', '') == content:
+                    return True
+            else:
+                if str(cmd) == content:
+                    return True
+        return False
 
     def open_cmd_manage_dialog(self):
         """打开指令管理对话框"""

@@ -326,9 +326,9 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                 child.setData(0, QtCore.Qt.ItemDataRole.UserRole, ('indicator', proc_name, ind_name))
                 proc_item.addChild(child)
 
-            # 进程类：加一个"单PID"分组
+            # 进程类：加一个"PID"分组
             if not is_system_or_single and pids:
-                pid_group_item = QTreeWidgetItem([f"单PID（{len(pids)}个）"])
+                pid_group_item = QTreeWidgetItem([f"PID（{len(pids)}个）"])
                 pid_group_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, ('pid_group', proc_name))
                 # 分组节点可勾选，勾选=全选子PID
                 pid_group_item.setFlags(
@@ -405,6 +405,10 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             # itemChanged 里没有 switch_action，不会切标签
             return False
 
+        # 点三角折叠/展开：让 Qt 默认处理（只折叠/展开，不操作复选框）
+        if self._is_branch_click(item, pos):
+            return False
+
         # 点文字区域
         action_name = self._get_action_name_for_item(item)
         is_checked = item.checkState(0) == QtCore.Qt.CheckState.Checked
@@ -441,6 +445,32 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             self.tree_widget,
         )
         return cb_rect
+
+    def _is_branch_click(self, item, pos):
+        """判断点击位置是否在三角折叠/展开按钮区域。
+        PyQt5 没有 SE_ItemViewItemBranch，用复选框左侧区域近似判断。"""
+        if item.childCount() == 0:
+            return False
+        cb_rect = self._get_checkbox_rect(item)
+        # 三角在复选框左边，宽度大约等于缩进值
+        indent = self.tree_widget.indentation()
+        branch_w = indent if indent > 0 else 20
+        branch_rect = QtCore.QRect(
+            cb_rect.left() - branch_w,
+            cb_rect.top(),
+            branch_w,
+            cb_rect.height()
+        )
+        if branch_rect.left() < 0:
+            # 顶层节点，三角可能在 item 最左边
+            item_rect = self.tree_widget.visualItemRect(item)
+            branch_rect = QtCore.QRect(
+                item_rect.left(),
+                item_rect.top(),
+                branch_w,
+                item_rect.height()
+            )
+        return branch_rect.contains(pos)
 
     def _get_action_name_for_item(self, item):
         """根据树节点获取对应的 action_name（仅指标节点有直接对应的单图）
@@ -1124,14 +1154,25 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         try:
             tab_index = self.action_tab_map[action_name]
             current_index = self.tab_widget.currentIndex()
+            removed_is_current = (current_index == tab_index)
             self.tab_widget.removeTab(tab_index)
             del self.action_tab_map[action_name]
             # 如果关掉的是当前显示的标签页，切到前一个（或最后一个）
-            if current_index == tab_index and self.tab_widget.count() > 0:
+            if removed_is_current and self.tab_widget.count() > 0:
                 prev_index = max(0, tab_index - 1)
                 if prev_index >= self.tab_widget.count():
                     prev_index = self.tab_widget.count() - 1
                 self.tab_widget.setCurrentIndex(prev_index)
+            # 重新计算 action_tab_map 索引
+            new_map = {}
+            for name, idx in self.action_tab_map.items():
+                new_map[name] = idx - 1 if idx > tab_index else idx
+            self.action_tab_map = new_map
+            # 同步左侧树选中状态（调用时可能 _updating_tree 为 True，所以手动同步）
+            if removed_is_current and self.tab_widget.count() > 0:
+                cur_name = self.tab_widget.tabText(self.tab_widget.currentIndex())
+                if cur_name:
+                    self._select_tree_item_by_action(cur_name)
             # 清理图对象
             if action_name in self.fig_objects:
                 info = self.fig_objects.pop(action_name)
@@ -1141,10 +1182,6 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                     logger.debug("已关闭 figure: %s", action_name)
                 except Exception as e:
                     logger.warning("关闭 figure 异常: %s, %s", action_name, e)
-            new_map = {}
-            for name, idx in self.action_tab_map.items():
-                new_map[name] = idx - 1 if idx > tab_index else idx
-            self.action_tab_map = new_map
         except Exception as e:
             logger.error("移除图表异常: %s, %s", action_name, e, exc_info=True)
 

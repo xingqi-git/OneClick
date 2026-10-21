@@ -37,8 +37,8 @@ class SSHTools(object):
                              timeout=timeout, banner_timeout=timeout, auth_timeout=timeout)
 
             # 打开一个通道用于传输数据
-            self.channel = self.ssh.invoke_shell()
-            self.channel.resize_pty(width=500, height=1000)
+            self.channel = self.ssh.invoke_shell(term='xterm-256color')
+            self.channel.resize_pty(width=120, height=40)
             self.channel.settimeout(10)  # 防止卡住
             # 非阻塞通道，在线程里时仍然可以发送数据
             self.channel.setblocking(0)

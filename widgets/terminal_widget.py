@@ -1,12 +1,15 @@
 """
-终端控件：pyte HistoryScreen + QPainter 自绘版（QAbstractScrollArea）
+终端控件：pyte + 自定义历史屏 + QPainter 自绘版（QAbstractScrollArea）
 - 完全抛弃 QPlainTextEdit，直接用 QPainter 渲染，性能更高、显示更准确
 - 自带滚动条，历史记录与终端屏幕无缝衔接
 - 支持 256 色、真彩色、粗体、反色
 - 文本选中、复制、粘贴
 - 输入法（IME）正确处理
 - 16ms 渲染节流，约 60fps
+- 自定义历史管理：仅全屏滚动时产生历史，DECSTBM 滚动区域内不产生历史
+  （这才是真实终端的行为，避免 top/vim 等全屏应用显示错乱）
 """
+from collections import deque
 from PyQt5 import QtWidgets, QtCore, QtGui
 
 
@@ -51,6 +54,213 @@ _FONT_CANDIDATES = [
 _FONT_SIZE = 12
 
 
+# ===================== 自定义历史屏 =====================
+# pyte 的 HistoryScreen 有个问题：设置了 DECSTBM 滚动区域后，区域内滚动产生的行
+# 也会被推入 history.top，导致渲染时行号错乱（比如 top 的表头跑到中间去）。
+# 真实终端的行为是：只有全屏滚动才产生历史，滚动区域内滚动不产生历史。
+# 我们自己实现一个带历史的 Screen 来修复这个问题。
+
+class _HistoryScreen:
+    """带历史记录的屏幕包装器。
+    - 只有全屏滚动（margins 为 None 或 margins == 全屏）时才产生历史
+    - DECSTBM 滚动区域内滚动不产生历史（符合真实终端行为）
+    - 暴露与 HistoryScreen 兼容的接口：history.top / buffer / cursor / lines / columns / margins
+    """
+    def __init__(self, columns, lines, history=2000):
+        self._screen = _ScreenWithCustomHistory(columns, lines, history)
+
+    # ---- 暴露给渲染层的属性 ----
+    @property
+    def buffer(self):
+        return self._screen.buffer
+
+    @property
+    def cursor(self):
+        return self._screen.cursor
+
+    @property
+    def lines(self):
+        return self._screen.lines
+
+    @property
+    def columns(self):
+        return self._screen.columns
+
+    @property
+    def margins(self):
+        return self._screen.margins
+
+    @property
+    def mode(self):
+        return self._screen.mode
+
+    @property
+    def display(self):
+        return self._screen.display
+
+    @property
+    def history(self):
+        # 兼容旧的 history.top 访问方式
+        return _HistoryAccessor(self._screen._history)
+
+    # ---- 历史控制 ----
+    def history_count(self):
+        return len(self._screen._history)
+
+    def get_history_line(self, idx):
+        """获取第 idx 行历史（0-based，越界返回 None）"""
+        if 0 <= idx < len(self._screen._history):
+            return self._screen._history[idx]
+        return None
+
+    def clear_history(self):
+        self._screen._history.clear()
+
+    def reset(self):
+        self._screen.reset()
+
+    def resize(self, lines=None, columns=None):
+        if lines is not None or columns is not None:
+            self._screen.resize(
+                lines=lines if lines is not None else self._screen.lines,
+                columns=columns if columns is not None else self._screen.columns,
+            )
+
+
+# 延迟加载以避免顶层 import pyte
+_pyte_screen_class = None
+
+
+def _get_pyte_screen_class():
+    global _pyte_screen_class
+    if _pyte_screen_class is None:
+        import pyte
+        _pyte_screen_class = pyte.Screen
+    return _pyte_screen_class
+
+
+class _ScreenWithCustomHistory:
+    """继承 pyte.Screen 并重写 index/reverse_index。
+    只有全屏滚动才产生历史记录，DECSTBM 滚动区域内不产生历史。
+    
+    为什么不直接在文件顶层继承？因为 pyte 是延迟导入的。
+    为什么不用 mixin？因为 pyte.Screen 用了一些特殊属性。
+    为什么用 __getattr__ 代理？因为 pyte.Screen 有几十个方法，全部重写太麻烦。
+    """
+    def __init__(self, columns, lines, history=2000):
+        cls = _get_pyte_screen_class()
+        self._inner = cls(columns, lines)
+        self._history = deque(maxlen=history)
+
+    # ---- 代理所有未显式定义的属性/方法 ----
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    # ---- 重写所有会触发屏幕滚动的方法，实现历史管理 ----
+    #
+    # 为什么需要重写这些？因为 inner.linefeed 内部调用的是 inner.index，
+    # 如果只重写 index 而让 linefeed 走 __getattr__ 返回 inner.linefeed，
+    # 那么 linefeed -> index 的调用链就绕过了我们的 index，历史不会被记录。
+    #
+    # 相关方法链：
+    #   linefeed -> index
+    #   index    -> （直接滚动）
+    #   reverse_index -> （直接滚动）
+
+    def linefeed(self):
+        inner = self._inner
+        m = inner.margins
+        top = m.top if m else 0
+        bottom = m.bottom if m else inner.lines - 1
+        is_full = (m is None) or (top == 0 and bottom == inner.lines - 1)
+        if is_full and inner.cursor.y == bottom:
+            if top in inner.buffer:
+                self._history.append(self._copy_line(inner.buffer[top], inner.columns))
+        inner.linefeed()
+
+    def index(self):
+        """向下滚动（内容上移），顶行被滚走。
+        只有全屏滚动才把顶行推入历史。"""
+        inner = self._inner
+        m = inner.margins
+        top = m.top if m else 0
+        bottom = m.bottom if m else inner.lines - 1
+        is_full = (m is None) or (top == 0 and bottom == inner.lines - 1)
+        if is_full and inner.cursor.y == bottom:
+            if top in inner.buffer:
+                self._history.append(self._copy_line(inner.buffer[top], inner.columns))
+        inner.index()
+
+    def reverse_index(self):
+        """向上滚动（内容下移），底行被滚走。
+        只有全屏滚动才从历史恢复一行。"""
+        inner = self._inner
+        m = inner.margins
+        top = m.top if m else 0
+        bottom = m.bottom if m else inner.lines - 1
+        is_full = (m is None) or (top == 0 and bottom == inner.lines - 1)
+        if is_full and inner.cursor.y == top and self._history:
+            self._history.pop()
+        inner.reverse_index()
+
+    def erase_in_display(self, how=0, *args, **kwargs):
+        if how == 3:
+            self._history.clear()
+        self._inner.erase_in_display(how, *args, **kwargs)
+
+    def reset(self):
+        self._history.clear()
+        self._inner.reset()
+
+    @staticmethod
+    def _copy_line(line, cols):
+        """深拷贝一行，返回 _HistoryLine"""
+        from pyte.screens import Char
+        result = {}
+        for x in range(cols):
+            if x in line:
+                ch = line[x]
+                result[x] = Char(
+                    data=ch.data, fg=ch.fg, bg=ch.bg,
+                    bold=ch.bold, reverse=ch.reverse,
+                    italics=ch.italics, underscore=ch.underscore,
+                    strikethrough=ch.strikethrough,
+                    blink=ch.blink,
+                )
+        return _HistoryLine(result, cols)
+
+
+class _HistoryLine:
+    """历史行的包装，提供与 pyte line 类似的 [x] 访问接口"""
+    __slots__ = ('_chars', '_cols')
+
+    def __init__(self, chars_dict, cols):
+        self._chars = chars_dict
+        self._cols = cols
+
+    def __getitem__(self, x):
+        if x in self._chars:
+            return self._chars[x]
+        from pyte.screens import Char
+        return Char(data=' ', fg='default', bg='default')
+
+    def __contains__(self, x):
+        return x in self._chars
+
+    def __iter__(self):
+        return iter(range(self._cols))
+
+    def __len__(self):
+        return self._cols
+
+
+class _HistoryAccessor:
+    """兼容 history.top 的访问器"""
+    def __init__(self, history_deque):
+        self.top = history_deque
+        self.bottom = deque()
+
+
 class TerminalWidget(QtWidgets.QAbstractScrollArea):
     """自绘终端控件（pyte + QPainter）
 
@@ -63,6 +273,7 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
     """
     key_sent = QtCore.pyqtSignal(str)
     paste_sent = QtCore.pyqtSignal(str)
+    resize_requested = QtCore.pyqtSignal(int, int)  # cols, rows
 
     def __init__(self, parent=None, cols=120, rows=40):
         super().__init__(parent)
@@ -138,11 +349,18 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
         if self._screen is not None:
             return
         import pyte
-        from pyte.screens import HistoryScreen
         from wcwidth import wcwidth
         self._wcwidth = wcwidth
-        self._screen = HistoryScreen(self._cols, self._rows, history=_HISTORY_LINES)
-        self._stream = pyte.ByteStream(self._screen)
+        # 以实际视口大小创建 screen，而不是用默认 cols/rows
+        if self._char_width > 0 and self._char_height > 0:
+            vp_w = self.viewport().width()
+            vp_h = self.viewport().height()
+            if vp_w > 0 and vp_h > 0:
+                self._cols = max(1, vp_w // self._char_width)
+                self._rows = max(1, vp_h // self._char_height)
+        self._screen = _HistoryScreen(self._cols, self._rows, history=_HISTORY_LINES)
+        # ByteStream 直接操作底层 screen 实例（带自定义 index 历史拦截）
+        self._stream = pyte.ByteStream(self._screen._screen)
 
     @staticmethod
     def _pick_best_font():
@@ -260,12 +478,17 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
         sb = self.verticalScrollBar()
         sb.setValue(sb.maximum())
 
+    def _hist_count(self):
+        """历史记录行数"""
+        if self._screen is None:
+            return 0
+        return self._screen.history_count()
+
     def _total_lines(self):
         """历史行 + 当前屏行数"""
         if self._screen is None:
             return 0
-        hist = len(self._screen.history.top) if hasattr(self._screen, 'history') else 0
-        return hist + self._screen.lines
+        return self._hist_count() + self._screen.lines
 
     def _visible_rows(self):
         """视口能显示多少行"""
@@ -299,8 +522,7 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
         if self._screen is None:
             self.viewport().update()
             return
-        hist = len(self._screen.history.top) if hasattr(self._screen, 'history') else 0
-        abs_row = hist + self._screen.cursor.y
+        abs_row = self._hist_count() + self._screen.cursor.y
         visible_rows = self._visible_rows()
         total = self._total_lines()
         top_row = max(0, total - visible_rows) if self._auto_scroll else self._scroll_offset
@@ -327,7 +549,7 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
         last_row = min(self._visible_rows() - 1, rect.bottom() // self._char_height)
 
         top_row = self._scroll_offset
-        hist_count = len(self._screen.history.top) if hasattr(self._screen, 'history') else 0
+        hist_count = self._hist_count()
 
         for rel_row in range(first_row, last_row + 1):
             abs_row = top_row + rel_row
@@ -336,11 +558,11 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
             painter.fillRect(0, y, self.viewport().width(), self._char_height,
                              QtGui.QColor(_DEFAULT_BG))
 
-            line_buf = self._get_line(abs_row, hist_count)
+            line_buf = self._get_line(abs_row)
             if line_buf is None:
                 continue
 
-            self._draw_line(painter, line_buf, abs_row, y, hist_count)
+            self._draw_line(painter, line_buf, abs_row, y)
 
         # 画光标（只在终端模式 + 自动跟随 + 可见时）
         if (self._terminal_mode and self._cursor_visible and self._auto_scroll
@@ -355,24 +577,21 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
                 painter.fillRect(cx, cy + 1, 2, self._char_height - 2,
                                  QtGui.QColor(_DEFAULT_FG))
 
-    def _get_line(self, abs_row, hist_count):
-        """获取绝对行号对应的 pyte line 对象"""
+    def _get_line(self, abs_row):
+        """获取绝对行号对应的行对象（历史行或 buffer 行）"""
         if self._screen is None:
             return None
-        if abs_row < hist_count:
+        if abs_row < self._hist_count():
             # 历史行
-            hist = list(self._screen.history.top)
-            if abs_row < len(hist):
-                return hist[abs_row]
-            return None
+            return self._screen.get_history_line(abs_row)
         else:
             # 当前屏
-            idx = abs_row - hist_count
+            idx = abs_row - self._hist_count()
             if 0 <= idx < self._screen.lines:
                 return self._screen.buffer[idx]
             return None
 
-    def _draw_line(self, painter, line, abs_row, y, hist_count):
+    def _draw_line(self, painter, line, abs_row, y):
         """绘制单行（逐字符绘制，逻辑简单可靠）"""
         cols = self._screen.columns
         baseline = y + self._char_ascent
@@ -546,8 +765,7 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
 
     def _select_word_at(self, row, col):
         """选中 (row, col) 位置处的单词（字母/数字/下划线）"""
-        hist_count = len(self._screen.history.top) if hasattr(self._screen, 'history') else 0
-        line = self._get_line(row, hist_count)
+        line = self._get_line(row)
         if line is None:
             return
 
@@ -639,10 +857,9 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
             s_row, e_row = e_row, s_row
             s_col, e_col = e_col, s_col
 
-        hist_count = len(self._screen.history.top) if hasattr(self._screen, 'history') else 0
         lines = []
         for r in range(s_row, e_row + 1):
-            line = self._get_line(r, hist_count)
+            line = self._get_line(r)
             if line is None:
                 continue
             start_col = s_col if r == s_row else 0
@@ -884,8 +1101,7 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
             if self._screen is not None and self._terminal_mode:
                 cursor_col = self._screen.cursor.x
                 cursor_row = self._screen.cursor.y
-                hist_count = len(self._screen.history.top) if hasattr(self._screen, 'history') else 0
-                abs_row = hist_count + cursor_row
+                abs_row = self._hist_count() + cursor_row
                 rel_row = abs_row - self._scroll_offset
                 if 0 <= rel_row < self._visible_rows():
                     x = cursor_col * self._char_width
@@ -920,7 +1136,15 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._update_scrollbar()
-        # TODO: 可以通知远端 resize pty（需要改 SSH 层）
+        # 行列数变化时，调整 pyte screen 并通知远端 resize pty
+        if self._screen is not None and self._char_height > 0 and self._char_width > 0:
+            new_cols = max(1, self.viewport().width() // self._char_width)
+            new_rows = max(1, self.viewport().height() // self._char_height)
+            if new_cols != self._cols or new_rows != self._rows:
+                self._cols = new_cols
+                self._rows = new_rows
+                self._screen.resize(lines=new_rows, columns=new_cols)
+                self.resize_requested.emit(new_cols, new_rows)
         self.viewport().update()
 
 
