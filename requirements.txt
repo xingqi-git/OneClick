@@ -11,5 +11,5 @@ pyte==0.8.1
 wcwidth==0.2.5
 cryptography==3.4.8
 bcrypt==3.2.2
-pyinstaller==4.10
-pyinstaller-hooks-contrib==2022.8
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.9
