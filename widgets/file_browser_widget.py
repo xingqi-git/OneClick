@@ -3,22 +3,185 @@
 远程文件浏览器控件（方案B：单栏远程文件列表）
 - 地址栏 + 工具栏（上级、刷新、上传、下载）
 - QTreeWidget 显示文件列表
-- 双击文件夹进入
+- 双击文件夹进入，双击文件→下载到本地 OneClick_Temp→本地软件打开
 - 右键菜单：重命名、删除、下载、新建文件/文件夹
+- 拖入上传（批量本地文件/文件夹→当前远程目录）
+- 拖出下载（选中远程文件/文件夹→弹框选位置→批量下载）
 - 所有操作通过外部传入的 ssh_tool 执行
 """
 import os
 import stat
 import datetime
-from PyQt5 import QtWidgets, QtCore
+import subprocess
+from urllib.parse import unquote
+from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5.QtCore import QUrl, QEvent
+
+
+def _detect_explorer_folder(hwnd):
+    """
+    通过 PowerShell Shell.Application 拿资源管理器窗口的 LocationURL → 转本地路径。
+    hwnd: int，资源管理器窗口句柄
+    返回：本地绝对路径字符串，失败返回 None
+    """
+    try:
+        ps = (
+            "$hwnd = {hwnd}; "
+            "$shell = New-Object -ComObject Shell.Application; "
+            "foreach ($w in $shell.Windows()) {{ "
+            "  try {{ if ([int]$w.HWND -eq $hwnd) {{ Write-Output $w.LocationURL; break }} }} catch {{}} "
+            "}}"
+        ).format(hwnd=int(hwnd))
+        result = subprocess.run(
+            ['powershell', '-NoProfile', '-Command', ps],
+            capture_output=True, text=True, timeout=5
+        )
+        url = result.stdout.strip()
+        if not url or not url.startswith('file:///'):
+            return None
+        # file:///C:/Users/xingq/Downloads → C:\Users\xingq\Downloads
+        path = unquote(url[8:])  # 去掉 file:///
+        path = path.replace('/', '\\')
+        return path
+    except Exception:
+        return None
+
+
+class _RemoteTreeWidget(QtWidgets.QTreeWidget):
+    """
+    远程文件列表专用 QTreeWidget 子类：
+    - 完全自己接管拖拽状态机（不进 Qt 默认 startDrag）
+    - 通过父级 FileBrowserWidget 显示手动拖拽的半透明浮窗
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._press_pos = None
+        self._started = False
+        self._mouse_pressed = False
+        self._items_at_press = []
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self._press_pos = event.globalPos()
+            self._started = False
+            self._mouse_pressed = True
+            self._items_at_press = []
+            fb = self.parent()
+            if fb is not None and hasattr(fb, 'tree') and fb.tree is self and hasattr(fb, '_full_path'):
+                for item in self.selectedItems():
+                    name = item.data(0, QtCore.Qt.UserRole)
+                    self._items_at_press.append(fb._full_path(name))
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        # 拖拽开始后完全阻断 QTreeWidget 默认行为（防止移动鼠标时触发多选）
+        if self._press_pos is not None and self._mouse_pressed and len(self._items_at_press) > 0:
+            if event.buttons() & QtCore.Qt.LeftButton:
+                if not self._started and (event.globalPos() - self._press_pos).manhattanLength() >= QtWidgets.QApplication.startDragDistance():
+                    self._started = True
+                    self.parent()._start_manual_drag_out(self._items_at_press)
+                # 不调 super()，阻断 Qt 默认的 hover-select 行为
+                return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self._press_pos = None
+            self._started = False
+            self._mouse_pressed = False
+            if self.parent() is not None and hasattr(self.parent(), '_end_manual_drag_out'):
+                self.parent()._end_manual_drag_out()
+        super().mouseReleaseEvent(event)
+
+
+class _DragOverlayWidget(QtWidgets.QWidget):
+
+    def __init__(self, items_at_press, app_window=None):
+        super().__init__(None)  # 独立窗口（无 parent），才能跨窗口显示
+        self._items_at_press = items_at_press
+        self._app_window = app_window
+
+        # 取第一个文件名做显示文本（多项显示 "name, name(2)"）
+        names = [os.path.basename(p.rstrip('/')) for p in items_at_press]
+        if len(names) == 1:
+            self._text = names[0]
+        else:
+            self._text = f"{names[0]} +{len(names)-1}"
+
+        self._forbidden = True  # 当前是否显示禁止图标
+
+        # 半透明样式
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating)
+        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)  # 让 ctypes 能"穿透"浮窗拿到下面的真实窗口
+        self.setWindowFlags(
+            QtCore.Qt.WindowType.Tool |
+            QtCore.Qt.WindowType.FramelessWindowHint |
+            QtCore.Qt.WindowType.WindowStaysOnTopHint)
+        self.setFocusPolicy(QtCore.Qt.NoFocus)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(6)
+
+        self._text_label = QtWidgets.QLabel(self._text, self)
+        self._text_label.setStyleSheet("""
+            QLabel {
+                background: rgba(0,0,0,180);
+                color: #fff;
+                border-radius: 4px;
+                padding: 4px 10px;
+                font-size: 12px;
+            }
+        """)
+        layout.addWidget(self._text_label)
+
+        self._forbidden_label = QtWidgets.QLabel("⛔", self)
+        self._forbidden_label.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                padding: 2px;
+                font-size: 16px;
+            }
+        """)
+        layout.addWidget(self._forbidden_label)
+
+        self.adjustSize()
+
+    def update_forbidden(self):
+        """根据当前鼠标位置是否在软件窗口内，切换禁止图标"""
+        if self._app_window is None:
+            return
+        cursor_pos = QtGui.QCursor.pos()
+        win_rect = self._app_window.geometry()
+        inside = win_rect.contains(cursor_pos)
+        if inside and not self._forbidden:
+            self._forbidden = True
+            self._forbidden_label.show()
+            self.adjustSize()
+        elif not inside and self._forbidden:
+            self._forbidden = False
+            self._forbidden_label.hide()
+            self.adjustSize()
+
+    def follow_cursor(self):
+        """每 20ms 跟随一次鼠标位置"""
+        cursor_pos = QtGui.QCursor.pos()
+        self.move(cursor_pos.x() + 16, cursor_pos.y() + 16)
+        self.update_forbidden()
 
 
 class FileBrowserWidget(QtWidgets.QWidget):
     """远程 SFTP 文件浏览器"""
 
-    upload_requested = QtCore.pyqtSignal(str, list)  # (远程目标目录, 本地文件列表)
-    download_requested = QtCore.pyqtSignal(list, str)  # (远程文件列表, 本地目标目录)
-    status_changed = QtCore.pyqtSignal(str)  # 状态变化提示
+    upload_requested = QtCore.pyqtSignal(str, list)       # (远程目标目录, 本地文件/文件夹列表)
+    download_requested = QtCore.pyqtSignal(list, str)     # (远程完整路径列表, 本地目标目录)
+    open_file_requested = QtCore.pyqtSignal(str)          # (远程完整文件路径) 双击远程文件→本地打开
+    status_changed = QtCore.pyqtSignal(str)               # 状态变化提示
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -26,6 +189,10 @@ class FileBrowserWidget(QtWidgets.QWidget):
         self._ssh_tool = None    # SSHTools 实例，外部设置
         self._current_path = '/' # 当前远程路径
         self._connected = False
+        # 手动拖出状态
+        self._drag_overlay = None   # 当前显示的拖出浮窗
+        self._drag_timer = None     # 跟随鼠标的 QTimer
+        self._drag_paths = []       # 当前拖拽的远程路径列表
 
         self._init_ui()
 
@@ -82,7 +249,7 @@ class FileBrowserWidget(QtWidgets.QWidget):
         layout.addLayout(tool_row)
 
         # ---- 文件列表 ----
-        self.tree = QtWidgets.QTreeWidget(self)
+        self.tree = _RemoteTreeWidget(self)
         self.tree.setColumnCount(3)
         self.tree.setHeaderLabels(["名称", "大小", "修改时间"])
         self.tree.setColumnWidth(0, 200)
@@ -95,6 +262,14 @@ class FileBrowserWidget(QtWidgets.QWidget):
         # 右键菜单
         self.tree.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._show_context_menu)
+        # 拖拽：允许拖入（本地文件→远程上传）
+        self.tree.setAcceptDrops(True)
+        # 拖出下载：完全自己接管（mouseMove/mouseRelease），不启用 Qt 默认拖出
+        # DropOnly = 只接受拖入，不支持 Qt 默认拖出
+        self.tree.setDragEnabled(False)
+        self.tree.setDragDropMode(QtWidgets.QAbstractItemView.DropOnly)
+        # 拖入上传：安装事件过滤器处理 DragEnter/Drop
+        self.tree.installEventFilter(self)
         layout.addWidget(self.tree, 1)
 
         # ---- 底部状态栏 ----
@@ -300,9 +475,11 @@ class FileBrowserWidget(QtWidgets.QWidget):
             act_download = menu.addAction(f"下载 ({len(selected)}项)")
             menu.addSeparator()
 
-        # 空白处：新建
+        # 空白处：新建 + 刷新
         act_new_file = menu.addAction("新建文件")
         act_new_dir = menu.addAction("新建文件夹")
+        menu.addSeparator()
+        act_refresh = menu.addAction("刷新")
 
         action = menu.exec_(self.tree.viewport().mapToGlobal(pos))
 
@@ -319,6 +496,8 @@ class FileBrowserWidget(QtWidgets.QWidget):
             self._new_file()
         elif action == act_new_dir:
             self._new_directory()
+        elif action == act_refresh:
+            self.refresh()
 
     # -------- 右键操作实现 --------
 
@@ -458,6 +637,154 @@ class FileBrowserWidget(QtWidgets.QWidget):
         if is_dir:
             new_path = self._full_path(name)
             self._load_path(new_path)
+        else:
+            # 双击远程文件 → 下载到 OneClick_Temp 并本地打开
+            full = self._full_path(name)
+            self.open_file_requested.emit(full)
+
+    # -------- 事件过滤器：拖入上传 + 拖出下载 --------
+
+    def eventFilter(self, obj, event):
+        """拦截 tree 上的拖入事件（DragEnter/DragMove/Drop）"""
+        if obj is not self.tree:
+            return super().eventFilter(obj, event)
+
+        evt_type = event.type()
+
+        # ---- 拖入（本地文件/文件夹 → 远程上传）----
+        if evt_type == QEvent.DragEnter or evt_type == QEvent.DragMove:
+            if self._connected and event.mimeData().hasUrls():
+                # 有本地文件可拖入，且已连接 → 接受
+                event.acceptProposedAction()
+                return True
+            return False
+
+        if evt_type == QEvent.Drop:
+            if self._connected and event.mimeData().hasUrls():
+                local_paths = []
+                for url in event.mimeData().urls():
+                    path = url.toLocalFile()
+                    if path:
+                        local_paths.append(path)
+                if local_paths:
+                    self.upload_requested.emit(self._current_path, local_paths)
+                    self.status_label.setText(f"已接收 {len(local_paths)} 项，开始上传…")
+                return True
+            return False
+
+        return super().eventFilter(obj, event)
+
+    # -------- 拖出下载：纯手动拖拽（无 QDrag / 无后台下载） --------
+
+    def _start_manual_drag_out(self, remote_paths):
+        """超过拖拽阈值时调用：显示跟随鼠标的半透明浮窗，启动 QTimer 跟随"""
+        self._drag_paths = remote_paths
+        # app_window = self.window() 获取顶层主窗口，供浮窗判断"在窗口内/外"
+        self._drag_overlay = _DragOverlayWidget(remote_paths, app_window=self.window())
+        self._drag_overlay.show()
+        self._drag_overlay.follow_cursor()
+
+        # QTimer 每 20ms 更新浮窗位置和禁止图标状态
+        self._drag_timer = QtCore.QTimer(self)
+        self._drag_timer.setInterval(20)
+        self._drag_timer.timeout.connect(self._drag_overlay.follow_cursor)
+        self._drag_timer.start()
+
+    def _end_manual_drag_out(self):
+        """鼠标松开时调用：停 QTimer、隐藏浮窗、检测鼠标下的真实目录 → 下载或取消"""
+        # 停计时器
+        if self._drag_timer is not None:
+            self._drag_timer.stop()
+            self._drag_timer.deleteLater()
+            self._drag_timer = None
+
+        local_dir = None
+
+        if self._drag_overlay is not None:
+            app_win = self._drag_overlay._app_window
+            mouse_outside = (app_win is not None and
+                             not app_win.geometry().contains(QtGui.QCursor.pos()))
+            self._drag_overlay.hide()
+            self._drag_overlay.deleteLater()
+            self._drag_overlay = None
+
+            if mouse_outside and self._drag_paths:
+                # 在软件窗口外松手 → 检测鼠标下的真实 Windows 目录
+                local_dir = self._detect_folder_under_cursor()
+                if local_dir is None:
+                    # 检测失败 → 弹框让用户选
+                    from PyQt5.QtWidgets import QFileDialog
+                    local_dir = QFileDialog.getExistingDirectory(self, "选择下载到的文件夹")
+                    if not local_dir:
+                        local_dir = None  # 用户取消
+
+        if local_dir and self._drag_paths:
+            self.download_requested.emit(self._drag_paths, local_dir)
+            self.status_label.setText(f"开始下载到 {local_dir}…")
+
+        self._drag_paths = []
+
+    # ---- Windows 路径检测（ctypes + PowerShell） ----
+
+    @staticmethod
+    def _detect_folder_under_cursor():
+        """
+        检测鼠标下的真实 Windows 目录。
+        返回本地绝对路径，失败返回 None。
+        """
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            shell32 = ctypes.windll.shell32
+
+            # 1. 取鼠标坐标
+            class POINT(ctypes.Structure):
+                _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
+            pt = POINT()
+            user32.GetCursorPos(ctypes.byref(pt))
+
+            # 2. WindowFromPoint（POINT 按值传，不是 byref）
+            hwnd = user32.WindowFromPoint(pt)
+            if not hwnd:
+                return None
+
+            # 3. 爬升到顶层窗口（GA_ROOT = 2）
+            GA_ROOT = 2
+            root_hwnd = user32.GetAncestor(hwnd, GA_ROOT)
+            if root_hwnd:
+                hwnd = root_hwnd
+
+            # 4. GetClassNameW
+            buf = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, buf, 256)
+            cls = buf.value
+
+            # 5a. 桌面（Progman）或隐藏桌面（WorkerW）
+            CSIDL_DESKTOP = 0
+            if cls in ('Progman', 'WorkerW'):
+                buf_path = ctypes.create_unicode_buffer(260)
+                if shell32.SHGetFolderPathW(0, CSIDL_DESKTOP, 0, 0, buf_path) == 0:
+                    return buf_path.value
+                return None
+
+            # 5b. 资源管理器（CabinetWClass）→ PowerShell Shell.Application 拿路径
+            if cls == 'CabinetWClass':
+                return _detect_explorer_folder(hwnd)
+
+            return None
+        except Exception:
+            return None
+
+    def _native_temp_dir(self):
+        """计算 OneClick_Temp 本地路径（exe 同目录，兼容打包/源码）"""
+        import sys as _sys
+        if getattr(_sys, 'frozen', False):
+            base = os.path.dirname(_sys.executable)
+        else:
+            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(base, 'OneClick_Temp')
 
     def _on_upload_file_clicked(self):
         """上传文件到当前目录"""

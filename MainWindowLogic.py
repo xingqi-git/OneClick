@@ -371,6 +371,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 文件浏览器信号
         self.file_browser.upload_requested.connect(self._fb_upload)
         self.file_browser.download_requested.connect(self._fb_download)
+        self.file_browser.open_file_requested.connect(self._fb_open_file)  # 双击远程文件→下载打开
 
         # 指令管理按钮，放到连接按钮后面（第0行第3列）
         self.cmd_manage_button = QtWidgets.QPushButton("指令管理", self.centralwidget)
@@ -1905,10 +1906,12 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         def on_worker_finished(result):
             if result:
                 self.update_run_info(f'<{button_name}> 执行成功')
+                self.file_browser.status_label.setText("上传完成")
                 if hasattr(self, 'file_browser') and self.file_browser.is_connected():
                     self.file_browser.refresh()
             else:
                 self.update_run_info(f'<{button_name}> 执行失败', 'ERROR')
+                self.file_browser.status_label.setText("上传失败")
             thread.quit()
 
         worker = qthread_worker.OneClickWorker(
@@ -1971,8 +1974,90 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         def on_worker_finished(result):
             if result:
                 self.update_run_info(f'<{button_name}> 执行成功')
+                self.file_browser.status_label.setText("下载完成")
             else:
                 self.update_run_info(f'<{button_name}> 执行失败', 'ERROR')
+                self.file_browser.status_label.setText("下载失败")
+            thread.quit()
+
+        worker = qthread_worker.OneClickWorker(
+            execute_download, op_name=button_name, op_id=exec_id
+        )
+
+        self.thread_count += 1
+        thread_name = f'sc_thread_{self.thread_count}'
+        thread = QThread()
+        worker.moveToThread(thread)
+
+        def on_thread_finished():
+            if thread_name in self.sc_threads:
+                del self.sc_threads[thread_name]
+
+        worker.finished.connect(on_worker_finished)
+        worker.finished.connect(worker.deleteLater)
+        thread.started.connect(worker.run_task)
+        thread.finished.connect(on_thread_finished)
+        thread.finished.connect(thread.deleteLater)
+
+        self.sc_threads[thread_name] = {"thread": thread, "worker": worker}
+        thread.start()
+
+    # ──────────────────── 文件浏览器：双击远程文件 → 本地打开 ────────────────────
+
+    def _fb_open_file(self, remote_path):
+        """
+        双击远程文件：下载到 exe 同目录下的 OneClick_Temp，完成后用本地默认程序打开。
+        下载链路与 get_files 一致（先进临时再移动），只是目标改为 OneClick_Temp。
+        """
+        if ('tool' not in self.current_ssh or
+                not self.current_ssh['tool'] or
+                not self.current_ssh['tool'].is_connected()):
+            self.update_run_info('请先连接服务器', 'WARNING')
+            return
+
+        import time as _time
+        from PyQt5.QtGui import QDesktopServices
+        from PyQt5.QtCore import QUrl
+
+        # ── 计算 OneClick_Temp 路径（exe 同目录）──
+        if getattr(sys, 'frozen', False):
+            exe_dir = os.path.dirname(sys.executable)
+        else:
+            exe_dir = os.path.dirname(os.path.abspath(__file__))
+        temp_dir = os.path.join(exe_dir, 'OneClick_Temp')
+        os.makedirs(temp_dir, exist_ok=True)
+
+        ssh_tool = self.current_ssh['tool']
+        button_name = '打开远程文件'
+        exec_id = f"fb_open_{int(_time.time()*1000)}"
+        self.update_run_info(f'<{button_name}> 下载中: {os.path.basename(remote_path)}')
+
+        # ── 用已封装的 get_files 链路下载 ──
+        source_items = [{
+            '路径': remote_path,
+            '修改时间': '全部',
+            '名称包含': {'关键词': [], '逻辑': '或'},
+            '名称不包含': {'关键词': [], '逻辑': '和'}
+        }]
+
+        def progress_cb(phase, current, total, extra=''):
+            log_progress(self.logger, phase, current, total, extra)
+
+        def execute_download():
+            return ssh_tool.get_files(source_items, temp_dir, progress_cb=progress_cb)
+
+        def on_worker_finished(result):
+            if result:
+                # 拼本地路径：get_files 会把远程文件直接下载到 temp_dir 下
+                local_path = os.path.join(temp_dir, os.path.basename(remote_path))
+                if os.path.exists(local_path):
+                    self.update_run_info(f'<{button_name}> 成功，正在打开…')
+                    # 用本地默认程序打开（Windows → 注册表关联的那个）
+                    QDesktopServices.openUrl(QUrl.fromLocalFile(local_path))
+                else:
+                    self.update_run_info(f'<{button_name}> 完成但文件未找到', 'WARNING')
+            else:
+                self.update_run_info(f'<{button_name}> 下载失败', 'ERROR')
             thread.quit()
 
         worker = qthread_worker.OneClickWorker(
@@ -2907,7 +2992,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
     def closeEvent(self, event):
         """
-        重写窗口关闭事件：检测运行中的按钮，提示用户确认
+        重写窗口关闭事件：检测运行中的按钮，提示用户确认；退出时清理 OneClick_Temp
         """
         running_count = len(self.sc_threads)
         if running_count > 0:
@@ -2921,15 +3006,31 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             msg_box.setDefaultButton(btn_cancel)
             msg_box.exec_()
             if msg_box.clickedButton() == btn_exit:
-                # 自动保存后退出
+                # 自动保存 + 清理临时目录 + 退出
                 self._save_config_auto()
+                self._cleanup_oneclick_temp()
                 event.accept()
             else:
                 event.ignore()
         else:
-            # 没有运行中的任务，自动保存后退出
+            # 没有运行中的任务，自动保存 + 清理临时目录 + 退出
             self._save_config_auto()
+            self._cleanup_oneclick_temp()
             event.accept()
+
+    def _cleanup_oneclick_temp(self):
+        """清理 exe 同目录下的 OneClick_Temp（双击远程文件下载的临时目录）"""
+        try:
+            import shutil
+            if getattr(sys, 'frozen', False):
+                exe_dir = os.path.dirname(sys.executable)
+            else:
+                exe_dir = os.path.dirname(os.path.abspath(__file__))
+            temp_dir = os.path.join(exe_dir, 'OneClick_Temp')
+            if os.path.isdir(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception:
+            pass  # 清理失败不影响退出
 
     def show_help_dialog(self):
         """显示帮助文档对话框"""
