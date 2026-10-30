@@ -3095,7 +3095,10 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             target_dir = os.path.dirname(os.path.abspath(__file__))
         try:
             if sys.platform.startswith('win'):
-                os.startfile(target_dir)
+                # 尾部补 os.sep 强制"目录"语义：无扩展名路径经 ShellExecute 会优先
+                # 尝试补全 .exe，若目录旁恰好存在同名 exe（如 dist\ 下同时有
+                # OneClick.exe 单文件版与 OneClick\ 文件夹版）会被误启动
+                os.startfile(target_dir + os.sep)
             elif sys.platform == 'darwin':
                 subprocess.Popen(['open', target_dir])
             else:

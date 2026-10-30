@@ -35,7 +35,8 @@ def _detect_explorer_folder(hwnd):
         ).format(hwnd=int(hwnd))
         result = subprocess.run(
             ['powershell', '-NoProfile', '-Command', ps],
-            capture_output=True, text=True, timeout=5
+            capture_output=True, text=True, timeout=5,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         )
         url = result.stdout.strip()
         if not url or not url.startswith('file:///'):

@@ -694,6 +694,14 @@ class SSHTools(object):
                 exit_status = stdout.channel.recv_exit_status()
                 if exit_status != 0:
                     logger.error(f"创建目录失败: {mkdir_err}")
+                    # 清理本次已创建的部分临时目录，避免残留 OneClick_temp* 目录
+                    try:
+                        rm_cmd = f"rm -rf \"{temp_remote_dir}\""
+                        stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
+                        stdout.read()
+                        stderr.read()
+                    except Exception:
+                        pass
                     return False
                 created_dirs.add(dst_dir)
 
@@ -1372,10 +1380,20 @@ class SSHTools(object):
                             f"{last_name}|{last_size}|{last_size}|{last_idx}|{last_total}")
         except Exception as e:
             logger.error(f"\n下载失败: {e}")
-            rm_cmd = f"rm -rf \"{temp_remote_path}\""
-            stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
-            stdout.read()
-            stderr.read()
+            try:
+                rm_cmd = f"rm -rf \"{temp_remote_path}\""
+                stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
+                stdout.read()
+                stderr.read()
+            except Exception:
+                pass
+            # 同步清理本地已下载一半的临时目录，避免残留 OneClick_temp* 目录
+            try:
+                _local_temp = os.path.join(local_path, os.path.basename(temp_remote_path))
+                if os.path.exists(_local_temp):
+                    shutil.rmtree(_local_temp, ignore_errors=True)
+            except Exception:
+                pass
             self.transfer_stat = 0
             self._download_progress_cb = None
             return False
@@ -1390,18 +1408,31 @@ class SSHTools(object):
         temp_basename = os.path.basename(temp_remote_path)
         local_temp_dir = f"{local_path}/{temp_basename}"
         if os.path.exists(local_temp_dir):
+            move_failed = []
             for item in os.listdir(local_temp_dir):
                 src_item = os.path.join(local_temp_dir, item)
                 dst_item = os.path.join(local_path, item)
-                # 目标存在则先删除（覆盖）
-                if os.path.exists(dst_item):
-                    if os.path.isdir(dst_item):
-                        shutil.rmtree(dst_item)
-                    else:
-                        os.remove(dst_item)
-                shutil.move(src_item, dst_item)
-            # 删除空的 temp 目录
-            os.rmdir(local_temp_dir)
+                try:
+                    # 目标存在则先删除（覆盖）
+                    if os.path.exists(dst_item):
+                        if os.path.isdir(dst_item):
+                            shutil.rmtree(dst_item)
+                        else:
+                            os.remove(dst_item)
+                    shutil.move(src_item, dst_item)
+                except Exception as e:
+                    # 目标被占用（如文件正被其他程序打开）时跳过该项，其余照常摊平
+                    move_failed.append(f"{item}: {e}")
+            if move_failed:
+                # 有文件挪不动（如本地同名文件被占用），保留临时目录及其中文件
+                logger.error("以下内容移动失败（目标可能被占用），已保留在 "
+                             f"{local_temp_dir}:\n  " + "\n  ".join(move_failed))
+            else:
+                # 删除空的 temp 目录
+                try:
+                    os.rmdir(local_temp_dir)
+                except OSError:
+                    pass
 
         logger.debug(f"下载完毕！文件已保存到: {local_path}")
         self.transfer_stat = 0

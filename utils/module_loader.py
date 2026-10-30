@@ -17,10 +17,13 @@ STATUS_READY = 'ready'     # 加载完成
 # 模块分组定义（加载顺序按列表顺序）
 # 每个元素：(模块名, 加载函数)
 # 加载函数在子线程中执行，负责 import 和初始化
+# 注意：matplotlib 不能在此后台线程加载（Qt5Agg 后端会创建 Qt 类型、
+# font_manager 通过 COM 扫描字体，均要求在主线程执行，否则会
+# access violation / 0x8001010d 崩溃）。它在首次打开图表窗口时由
+# 主线程导入 GraphWindowLogic 触发加载。
 MODULE_GROUPS = [
     ('paramiko', None),   # SSH 连接相关
     ('pyte', None),       # 终端相关
-    ('matplotlib', None), # 绘图相关
     ('pandas', None),     # 数据处理相关
 ]
 
@@ -82,12 +85,48 @@ class ModuleLoader:
         if self._started:
             return
         self._started = True
-        
+
         self._thread = _PreloadThread()
         self._thread.module_loading.connect(self._on_module_loading)
         self._thread.module_loaded.connect(self._on_module_loaded)
         self._thread.all_finished.connect(self._on_all_finished)
         self._thread.start()
+
+        # matplotlib 只能在主线程初始化（Qt5Agg 后端/字体 COM），
+        # 启动 1.5 秒后分步预热，用户点"监控绘图"时即可秒开
+        QTimer.singleShot(1500, self._warm_matplotlib)
+
+    def _warm_matplotlib(self):
+        """
+        主线程分步预热 matplotlib。
+        每步之间用 QTimer 回到事件循环（窗口可响应、可刷新），
+        把一次 1~3 秒的整体冻结切成多个小段。
+        """
+        if self.get_status('matplotlib') == STATUS_READY:
+            return
+
+        steps = [
+            lambda: __import__('matplotlib').use('Qt5Agg'),
+            lambda: __import__('matplotlib.figure', fromlist=['Figure']),
+            lambda: __import__('matplotlib.backends.backend_qt5agg',
+                               fromlist=['FigureCanvasQTAgg']),
+            lambda: __import__('matplotlib.pyplot'),
+            lambda: __import__('matplotlib.cm'),
+        ]
+
+        def run_step(index=0):
+            if index >= len(steps):
+                with QMutexLocker(self._mutex):
+                    self._status['matplotlib'] = STATUS_READY
+                return
+            try:
+                steps[index]()
+            except Exception:
+                import traceback
+                traceback.print_exc()
+            QTimer.singleShot(100, lambda: run_step(index + 1))
+
+        run_step()
     
     def _on_module_loading(self, name):
         """某个模块开始加载"""
@@ -193,16 +232,6 @@ class _PreloadThread(QThread):
             import pyte  # noqa: F401
             from pyte import HistoryScreen, ByteStream, modes  # noqa: F401
             import wcwidth  # noqa: F401
-        
-        elif name == 'matplotlib':
-            import matplotlib
-            matplotlib.use('Qt5Agg')
-            from matplotlib.figure import Figure  # noqa: F401
-            from matplotlib.backends.backend_qt5agg import (  # noqa: F401
-                FigureCanvasQTAgg as FigureCanvas,
-                NavigationToolbar2QT as NavigationToolbar,
-            )
-            import matplotlib.cm  # noqa: F401
         
         elif name == 'pandas':
             import pandas  # noqa: F401
