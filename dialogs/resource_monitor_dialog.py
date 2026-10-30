@@ -1816,9 +1816,9 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         logger.info("【监控绘图】GraphWindowLogic 导入完成，开始构造窗口")
         g_window = GraphWindowLogic.GraphWindow(data_path, self, server_config=server_config)
         logger.info("【监控绘图】窗口构造完成，开始显示")
-        g_window.destroyed.connect(
-            lambda obj: self.remove_window_from_list(obj)
-        )
+        # 直接绑定方法而非 lambda：dialog 销毁时 PyQt 会自动断开此连接，
+        # 避免 destroyed 回调里引用已销毁的 self 导致 NameError
+        g_window.destroyed.connect(self.remove_window_from_list)
         self.g_windows.append(g_window)
         g_window.show()
         logger.info("【监控绘图】窗口显示完成")
