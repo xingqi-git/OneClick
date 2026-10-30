@@ -20,6 +20,48 @@ OneClick PyInstaller 打包配置（PyInstaller 6.x，体积深度优化版）
 """
 
 import os
+import sys
+
+# 版本号统一取自 version.py（exe 文件属性→详细信息 由此填入）
+# SPECPATH 是 PyInstaller 注入的 spec 文件所在目录
+if SPECPATH not in sys.path:
+    sys.path.insert(0, SPECPATH)
+from version import __version__
+
+from PyInstaller.utils.win32.versioninfo import (
+    VSVersionInfo, FixedFileInfo, StringFileInfo, StringTable, StringStruct,
+    VarFileInfo, VarStruct,
+)
+
+
+def _make_version_info(version_str, app_name='OneClick'):
+    """把 "2.5" 这样的版本号构造成 Windows exe 版本资源（文件/产品版本取四段）"""
+    nums = [int(x) for x in version_str.split('.') if x.isdigit()]
+    nums = (nums + [0, 0, 0, 0])[:4]
+    ver = tuple(nums)
+    return VSVersionInfo(
+        ffi=FixedFileInfo(
+            filevers=ver,
+            prodvers=ver,
+            mask=0x3F, flags=0x0, OS=0x40004,
+            fileType=0x1, subtype=0x0, date=(0, 0),
+        ),
+        kids=[
+            StringFileInfo([
+                StringTable('080404B0', [  # 简体中文/Unicode
+                    StringStruct('CompanyName', ''),
+                    StringStruct('FileDescription', app_name),
+                    StringStruct('FileVersion', version_str),
+                    StringStruct('ProductName', app_name),
+                    StringStruct('ProductVersion', version_str),
+                ])
+            ]),
+            VarFileInfo([VarStruct('Translation', [0x0804, 1200])]),
+        ],
+    )
+
+
+version_info = _make_version_info(__version__)
 
 block_cipher = None
 
@@ -300,6 +342,7 @@ exe_single = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon='app.ico',
+    version=version_info,
 )
 
 # ── 文件夹版 ──────────────────────────────────────────
@@ -321,6 +364,7 @@ exe_dir = EXE(
     entitlements_file=None,
     icon='app.ico',
     contents_directory='_internal',
+    version=version_info,
 )
 
 collect = COLLECT(

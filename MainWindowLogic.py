@@ -69,6 +69,10 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         super().__init__(parent) # 调用父类QMainWindow，实例化了self为QMainWindow
         self.setupUi(self) # 现在self是个窗口，self直接调用，相当于MainWindow.Ui_MainWindow的setupUi
 
+        # 窗口标题版本号统一取自 version.py（单一事实来源，升级只改 version.py）
+        from version import __version__
+        self.setWindowTitle(f"OneClick v{__version__}")
+
         # 设置窗口图标（任务栏和标题栏显示）
         from PyQt5.QtGui import QIcon
         if getattr(sys, 'frozen', False):
