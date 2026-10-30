@@ -303,11 +303,6 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
-def get_emitter():
-    """获取全局 QtLogEmitter（setup_logging 后可用），供对话框订阅 progress_signal"""
-    return _qt_emitter
-
-
 def subscribe_progress(op_id, callback):
     """订阅指定操作的进度信号，返回退订函数
 
@@ -332,25 +327,6 @@ def subscribe_progress(op_id, callback):
     return _unsubscribe
 
 
-def shutdown_logging():
-    """
-    关闭日志系统。程序退出前调用，确保所有日志都写入完毕。
-    支持重新初始化（setup_logging 可再次调用）。
-    """
-    global _log_listener, _log_queue, _qt_emitter, _file_handler
-    if _log_listener is not None:
-        _log_listener.stop()
-        _log_listener = None
-    _log_queue = None
-    _qt_emitter = None
-    _file_handler = None
-    # 清理 root logger 的 handler，避免重复
-    root = logging.getLogger()
-    for h in root.handlers[:]:
-        root.removeHandler(h)
-    logging.shutdown()
-
-
 def set_file_logging(enabled: bool):
     """运行时开关文件日志（动态生效，无需重启）"""
     if _file_handler is None:
@@ -371,33 +347,11 @@ def set_file_log_level(level: int):
     return True
 
 
-def is_file_logging_enabled() -> bool:
-    """查询文件日志是否开启"""
-    if _file_handler is None:
-        return False
-    return _file_handler.level <= logging.CRITICAL
-
-
 def set_panel_level(level: int):
     """运行时调整运行信息面板（UI）的日志级别"""
     if _qt_handler is None:
         return False
     _qt_handler.setLevel(level)
-    return True
-
-
-def get_panel_level() -> int:
-    """查询面板日志级别"""
-    if _qt_handler is None:
-        return logging.INFO
-    return _qt_handler.level
-
-
-def set_console_level(level: int):
-    """运行时调整控制台日志级别"""
-    if _console_handler is None:
-        return False
-    _console_handler.setLevel(level)
     return True
 
 
@@ -435,10 +389,3 @@ def set_file_backup_count(count: int):
         return True
     except Exception:
         return False
-
-
-def get_file_backup_count() -> int:
-    """查询日志文件保留个数"""
-    if _file_handler is None:
-        return 5
-    return getattr(_file_handler, 'backupCount', 5)

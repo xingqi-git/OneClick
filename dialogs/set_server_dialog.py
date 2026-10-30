@@ -1,5 +1,8 @@
 from PyQt5 import QtCore
-from PyQt5.QtWidgets import QDialog, QMessageBox, QHeaderView, QAbstractItemView, QTableWidgetItem
+from PyQt5.QtWidgets import (
+    QDialog, QMessageBox, QHeaderView, QAbstractItemView, QTableWidgetItem,
+    QPushButton,
+)
 from UI import edit_servers_dlg
 
 
@@ -50,9 +53,20 @@ class SetServerDialog(QDialog, edit_servers_dlg.Ui_Dialog):
         self.save_pushButton.clicked.connect(self.save_table)
         self.close_pushButton.clicked.connect(self.close)
 
+        # 排序按钮：动态插入到"清空"与弹簧之间（不改 pyuic5 生成的 UI 文件）
+        self.up_pushButton = QPushButton("上移", self)
+        self.down_pushButton = QPushButton("下移", self)
+        # 此时布局顺序：增加0 复制1 删除2 清空3 弹簧4 保存5 关闭6
+        self.horizontalLayout.insertWidget(4, self.up_pushButton)
+        self.horizontalLayout.insertWidget(5, self.down_pushButton)
+        self.up_pushButton.clicked.connect(self.move_up)
+        self.down_pushButton.clicked.connect(self.move_down)
+
     def add_item(self):
         row_count = self.tableWidget.rowCount()
         self.tableWidget.insertRow(row_count)
+        # 端口默认填入 22
+        self.tableWidget.setItem(row_count, 2, QTableWidgetItem('22'))
 
     def copy_item(self):
         """复制选中的行到表最下面"""
@@ -83,6 +97,38 @@ class SetServerDialog(QDialog, edit_servers_dlg.Ui_Dialog):
         # 遍历删除选中行
         for row in selected_rows:
             self.tableWidget.removeRow(row)
+
+    def _current_row(self):
+        """当前选中行：优先 currentRow，其次选中区域的首行；无选中返回 -1"""
+        row = self.tableWidget.currentRow()
+        if row >= 0:
+            return row
+        rows = sorted(set(i.row() for i in self.tableWidget.selectedIndexes()))
+        return rows[0] if rows else -1
+
+    def _swap_rows(self, r1, r2):
+        """整行交换所有单元格内容"""
+        for col in range(self.tableWidget.columnCount()):
+            item1 = self.tableWidget.takeItem(r1, col)
+            item2 = self.tableWidget.takeItem(r2, col)
+            if item2 is not None:
+                self.tableWidget.setItem(r1, col, item2)
+            if item1 is not None:
+                self.tableWidget.setItem(r2, col, item1)
+
+    def move_up(self):
+        row = self._current_row()
+        if row <= 0:
+            return
+        self._swap_rows(row, row - 1)
+        self.tableWidget.selectRow(row - 1)
+
+    def move_down(self):
+        row = self._current_row()
+        if row < 0 or row >= self.tableWidget.rowCount() - 1:
+            return
+        self._swap_rows(row, row + 1)
+        self.tableWidget.selectRow(row + 1)
 
     def clear_table(self):
         confirm_dialog = QMessageBox()

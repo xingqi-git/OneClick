@@ -12,6 +12,10 @@
 from collections import deque
 from PyQt5 import QtWidgets, QtCore, QtGui
 
+from utils.logger import get_logger
+
+logger = get_logger("terminal")
+
 
 # ---- 256 色 + 默认前景背景 ----
 
@@ -113,9 +117,6 @@ class _HistoryScreen:
             return self._screen._history[idx]
         return None
 
-    def clear_history(self):
-        self._screen._history.clear()
-
     def reset(self):
         self._screen.reset()
 
@@ -211,6 +212,92 @@ class _ScreenWithCustomHistory:
     def reset(self):
         self._history.clear()
         self._inner.reset()
+
+    def resize(self, lines=None, columns=None):
+        """内容保全式 resize（覆盖 pyte 默认实现的丢内容行为）。
+
+        pyte 默认 resize 的行为及问题：
+        - 行数变少：顶部行直接丢弃（不进历史），内容永久丢失
+        - 行数变多：底部补空行，光标悬在屏幕中间，新区域全空白
+        - 列数变少：每行超宽字符直接删除，变宽后内容无法恢复
+
+        本实现（对齐现代终端的滚动缓冲行为）：
+        - 行数变少：顶部被截掉的行推入历史（往上翻页可回看）
+        - 行数变多：从历史尾部拉回行填充顶部（窗口恢复大尺寸时内容无缝还原）
+        - 列数变少：不删行内字符，仅按新宽度裁剪显示，变宽后内容自动恢复；
+          同时钳制光标列位置、修剪 tabstops，避免越界
+        - 全屏程序（DECSTBM 滚动区域生效，如 vim/top）运行时不动历史：
+          这类程序收到 SIGWINCH 后会自己重绘，且它们的行不应污染滚动历史
+        """
+        inner = self._inner
+        new_lines = lines if lines is not None else inner.lines
+        new_cols = columns if columns is not None else inner.columns
+        old_lines, old_cols = inner.lines, inner.columns
+        if new_lines == old_lines and new_cols == old_cols:
+            return
+
+        m = inner.margins
+        is_full = (m is None) or (m.top == 0 and m.bottom == old_lines - 1)
+        buf = inner.buffer
+
+        # ---- 行方向 ----
+        if new_lines < old_lines:
+            k = old_lines - new_lines
+            if is_full:
+                # 顶部被截掉的行推入历史（buffer 稀疏，不存在的行跳过）
+                for y in range(k):
+                    if y in buf:
+                        self._history.append(self._copy_line(buf[y], old_cols))
+            # 行整体上移 k：升序遍历，先读的位置不会被先写坏
+            for y in range(k, old_lines):
+                if y in buf:
+                    buf[y - k] = buf[y]
+                else:
+                    buf.pop(y - k, None)
+            for y in range(old_lines - k, old_lines):
+                buf.pop(y, None)
+            # 光标跟随内容上移
+            inner.cursor.y = max(0, inner.cursor.y - k)
+        elif new_lines > old_lines and is_full:
+            # 从历史尾部拉回 k 行填充顶部（拉不满则有多少拉多少）
+            k = new_lines - old_lines
+            pull = min(k, len(self._history))
+            if pull > 0:
+                # 现有行整体下移 pull：降序遍历，先读的位置不会被先写坏
+                for y in range(old_lines - 1, -1, -1):
+                    if y in buf:
+                        buf[y + pull] = buf[y]
+                    else:
+                        buf.pop(y + pull, None)
+                for i in range(pull):
+                    buf.pop(i, None)
+                # 历史行写回 buffer 顶部。
+                # 缩小时行按自上而下顺序 append，尾部是最贴近屏幕顶的一行；
+                # 恢复必须与之互逆：从尾部依次 pop、自 pull-1 行向上填，
+                # 否则拉回的行会整体倒序（新顶行会拿到"最新"的历史行）
+                for i in range(pull - 1, -1, -1):
+                    hline = self._history.pop()
+                    row = buf[i]  # defaultdict 访问自动创建空行
+                    for x, ch in hline._chars.items():
+                        if x < new_cols:
+                            row[x] = ch
+                # 光标跟随内容下移
+                inner.cursor.y = min(new_lines - 1, inner.cursor.y + pull)
+
+        # ---- 列方向 ----
+        if new_cols != old_cols:
+            if new_cols < old_cols:
+                # 不删字符（渲染按 columns 裁剪），光标与 tabstops 钳制
+                inner.cursor.x = min(inner.cursor.x, new_cols - 1)
+                inner.tabstops = {s for s in inner.tabstops if s < new_cols}
+            else:
+                # 变宽：补回标准 tabstops（与 pyte reset 的制表位规则一致）
+                inner.tabstops.update(range(8, new_cols + 1, 8))
+
+        # ---- 应用新尺寸（等价于 pyte resize 的收尾）----
+        inner.lines, inner.columns = new_lines, new_cols
+        inner.set_margins()
+        inner.dirty.update(range(new_lines))
 
     @staticmethod
     def _copy_line(line, cols):
@@ -319,6 +406,13 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
         self._render_timer.setInterval(_RENDER_INTERVAL_MS)
         self._render_timer.timeout.connect(self._do_render)
 
+        # 远端 pty 尺寸通知节流：拖动时合并为最后一次，停顿 80ms 后发出
+        self._pending_pty_size = None
+        self._pty_resize_timer = QtCore.QTimer(self)
+        self._pty_resize_timer.setSingleShot(True)
+        self._pty_resize_timer.setInterval(80)
+        self._pty_resize_timer.timeout.connect(self._emit_pending_pty_resize)
+
         # 自动滚动
         self._auto_scroll = True
         self.verticalScrollBar().valueChanged.connect(self._on_scrollbar_changed)
@@ -422,10 +516,12 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
             data = text
         if not data:
             return
+        logger.debug("终端控件接收数据 %d 字节", len(data))
         try:
             self._stream.feed(data)
         except Exception:
-            pass
+            # pyte 解析异常不能让终端崩掉，但必须留堆栈供事后定位
+            logger.exception("pyte 解析数据异常: %d 字节", len(data))
         # 触发节流渲染
         if not self._render_pending:
             self._render_pending = True
@@ -470,9 +566,15 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
         else:
             sb.setMaximum(total_lines - visible)
             sb.setPageStep(visible)
-        if self._auto_scroll:
-            sb.setValue(sb.maximum())
-            self._scroll_offset = sb.maximum()
+            if self._auto_scroll:
+                sb.setValue(sb.maximum())
+                self._scroll_offset = sb.maximum()
+            else:
+                # resize 后可视行数变化可能使旧偏移越界（越界会画出空白行），
+                # 钳制到新范围内；值未变化时 setValue 不会发信号，手动同步偏移
+                clamped = min(self._scroll_offset, sb.maximum())
+                self._scroll_offset = clamped
+                sb.setValue(clamped)
 
     def _scroll_to_bottom(self):
         sb = self.verticalScrollBar()
@@ -545,6 +647,10 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
         painter.setRenderHint(QtGui.QPainter.TextAntialiasing, True)
 
         rect = event.rect()
+        # 先用背景色铺满整个失效区域：行边界与失效矩形不一定对齐，
+        # WA_OpaquePaintEvent 下未填到的像素会保留旧画面，resize 后表现为残影
+        painter.fillRect(rect, QtGui.QColor(_DEFAULT_BG))
+
         first_row = max(0, rect.top() // self._char_height)
         last_row = min(self._visible_rows() - 1, rect.bottom() // self._char_height)
 
@@ -1135,8 +1241,9 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._update_scrollbar()
-        # 行列数变化时，调整 pyte screen 并通知远端 resize pty
+        # 先调整 pyte screen，再更新滚动条——顺序不能反：
+        # 滚动条范围/偏移依赖 resize 后的屏幕行数，若先算滚动条再 resize，
+        # _scroll_offset 会按旧行数错位，导致内容上下错位、顶部出现历史残影、底部空白
         if self._screen is not None and self._char_height > 0 and self._char_width > 0:
             new_cols = max(1, self.viewport().width() // self._char_width)
             new_rows = max(1, self.viewport().height() // self._char_height)
@@ -1144,8 +1251,19 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
                 self._cols = new_cols
                 self._rows = new_rows
                 self._screen.resize(lines=new_rows, columns=new_cols)
-                self.resize_requested.emit(new_cols, new_rows)
+                # 本地 screen 立即生效；远端 pty 通知走节流合并，避免拖动时
+                # 每个像素都触发一次 resize_pty，导致远端 shell 疯狂重绘回显
+                self._pending_pty_size = (new_cols, new_rows)
+                self._pty_resize_timer.start()
+        self._update_scrollbar()
         self.viewport().update()
+
+    def _emit_pending_pty_resize(self):
+        """拖动停止（或停顿）后，把最终尺寸通知远端"""
+        if self._pending_pty_size is not None:
+            cols, rows = self._pending_pty_size
+            self._pending_pty_size = None
+            self.resize_requested.emit(cols, rows)
 
 
 # 兼容旧类名

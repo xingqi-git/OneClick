@@ -11,6 +11,7 @@
 """
 import os
 import stat
+import weakref
 import datetime
 import subprocess
 from urllib.parse import unquote
@@ -181,6 +182,7 @@ class FileBrowserWidget(QtWidgets.QWidget):
     upload_requested = QtCore.pyqtSignal(str, list)       # (远程目标目录, 本地文件/文件夹列表)
     download_requested = QtCore.pyqtSignal(list, str)     # (远程完整路径列表, 本地目标目录)
     open_file_requested = QtCore.pyqtSignal(str)          # (远程完整文件路径) 双击远程文件→本地打开
+    open_with_requested = QtCore.pyqtSignal(str)          # (远程完整文件路径) 右键"打开方式..."→选择程序打开
     status_changed = QtCore.pyqtSignal(str)               # 状态变化提示
 
     def __init__(self, parent=None):
@@ -189,6 +191,9 @@ class FileBrowserWidget(QtWidgets.QWidget):
         self._ssh_tool = None    # SSHTools 实例，外部设置
         self._current_path = '/' # 当前远程路径
         self._connected = False
+        # 每个连接（终端标签）各自记住浏览到的目录，切回该标签时恢复。
+        # 弱引用 key：连接关闭、标签删除后条目随对象一起消失，不占内存
+        self._path_by_tool = weakref.WeakKeyDictionary()
         # 手动拖出状态
         self._drag_overlay = None   # 当前显示的拖出浮窗
         self._drag_timer = None     # 跟随鼠标的 QTimer
@@ -293,15 +298,27 @@ class FileBrowserWidget(QtWidgets.QWidget):
                 self._connected = False
                 return
             self._connected = True
-            # 默认进入用户主目录
+            # 默认进入用户主目录；该连接此前浏览过目录则恢复它自己的目录
+            # （多终端标签各自记住自己的位置，切换标签时互不干扰）
             try:
                 home = self._sftp.normalize('.')
-                self._current_path = home
             except Exception:
-                self._current_path = '/'
-            self.path_edit.setText(self._current_path)
-            self._set_buttons_enabled(True)
-            self.refresh()
+                home = '/'
+            try:
+                saved = self._path_by_tool.get(ssh_tool)
+            except TypeError:
+                saved = None
+            if saved and saved != home:
+                # 先落到主目录兜底：恢复失败（目录被删/无权限）时浏览器仍可用
+                self._current_path = home
+                self.path_edit.setText(home)
+                self._set_buttons_enabled(True)
+                self._load_path(saved)
+            else:
+                self._current_path = home
+                self.path_edit.setText(self._current_path)
+                self._set_buttons_enabled(True)
+                self.refresh()
             self.status_label.setText("已连接")
             self.status_changed.emit("已连接")
         else:
@@ -370,6 +387,13 @@ class FileBrowserWidget(QtWidgets.QWidget):
             self.path_edit.setText(normalized)
         except Exception:
             self._current_path = path
+
+        # 记住该连接浏览到的目录（切换终端标签后再切回来时恢复）
+        if self._ssh_tool is not None:
+            try:
+                self._path_by_tool[self._ssh_tool] = self._current_path
+            except TypeError:
+                pass
 
         self.tree.clear()
 
@@ -463,12 +487,16 @@ class FileBrowserWidget(QtWidgets.QWidget):
 
         menu = QtWidgets.QMenu(self)
 
+        act_open_with = None
         act_rename = None
         act_delete = None
         act_download = None
 
         if has_selection:
             # 有选中项：文件/文件夹操作
+            if len(selected) == 1 and not selected[0].data(0, QtCore.Qt.UserRole + 1):
+                # 单选且是文件：允许选择打开方式
+                act_open_with = menu.addAction("打开方式...")
             if len(selected) == 1:
                 act_rename = menu.addAction("重命名")
             act_delete = menu.addAction(f"删除 ({len(selected)}项)")
@@ -486,7 +514,10 @@ class FileBrowserWidget(QtWidgets.QWidget):
         if action is None:
             return
 
-        if act_rename is not None and action == act_rename:
+        if act_open_with is not None and action == act_open_with:
+            self.open_with_requested.emit(
+                self._full_path(selected[0].data(0, QtCore.Qt.UserRole)))
+        elif act_rename is not None and action == act_rename:
             self._rename_item(selected[0])
         elif act_delete is not None and action == act_delete:
             self._delete_items(selected)
@@ -776,15 +807,6 @@ class FileBrowserWidget(QtWidgets.QWidget):
             return None
         except Exception:
             return None
-
-    def _native_temp_dir(self):
-        """计算 OneClick_Temp 本地路径（exe 同目录，兼容打包/源码）"""
-        import sys as _sys
-        if getattr(_sys, 'frozen', False):
-            base = os.path.dirname(_sys.executable)
-        else:
-            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        return os.path.join(base, 'OneClick_Temp')
 
     def _on_upload_file_clicked(self):
         """上传文件到当前目录"""

@@ -146,27 +146,7 @@ class ModuleLoader:
         # 显示加载对话框（用 QTimer 在下一事件循环显示，避免立即阻塞）
         display_label = label or module_name
         QTimer.singleShot(0, lambda: self._show_loading_dialog(module_name, display_label))
-    
-    def ensure_sync(self, module_name, label=None):
-        """
-        同步等待模块加载完成（阻塞式，显示对话框）。
-        不推荐使用，优先用 ensure(callback)。
-        """
-        if self.is_ready(module_name):
-            return
-        
-        display_label = label or module_name
-        dlg = _LoadingDialog(display_label, self._main_window)
-        
-        # 连接信号：加载完成就关闭对话框
-        def _on_done():
-            dlg.accept()
-        
-        with QMutexLocker(self._mutex):
-            self._waiting_cbs[module_name].append(_on_done)
-        
-        dlg.exec_()
-    
+
     def _show_loading_dialog(self, module_name, label):
         """显示加载中对话框，加载完成后自动关闭"""
         if self.is_ready(module_name):
@@ -181,22 +161,6 @@ class ModuleLoader:
             self._waiting_cbs[module_name].append(_on_done)
         
         dlg.exec_()
-    
-    def ensure_all(self, module_names, callback, label=None):
-        """
-        确保多个模块都加载完成后执行 callback。
-        """
-        remaining = list(module_names)
-        display_label = label or ', '.join(module_names)
-        
-        def _check_next():
-            if not remaining:
-                callback()
-                return
-            next_mod = remaining.pop(0)
-            self.ensure(next_mod, _check_next, display_label)
-        
-        _check_next()
 
 
 class _PreloadThread(QThread):

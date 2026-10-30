@@ -1790,7 +1790,9 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
     def display_resource(self):
         """打开监控绘图窗口（直接打开，按需加载数据）"""
+        logger.info("【监控绘图】点击监控绘图按钮，开始打开窗口")
         data_path = self.monitor_data_path + '/Monitor'
+        logger.info("【监控绘图】数据目录: %s", data_path)
 
         # 服务器模式下传服务器配置，用于增量更新
         server_config = None
@@ -1803,14 +1805,23 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 '密码': cfg.get('密码'),
                 '文件暂存路径': cfg.get('文件暂存路径'),
             }
+        if server_config:
+            logger.info("【监控绘图】使用服务器增量更新配置: IP=%s", server_config.get('IP'))
+        else:
+            logger.info("【监控绘图】无服务器配置，仅使用本地数据")
 
+        # 首次导入会加载 matplotlib（含字体缓存构建），是本路径的高危阶段，前后必须留痕
+        logger.info("【监控绘图】开始导入 GraphWindowLogic 模块...")
         import GraphWindowLogic
+        logger.info("【监控绘图】GraphWindowLogic 导入完成，开始构造窗口")
         g_window = GraphWindowLogic.GraphWindow(data_path, self, server_config=server_config)
+        logger.info("【监控绘图】窗口构造完成，开始显示")
         g_window.destroyed.connect(
             lambda obj: self.remove_window_from_list(obj)
         )
         self.g_windows.append(g_window)
         g_window.show()
+        logger.info("【监控绘图】窗口显示完成")
 
     def remove_window_from_list(self, window):
         """从列表中移除已关闭的窗口"""

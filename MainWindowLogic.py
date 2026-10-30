@@ -14,7 +14,7 @@ from utils.logger import log_progress
 from dialogs import (SendCMDDialog, SendCMD2Dialog, SendFilesDialog, GetFilesDialog, CopyFilesDialog,
                      SetServerDialog, ResourceMonitorDialog1, ResourceMonitorDialog2,
                      WeakNetDialog1, WeakNetControlDialog, HelpDialog, ServerCheckDialog,
-                     ServerCheckRunDialog, CmdManageDialog)
+                     ServerCheckRunDialog, CmdManageDialog, NotepadDialog, NotepadEditWindow)
 
 class DraggableButton(QPushButton):
     """可拖动的按钮类，支持长按拖动改变位置"""
@@ -70,8 +70,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.setupUi(self) # 现在self是个窗口，self直接调用，相当于MainWindow.Ui_MainWindow的setupUi
 
         # 设置窗口图标（任务栏和标题栏显示）
-        import os
-        import sys
         from PyQt5.QtGui import QIcon
         if getattr(sys, 'frozen', False):
             # PyInstaller 打包后：优先 exe 同目录，其次打包进 exe 的资源
@@ -111,16 +109,20 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self.menu.insertAction(actions[weak_net_idx + 1], self.server_check_action)
         else:
             self.menu.addAction(self.server_check_action)
-        # 隐藏已迁移/废弃的菜单项（从配置文件批量添加 → 统一在设置→导入配置）
-        self.get_sc_from_cfg_action.setVisible(False)
-        self.get_server_from_cfg_action.setVisible(False)
 
         self.server_check_action.triggered.connect(self.server_check_dialog)
 
+        # 菜单分类分隔线：命令类 | 文件传输类 | 监控检查类（记事本在末尾自成一类）
+        self.menu.insertSeparator(self.send_file_action)       # 命令类 / 文件传输类
+        self.menu.insertSeparator(self.resource_monitor_action)  # 文件传输类 / 监控检查类
+
+        # 记事本菜单项（加在菜单末尾；UI 中其前已有一条分隔线，使其自成一类）
+        self.notepad_action = QAction("记事本", self)
+        self.menu.addAction(self.notepad_action)
+        self.notepad_action.triggered.connect(self.notepad_dialog)
+
         self.edit_server_action.triggered.connect(self.server_cfg_dialog)  # 服务器列表的编辑框
 
-        self.save_action.triggered.connect(self.save_config)  # 保存配置到当前配置文件
-        self.save_to_action_2.triggered.connect(self.save_config_to)  # 另存为配置到文件夹
         self.help_action.triggered.connect(self.show_help_dialog)  # 显示帮助文档
         # 创建按钮逻辑
         self.stop_pushButton.clicked.connect(self.stop_sc)
@@ -184,18 +186,33 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 将所有快捷方式存储到字典里,由于button_id唯一，因此用字典
         self.sc_buttons = {}  # {'button_id': {'widget':容器, 'button':DraggableButton, 'checkbox':QCheckBox, 'config':config, 'group':分组名}}
         self.btn_count = 0
+        self._notepad_windows = {}  # button_id -> NotepadEditWindow（已打开的笔记窗口，去重用）
 
         # 将运行中的指令线程存入字典
         self.sc_threads = {}
         self.thread_count = 0
-        self.timer = None
 
         # 用于存放服务器配置信息的列表
         self.servers_cfg = []  # [{"服务器名称": ,"IP": ,"端口": ,"用户名": ,"密码": },...]
 
-        # 连接ssh按钮逻辑
-        self.connect_pushButton.clicked.connect(self.connect_server)
-        self.current_ssh = {}  # 'config':{"服务器名称": ,"IP": ...},'ssh':,'receive_thread':,
+        # 多终端连接管理：conn_id -> 连接信息
+        # conn = {id, config, tool, terminal, page, combo, btn, thread, worker, state, closing}
+        #   page : 标签页容器（内含本标签独立的服务器下拉框 + 连接/断开按钮 + 终端）
+        #   state: 'idle'(未发起连接) / 'connecting' / 'connected' / 'disconnected'
+        self.connections = {}
+        self.active_conn_id = None
+        self._conn_seq = 0
+        self._closing_workers = []  # 关闭标签时后台断开的 (thread, worker)，防GC
+
+        # 双击打开的远程文件编辑会话：本地临时路径 -> 会话信息
+        # {local_path: {'conn_id', 'remote_path', 'base_mtime', 'base_size',
+        #               'last_mtime', 'last_size', 'synced', 'uploading'}}
+        # base_*: 上次已回传（或已判定失败不再重试）的 mtime/size 基线
+        # last_*: 上次轮询看到的 mtime/size，用于防抖（连续两轮一致才回传）
+        self._edit_sessions = {}
+        self._edit_watch_timer = QtCore.QTimer(self)
+        self._edit_watch_timer.setInterval(2000)  # 2秒轮询一次本地临时文件
+        self._edit_watch_timer.timeout.connect(self._poll_edit_sessions)
 
         # 发送指令、保存指令、删除指令按钮逻辑
         self.commands = []  # 新格式：[{'name': 'xxx', 'content': 'xxx'}, ...]
@@ -230,7 +247,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if os.path.exists(self.default_config_path):
             try:
                 with open(self.default_config_path, 'r', encoding='utf-8') as f:
-                    import json
                     cfg_data = json.load(f)
                     if '日志配置' in cfg_data:
                         log_cfg = cfg_data['日志配置']
@@ -251,11 +267,11 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         set_panel_level(_level_map.get(self._log_config['面板日志级别'], _logging.INFO))
         set_file_backup_count(self._log_config['文件保留个数'])
 
-        # 隐藏旧的勾选框（功能移到设置菜单）
-        self.log_file_checkBox.setVisible(False)
-
-        # 设置菜单（动态插入到"帮助"之前）
-        self.settings_menu = QtWidgets.QMenu("设置", self)
+        # 选项菜单（动态插入到"帮助"之前）
+        self.settings_menu = QtWidgets.QMenu("选项", self)
+        self.open_program_dir_action = self.settings_menu.addAction("打开程序目录")
+        self.open_program_dir_action.triggered.connect(self.open_program_dir)
+        self.settings_menu.addSeparator()
         self.log_settings_action = self.settings_menu.addAction("日志设置")
         self.log_settings_action.triggered.connect(self.open_log_settings)
         self.settings_menu.addSeparator()
@@ -275,21 +291,30 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 break
         else:
             menubar.addMenu(self.settings_menu)
-        # 隐藏原"配置保存"菜单（功能已迁移到设置菜单）
-        for act in menubar.actions():
-            if act.text() == "配置保存":
-                act.setVisible(False)
-                break
 
         # ---- 三列布局改造：按钮区 | 文件区 | 终端区 ----
         # 用 QSplitter 水平分割，可拖动调整宽度
         from widgets.terminal_widget import TerminalEdit
         from widgets.file_browser_widget import FileBrowserWidget
 
-        self.terminal_widget = TerminalEdit(self.centralwidget)
+        # 终端标签页：每个 SSH 连接一个标签，各标签独立一个 TerminalEdit
+        self.terminal_tabs = QtWidgets.QTabWidget(self.centralwidget)
+        self.terminal_tabs.setTabsClosable(True)   # 标签带关闭按钮
+        self.terminal_tabs.setMovable(True)        # 标签可拖动排序
+        self.terminal_tabs.setDocumentMode(True)
+        # 左上角"+"新建终端标签（样式与左侧分组标签页的"+"保持一致）
+        self.new_terminal_btn = QtWidgets.QPushButton("+", self.terminal_tabs)
+        self.new_terminal_btn.setFixedSize(24, 24)
+        self.new_terminal_btn.setToolTip("新建终端")
+        add_term_btn_container = QtWidgets.QWidget(self.terminal_tabs)
+        add_term_btn_layout = QtWidgets.QHBoxLayout(add_term_btn_container)
+        add_term_btn_layout.setContentsMargins(0, 0, 0, 0)
+        add_term_btn_layout.addStretch()
+        add_term_btn_layout.addWidget(self.new_terminal_btn)
+        self.terminal_tabs.setCornerWidget(add_term_btn_container, QtCore.Qt.Corner.TopLeftCorner)
         self.file_browser = FileBrowserWidget(self.centralwidget)
 
-        # 1. 左侧容器：快捷按钮（上）+ 运行信息（下），垂直 splitter
+        # 1. 左侧容器：仅快捷按钮区（运行信息区已移至底部通栏）
         self.left_container = QtWidgets.QWidget(self.centralwidget)
         left_layout = QtWidgets.QVBoxLayout(self.left_container)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -302,22 +327,17 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         top_layout.setContentsMargins(0, 0, 0, 0)
         top_layout.setSpacing(0)
         top_layout.addLayout(self.verticalLayout)
+        left_layout.addWidget(self.left_top_widget)
 
-        # 把运行信息区（原 verticalLayout_3）包进一个 QWidget
+        # 运行信息区（原 verticalLayout_3）从左栏取出，提升为底部通栏独立部件
         self.gridLayout_2.removeItem(self.verticalLayout_3)
-        self.left_bottom_widget = QtWidgets.QWidget(self.left_container)
-        bottom_layout = QtWidgets.QVBoxLayout(self.left_bottom_widget)
-        bottom_layout.setContentsMargins(0, 0, 0, 0)
-        bottom_layout.setSpacing(0)
-        bottom_layout.addLayout(self.verticalLayout_3)
-
-        # 垂直 splitter 让两个区可拖动
-        self.left_splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical, self.left_container)
-        self.left_splitter.addWidget(self.left_top_widget)
-        self.left_splitter.addWidget(self.left_bottom_widget)
-        self.left_splitter.setStretchFactor(0, 4)
-        self.left_splitter.setStretchFactor(1, 1)
-        left_layout.addWidget(self.left_splitter)
+        self.run_info_widget = QtWidgets.QWidget(self.centralwidget)
+        run_info_layout = QtWidgets.QVBoxLayout(self.run_info_widget)
+        run_info_layout.setContentsMargins(0, 0, 0, 0)
+        run_info_layout.setSpacing(0)
+        run_info_layout.addLayout(self.verticalLayout_3)
+        # 压低运行信息文本框的默认最小高度，使底部通栏的 14:1 初始比例真正生效
+        self.run_info_browser.setMinimumHeight(40)
 
         # 2. 右侧容器：终端区（上）+ 服务器选择行（下）
         self.right_column_widget = QtWidgets.QWidget(self.centralwidget)
@@ -327,31 +347,28 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         # 终端标题行（原 horizontalLayout_2）从 verticalLayout_2 取出
         self.verticalLayout_2.removeItem(self.horizontalLayout_2)
-        # 旧回显区销毁
-        self.verticalLayout_2.removeWidget(self.linux_print_browser)
-        self.linux_print_browser.deleteLater()
         right_layout.addLayout(self.horizontalLayout_2)
-        right_layout.addWidget(self.terminal_widget, 1)
-        self.linux_print_browser = self.terminal_widget
-
-        # 底部服务器选择行从 gridLayout_2 取出，放到右侧容器底部
-        self.gridLayout_2.removeItem(self.gridLayout)
-        right_layout.addLayout(self.gridLayout)
+        right_layout.addWidget(self.terminal_tabs, 1)
 
         # 3. 主 splitter：左 | 中 | 右
         self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self.centralwidget)
         self.main_splitter.addWidget(self.left_container)
         self.main_splitter.addWidget(self.file_browser)
         self.main_splitter.addWidget(self.right_column_widget)
-        self.main_splitter.setStretchFactor(0, 2)  # 按钮区
-        self.main_splitter.setStretchFactor(1, 2)  # 文件区
+        self.main_splitter.setStretchFactor(0, 1)  # 按钮区
+        self.main_splitter.setStretchFactor(1, 1)  # 文件区
         self.main_splitter.setStretchFactor(2, 3)  # 终端区
 
-        # 4. 把 gridLayout_2 清空，只留主 splitter
+        # 4. 外层垂直 splitter：上=三栏主区，下=运行信息通栏（10:1，可拖动）
         # 先移除 verticalLayout_2（已空）
         self.gridLayout_2.removeItem(self.verticalLayout_2)
-        # 主 splitter 填满 gridLayout_2
-        self.gridLayout_2.addWidget(self.main_splitter, 0, 0, 2, 2)
+        self.outer_splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical, self.centralwidget)
+        self.outer_splitter.addWidget(self.main_splitter)
+        self.outer_splitter.addWidget(self.run_info_widget)
+        self.outer_splitter.setStretchFactor(0, 14)  # 三栏主区
+        self.outer_splitter.setStretchFactor(1, 1)   # 运行信息
+        # 外层 splitter 填满 gridLayout_2
+        self.gridLayout_2.addWidget(self.outer_splitter, 0, 0, 2, 2)
 
         # "服务器回显" 标签改为 "终端"
         self.linux_print_label.setText("终端")
@@ -363,28 +380,30 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 远程文件标题也统一样式
         self.file_browser.set_title_style(title_style)
 
-        # 终端按键发送信号
-        self.terminal_widget.key_sent.connect(self._on_terminal_key)
-        self.terminal_widget.paste_sent.connect(self._on_terminal_paste)
-        self.terminal_widget.resize_requested.connect(self._on_terminal_resize)
+        # 终端标签页信号：关闭标签、切换激活标签
+        self.terminal_tabs.tabCloseRequested.connect(self._on_tab_close_requested)
+        self.terminal_tabs.currentChanged.connect(self._on_active_tab_changed)
+        # 双击"已断开"的标签页可重连（tabBar 没有双击信号，用事件过滤器）
+        self.terminal_tabs.tabBar().installEventFilter(self)
+        # "+"按钮：新建一个空白终端标签（服务器选择和连接在标签页内部完成）
+        self.new_terminal_btn.clicked.connect(lambda: self._new_terminal_tab())
 
         # 文件浏览器信号
         self.file_browser.upload_requested.connect(self._fb_upload)
         self.file_browser.download_requested.connect(self._fb_download)
         self.file_browser.open_file_requested.connect(self._fb_open_file)  # 双击远程文件→下载打开
+        self.file_browser.open_with_requested.connect(self._fb_open_with)  # 右键"打开方式..."→选择程序打开
 
-        # 指令管理按钮，放到连接按钮后面（第0行第3列）
+        # 指令管理按钮：放在终端标题行"清屏"按钮旁（指令是全局的，不属于任何标签）
         self.cmd_manage_button = QtWidgets.QPushButton("指令管理", self.centralwidget)
         self.cmd_manage_button.setObjectName("cmd_manage_button")
         self.cmd_manage_button.clicked.connect(self.open_cmd_manage_dialog)
-        # 与连接按钮保持一致的高度和宽度
         self.cmd_manage_button.setMinimumWidth(120)
-        self.connect_pushButton.setMinimumWidth(120)
         self.cmd_manage_button.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
-        self.connect_pushButton.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
-        self.gridLayout.addWidget(self.cmd_manage_button, 0, 3, 1, 1)
+        # 插到"清屏"按钮前面（清屏是标题行最后一个控件）
+        self.horizontalLayout_2.insertWidget(
+            self.horizontalLayout_2.count() - 1, self.cmd_manage_button)
 
         # 如果有默认配置文件，则获取
         if os.path.exists(self.default_config_path):
@@ -399,9 +418,10 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 如果没有任何分组，则创建默认分组
         if not self._groups:
             self.add_group_tab("默认分组")
-        # 主界面服务器选择下拉表
-        self.server_comboBox.setCurrentIndex(-1)
+        # 重建所有终端标签页的服务器下拉框；若终端区还没有标签，建一个空白标签
         self.update_server_combobox()
+        if self.terminal_tabs.count() == 0:
+            self._new_terminal_tab()
         self.update_run_info("OneClick 启动成功")
 
         # 延迟设置 splitter 初始比例：等窗口最大化、真实尺寸确定后再设
@@ -409,9 +429,15 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
     def _init_splitter_sizes(self):
         """窗口显示后设置 splitter 初始分配比例"""
-        # 左侧垂直 splitter：按钮区 4/5，运行信息 1/5
-        total_h = self.left_splitter.height()
-        self.left_splitter.setSizes([int(total_h * 0.8), int(total_h * 0.2)])
+        # 外层垂直 splitter：三栏主区 14/15，运行信息通栏 1/15
+        total_h = self.outer_splitter.height()
+        info_h = max(total_h // 15, 1)
+        self.outer_splitter.setSizes([total_h - info_h, info_h])
+
+        # 主水平 splitter：快捷按钮 : 远程文件 : 终端 = 1 : 1 : 3（比例保持不变）
+        total_w = self.main_splitter.width()
+        w1 = total_w // 5
+        self.main_splitter.setSizes([w1, w1, total_w - w1 * 2])
 
     def cmd1_dialog(self, button_id=None):
         """创建发送指令的窗口实例"""
@@ -603,6 +629,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         '资源监控':         ('#009688', '#00796B'),   # 青色
         '弱网':             ('#795548', '#5D4037'),   # 棕色
         '服务器检查':       ('#E91E63', '#C2185B'),   # 粉色
+        '记事本':           ('#3F51B5', '#303F9F'),   # 靛蓝色
     }
 
     def get_button_style(self, cmd_type):
@@ -871,6 +898,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             '资源监控': self.resource_monitor,
             '弱网': self.weak_net,
             '服务器检查': self.server_check_exec,
+            '记事本': self.open_notepad,
         }
         handler = click_map.get(cmd_type)
         if handler is None:
@@ -1128,7 +1156,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         thread.start()
 
     def click_send_cmd_print(self, button_id):
-        """发送指令并回显打印到界面"""
+        """发送指令并回显打印到界面（自动新建一个终端标签页显示回显，结束不自动关）"""
         if button_id not in self.sc_buttons:
             return
         button_name = self.sc_buttons[button_id]['config']['指令名称']
@@ -1139,13 +1167,19 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.update_run_info(f'<{button_name}> 开始执行')
         self.set_button_executing(button_id, True)
 
+        # 自动新建一个回显专用标签页显示回显（结束后保留，由用户手动关闭）。
+        # 该标签隐藏服务器下拉框和连接按钮：回显未结束时不能再于此标签连终端，
+        # 否则同一终端区既跑回显又跑交互终端，输出会彻底混在一起
+        conn = self._new_terminal_tab(title=button_name, echo_only=True)
+        btn_cfg = self.sc_buttons[button_id]['config']
+
         # 初始化SSHTools
         ssh_tool = ssh_tools.SSHTools()
         try:
-            ssh_tool.ip = self.sc_buttons[button_id]['config']['IP']
-            ssh_tool.port = self.sc_buttons[button_id]['config']['端口']
-            ssh_tool.username = self.sc_buttons[button_id]['config']['用户名']
-            ssh_tool.password = self.sc_buttons[button_id]['config']['密码']
+            ssh_tool.ip = btn_cfg['IP']
+            ssh_tool.port = btn_cfg['端口']
+            ssh_tool.username = btn_cfg['用户名']
+            ssh_tool.password = btn_cfg['密码']
         except Exception as e:
             self.update_run_info(f'<{button_name}> 执行失败:{e}', 'ERROR')
             self.set_button_executing(button_id, False)
@@ -1153,20 +1187,31 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         # 封装指令发送和回显接收方法
         def send_cmd_and_receive_echo(cmd, echo_signal):
+            # 标签已被用户关闭则放弃执行（不再白白建连接）
+            if conn['id'] not in self.connections:
+                return False
             c_result = ssh_tool.connect()
             if not c_result:
+                return False
+            # 连接期间标签被关闭：不再发送指令，直接断开
+            if conn['id'] not in self.connections:
+                ssh_tool.disconnect()
                 return False
             ssh_tool.send_command_interactive(cmd)
             g_result = ssh_tool.get_output_continue(echo_signal=echo_signal)
             ssh_tool.disconnect()
             return g_result
 
-        def on_worker_finished(result):
-            if result:
+        def on_worker_finished(result, c=conn):
+            if c['id'] not in self.connections:
+                # 回显标签被用户关闭，会话随标签终止
+                self.update_run_info(f'<{button_name}> 已终止（回显标签被关闭）', 'WARNING')
+            elif result:
                 self.update_run_info(f'<{button_name}> 执行成功')
             else:
                 self.update_run_info(f'<{button_name}> 执行失败', 'ERROR')
             self.set_button_executing(button_id, False)
+            # 回显标签保留，由用户手动关闭
             # 不要在worker里deleteLater自己，会被放到worker的线程中执行
             thread.quit()
 
@@ -1189,8 +1234,13 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 将worker移动到线程中
         worker.moveToThread(thread)
 
+        # 回显路由到自动新建的标签页（若标签被用户提前关闭则丢弃）
+        def route_echo(text, c=conn):
+            if c['id'] in self.connections:
+                c['terminal'].append_output(text)
+
         # 绑定信号槽
-        worker.echo_signal.connect(self.update_linux_print)
+        worker.echo_signal.connect(route_echo)
         worker.finished.connect(on_worker_finished)
         worker.finished.connect(worker.deleteLater)
 
@@ -1207,6 +1257,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             "worker": worker,
             "button_id": button_id
         }
+        # 记录回显标签与会话的关联：关闭该标签时终止对应回显会话
+        conn['sc_thread'] = thread_name
 
         thread.start()
 
@@ -1587,6 +1639,42 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             if result != QtWidgets.QDialog.DialogCode.Accepted:
                 self.set_button_executing(button_id, False)
 
+    def open_notepad(self, button_id):
+        """点击记事本按钮：打开该篇笔记的编辑窗口（已打开则提到最前，不重复开窗）"""
+        if button_id not in self.sc_buttons:
+            return
+        existing = self._notepad_windows.get(button_id)
+        if existing is not None:
+            existing.show()
+            existing.raise_()
+            existing.activateWindow()
+            return
+        win = NotepadEditWindow(button_id, self)
+        self._notepad_windows[button_id] = win
+        win.show()
+
+    def _on_notepad_closed(self, button_id):
+        self._notepad_windows.pop(button_id, None)
+
+    def notepad_dialog(self, button_id=None):
+        """主窗口侧：新建记事本 / 右键编辑记事本名称（模态配置框，只填名称）"""
+        np_dlg = NotepadDialog(parent=self)
+        if button_id:
+            np_dlg.edit_sc(button_id)
+        if np_dlg.exec_() == QtWidgets.QDialog.DialogCode.Accepted:
+            if button_id:
+                button_text = self.sc_buttons[button_id]["config"]["指令名称"]
+                self.update_run_info(f'<{button_text}> 记事本名称编辑成功')
+            else:
+                if f"button_{self.btn_count}" in self.sc_buttons:
+                    button_text = self.sc_buttons[f"button_{self.btn_count}"]["config"]["指令名称"]
+                    self.update_run_info(f'<{button_text}> 记事本创建成功')
+        else:
+            if button_id:
+                self.update_run_info('取消编辑记事本名称')
+            else:
+                self.update_run_info('取消创建记事本')
+
     def _on_qt_log_message(self, msg: str, color: str, levelno: int, op_name: str = ''):
         """Qt 普通日志信号回调：logger.info/warning/error → 运行信息面板
 
@@ -1696,15 +1784,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         return None
 
-    def _make_log_wrapper(self, button_name):
-        """创建带按钮名称前缀的日志包装函数（仅用于直接发射 worker.log_signal 的场景）"""
-        def wrapper(text, level='INFO'):
-            if text.startswith(f'<{button_name}> '):
-                self.update_run_info(text, level)
-            else:
-                self.update_run_info(f'<{button_name}> {text}', level)
-        return wrapper
-
     def update_run_info(self, text, level='INFO'):
         """显示到运行信息面板（纯 UI 渲染，不转发 logger）
 
@@ -1784,95 +1863,432 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self.run_info_browser.verticalScrollBar().maximum()
         )
 
-    def update_linux_print(self, text, insert=False):
-        # 更新终端显示（服务器回显）
-        if hasattr(self, 'terminal_widget'):
-            self.terminal_widget.append_output(text)
-        else:
-            if insert:
-                cursor = self.linux_print_browser.textCursor()
-                cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
-                self.linux_print_browser.setTextCursor(cursor)
-                self.linux_print_browser.insertPlainText(text)
-            else:
-                self.linux_print_browser.append(text)
-            self.linux_print_browser.verticalScrollBar().setValue(
-                self.linux_print_browser.verticalScrollBar().maximum()
-            )
-            self.linux_print_browser.horizontalScrollBar().setValue(
-                self.linux_print_browser.horizontalScrollBar().minimum()
-            )
+    # ---------- 多终端连接管理 ----------
 
-    def _start_terminal_mode(self):
-        """进入终端模式：开启可编辑，准备接收服务器回显"""
-        if hasattr(self, 'terminal_widget'):
-            self.terminal_widget.set_terminal_mode(True)
-            self.update_run_info('进入终端模式')
-            # 同步 pty 大小到终端控件实际尺寸
-            cols = getattr(self.terminal_widget, '_cols', 120)
-            rows = getattr(self.terminal_widget, '_rows', 40)
-            if ('tool' in self.current_ssh and self.current_ssh['tool'] and
-                    self.current_ssh['tool'].channel):
+    def _active_conn(self):
+        """当前激活标签对应的连接（无则 None）"""
+        return self.connections.get(self.active_conn_id)
+
+    def _conn_by_index(self, index):
+        """按标签页索引找连接（标签页的 widget 是 page 容器）"""
+        widget = self.terminal_tabs.widget(index)
+        for conn in self.connections.values():
+            if conn['page'] is widget:
+                return conn
+        return None
+
+    def _select_server_combo(self, combo, target):
+        """让指定下拉框指向 target 配置对应的服务器（严格匹配防同名误中）"""
+        idx = -1
+        if target is not None:
+            for i, srv in enumerate(self.servers_cfg):
+                if (srv.get('服务器名称') == target.get('服务器名称')
+                        and srv.get('IP') == target.get('IP')
+                        and srv.get('端口') == target.get('端口')
+                        and srv.get('用户名') == target.get('用户名')):
+                    idx = i
+                    break
+        combo.setCurrentIndex(idx)
+
+    def _fill_conn_combo(self, conn):
+        """重建某个标签页的服务器下拉框（服务器列表变化时调用）"""
+        combo = conn['combo']
+        # 记住当前选择，重建后恢复
+        old_sel = combo.currentData()
+        combo.clear()
+        for server in self.servers_cfg:
+            combo.addItem(server['服务器名称'], server)
+        if conn['state'] in ('connected', 'connecting'):
+            # 已绑定的标签：下拉指向自己的服务器
+            self._select_server_combo(combo, conn['config'])
+        else:
+            # 未连接的标签：尽量保持用户刚才选中的服务器
+            self._select_server_combo(combo, old_sel)
+
+    def _sync_conn_widgets(self, conn):
+        """同步某个标签页自己的 连接/断开按钮 和 服务器下拉框 状态"""
+        if conn.get('echo_only'):
+            return  # 回显专用标签：连接条已隐藏，无需同步
+        btn = conn['btn']
+        combo = conn['combo']
+        state = conn['state']
+        if state == 'connected':
+            btn.setText('断开')
+            btn.setEnabled(True)
+            combo.setEnabled(False)   # 已连接：服务器已绑定，不允许改选
+        elif state == 'connecting':
+            btn.setText('连接中...')
+            btn.setEnabled(False)
+            combo.setEnabled(False)
+        else:
+            # idle / disconnected：可选服务器再连接
+            btn.setText('重连' if state == 'disconnected' else '连接')
+            btn.setEnabled(True)
+            combo.setEnabled(True)
+
+    def _sync_active_side_ui(self):
+        """同步随激活标签变化的区域：文件浏览器"""
+        conn = self._active_conn()
+        if (hasattr(self, 'file_browser') and conn is not None
+                and conn['state'] == 'connected' and conn.get('tool') is not None):
+            self.file_browser.set_ssh_tool(conn['tool'])
+        elif hasattr(self, 'file_browser'):
+            self.file_browser.set_ssh_tool(None)
+
+    def _set_conn_state(self, conn, state):
+        """更新连接状态、标签页标题和标签内按钮/下拉框"""
+        conn['state'] = state
+        index = self.terminal_tabs.indexOf(conn['page'])
+        if index >= 0:
+            name = conn['config'].get('服务器名称', '?')
+            if state == 'connected':
+                self.terminal_tabs.setTabText(index, name)
+            elif state == 'connecting':
+                self.terminal_tabs.setTabText(index, f"{name}（连接中）")
+            elif state == 'disconnected':
+                self.terminal_tabs.setTabText(index, f"{name}（已断开）")
+            # idle 不改标题（保持"新终端"或快捷按钮指定的名字）
+        self._sync_conn_widgets(conn)
+        if conn['id'] == self.active_conn_id:
+            self._sync_active_side_ui()
+
+    def _on_active_tab_changed(self, index):
+        """切换激活标签：文件浏览器跟随该标签的连接"""
+        conn = self._conn_by_index(index)
+        self.active_conn_id = conn['id'] if conn is not None else None
+        self._sync_active_side_ui()
+
+    def _on_tab_close_requested(self, index):
+        conn = self._conn_by_index(index)
+        if conn is not None:
+            self._remove_connection(conn)
+        # 最后一个标签也被关掉时自动补一个空白标签：
+        # 标签区清空后 QTabWidget 的角部"+"会随标签栏一起消失，
+        # 不补一个就再也没有入口能打开终端了
+        if self.terminal_tabs.count() == 0:
+            self._new_terminal_tab()
+
+    def eventFilter(self, obj, event):
+        # 双击"已断开"的标签页标题 → 重连该标签（tabBar 没有双击信号，用事件过滤器）
+        if (obj is self.terminal_tabs.tabBar()
+                and event.type() == QtCore.QEvent.Type.MouseButtonDblClick):
+            index = self.terminal_tabs.tabBar().tabAt(event.pos())
+            if index >= 0:
+                conn = self._conn_by_index(index)
+                if conn is not None and conn['state'] == 'disconnected':
+                    self._reconnect_conn(conn)
+                return True
+        return super().eventFilter(obj, event)
+
+    def _send_to_conn(self, conn, text):
+        """终端按键：发送给该连接的 channel"""
+        if conn['state'] != 'connected':
+            return
+        try:
+            channel = conn['tool'].channel
+            if channel and channel.active:
+                # 前后各留一条：若崩溃发生在 channel.send 内部（C 扩展层），
+                # 只有第一条能落盘，据此可精确定位崩溃点
+                self.logger.debug("终端发送按键: %r", text)
+                channel.send(text)
+                self.logger.debug("终端按键发送完成: %r", text)
+        except Exception as e:
+            self.logger.exception("终端按键发送异常: %r", text)
+            self.update_run_info(f'发送按键失败: {e}', 'ERROR')
+
+    def _paste_to_conn(self, conn, text):
+        """终端粘贴：发送给该连接的 channel"""
+        if conn['state'] != 'connected':
+            return
+        try:
+            channel = conn['tool'].channel
+            if channel and channel.active:
+                self.logger.debug("终端粘贴发送: %d 字符", len(text))
+                # 分块发送避免一次发太多
+                chunk_size = 4096
+                for i in range(0, len(text), chunk_size):
+                    channel.send(text[i:i+chunk_size])
+        except Exception as e:
+            self.logger.exception("终端粘贴发送异常: %d 字符", len(text))
+            self.update_run_info(f'粘贴发送失败: {e}', 'ERROR')
+
+    def _resize_conn_pty(self, conn, cols, rows):
+        """终端尺寸变化：通知该连接的远端调整 pty"""
+        if conn['state'] != 'connected':
+            return
+        try:
+            channel = conn['tool'].channel
+            if channel and channel.active:
+                self.logger.debug("终端尺寸变化: %dx%d", cols, rows)
+                channel.resize_pty(width=cols, height=rows)
+        except Exception as e:
+            self.logger.exception("调整终端尺寸异常: %dx%d", cols, rows)
+            self.update_run_info(f'调整终端大小失败: {e}', 'ERROR')
+
+    def _spawn_disconnect(self, tool):
+        """后台线程执行 disconnect，不阻塞 UI（用于断开/关标签）"""
+        worker = qthread_worker.OneClickWorker(tool.disconnect)
+        thread = QThread()
+        worker.moveToThread(thread)
+        worker.finished.connect(thread.quit)
+        thread.started.connect(worker.run_task)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+
+        def _purge():
+            try:
+                self._closing_workers.remove((thread, worker))
+            except ValueError:
+                pass
+        thread.finished.connect(_purge)
+        self._closing_workers.append((thread, worker))
+        thread.start()
+
+    def _new_terminal_tab(self, title=None, echo_only=False):
+        """新建一个终端标签页（idle 状态，未发起连接）。
+        标签页内含本标签独立的服务器下拉框、连接/断开按钮和终端显示区。
+        title: 标签标题（默认"新终端"）；快捷按钮回显标签会传入按钮名。
+        echo_only: True 表示回显专用标签——隐藏服务器下拉框和连接按钮，
+        不允许在回显未结束时于同一标签再连其他终端，避免相互干扰。
+        """
+        from widgets.terminal_widget import TerminalEdit
+
+        self._conn_seq += 1
+        conn = {
+            'id': self._conn_seq,
+            'config': {},   # 连接建立时从本标签下拉框取配置快照
+            'tool': None,
+            'thread': None,
+            'worker': None,
+            'state': 'idle',
+            'closing': False,
+            'echo_only': echo_only,
+        }
+
+        # 标签页容器：上=服务器下拉+连接按钮，下=终端
+        page = QtWidgets.QWidget(self.terminal_tabs)
+        page_layout = QtWidgets.QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(0)
+        # 顶部条包进独立容器：回显标签可整体隐藏
+        top_widget = QtWidgets.QWidget(page)
+        top_bar = QtWidgets.QHBoxLayout(top_widget)
+        top_bar.setContentsMargins(4, 3, 4, 3)
+        top_bar.setSpacing(4)
+        combo = QtWidgets.QComboBox(page)
+        combo.setMinimumWidth(220)
+        combo.setToolTip("选择要连接的服务器")
+        btn = QtWidgets.QPushButton('连接', page)
+        btn.setFixedWidth(90)
+        top_bar.addWidget(combo)
+        top_bar.addWidget(btn)
+        top_bar.addStretch()
+        page_layout.addWidget(top_widget)
+        terminal = TerminalEdit(page)
+        page_layout.addWidget(terminal, 1)
+
+        if echo_only:
+            # 回显专用标签：整体隐藏顶部连接条（双保险：同时禁用两个控件）
+            top_widget.hide()
+            btn.setEnabled(False)
+            combo.setEnabled(False)
+
+        conn['page'] = page
+        conn['combo'] = combo
+        conn['btn'] = btn
+        conn['terminal'] = terminal
+
+        self.connections[conn['id']] = conn
+        self.terminal_tabs.addTab(page, title if title else "新终端")
+        # 新建标签后激活它（用户点"+"或按回显按钮就是为了立即使用/查看）
+        self.terminal_tabs.setCurrentWidget(page)
+        self._fill_conn_combo(conn)
+        self._sync_conn_widgets(conn)
+
+        # 本标签的连接/断开按钮（默认参数捕获 conn，防晚绑定）
+        btn.clicked.connect(lambda _checked, c=conn: self._on_conn_button_clicked(c))
+        # 终端按键/粘贴/尺寸信号只路由到该连接（只连接一次，重连不重复）
+        terminal.key_sent.connect(lambda t, c=conn: self._send_to_conn(c, t))
+        terminal.paste_sent.connect(lambda t, c=conn: self._paste_to_conn(c, t))
+        terminal.resize_requested.connect(
+            lambda cols, rows, c=conn: self._resize_conn_pty(c, cols, rows))
+        return conn
+
+    def _on_conn_button_clicked(self, conn):
+        """标签页内的 连接/断开/重连 按钮"""
+        if conn.get('echo_only'):
+            return  # 回显专用标签没有连接功能
+        state = conn['state']
+        if state == 'connected':
+            self._disconnect_conn(conn)
+        elif state in ('idle', 'disconnected'):
+            self._connect_conn(conn)
+        # connecting 状态按钮已禁用，不会触发
+
+    def _connect_conn(self, conn):
+        """用本标签下拉框选中的服务器发起连接（首次连接和重连共用）"""
+        if conn.get('echo_only'):
+            # 防御：回显标签不允许连接（正常情况下按钮已隐藏禁用）
+            self.update_run_info('回显标签不支持连接服务器', 'WARNING')
+            return
+        conn['closing'] = False
+        idx = conn['combo'].currentIndex()
+        if idx == -1:
+            self.update_run_info('请先选择服务器', 'WARNING')
+            return
+        config = conn['combo'].currentData()
+        if not config:
+            self.update_run_info('服务器配置为空', 'WARNING')
+            return
+        conn['config'] = dict(config)  # 配置快照：编辑列表改名不影响已开标签
+        name = conn['config'].get('服务器名称', '?')
+
+        # 每个连接独立的 SSHTools
+        ssh_tool = ssh_tools.SSHTools()
+        try:
+            ssh_tool.ip = conn['config']['IP']
+            ssh_tool.port = conn['config']['端口']
+            ssh_tool.username = conn['config']['用户名']
+            ssh_tool.password = conn['config']['密码']
+        except Exception as e:
+            self.update_run_info(f'请检查服务器ssh连接配置{e}', 'ERROR')
+            self._set_conn_state(conn, 'disconnected')
+            return
+        conn['tool'] = ssh_tool
+
+        # 激活该标签（首次 addTab 已自动激活，这里保证重连时也切过来）
+        self.terminal_tabs.setCurrentWidget(conn['page'])
+        self._set_conn_state(conn, 'connecting')
+
+        def current_ssh(echo_signal):
+            c_result = ssh_tool.connect()
+            if not c_result:
+                return False
+            worker.info_signal.emit(('断开', True))
+            self.logger.info("[%s] 终端接收线程启动（持续读取服务器回显）", name)
+            g_result = ssh_tool.get_output_continue(
+                timeout=float('inf'), echo_signal=echo_signal, raw=True)
+            self.logger.info("[%s] 终端接收线程退出: result=%s", name, g_result)
+            return g_result
+
+        def on_conn_established(data):
+            """data = ('断开', True)：连接建立，进入终端模式"""
+            if conn['closing'] or conn['tool'] is not ssh_tool:
+                # 标签已关闭或连接已被替换：立即断开让接收循环退出
                 try:
-                    self.current_ssh['tool'].channel.resize_pty(width=cols, height=rows)
+                    ssh_tool.disconnect()
                 except Exception:
                     pass
-        # 联动文件浏览器
-        if hasattr(self, 'file_browser') and 'tool' in self.current_ssh:
-            self.file_browser.set_ssh_tool(self.current_ssh['tool'])
-
-    def _stop_terminal_mode(self):
-        """退出终端模式：回到只读"""
-        if hasattr(self, 'terminal_widget'):
-            self.terminal_widget.set_terminal_mode(False)
-
-    def _on_terminal_output(self, text):
-        """接收到服务器回显，追加到终端"""
-        self.update_linux_print(text, insert=True)
-
-    def _on_terminal_resize(self, cols, rows):
-        """终端窗口大小变化：通知远端调整 pty"""
-        if (self.connect_pushButton.text() == '断开' and
-                'tool' in self.current_ssh and self.current_ssh['tool']):
+                return
+            self._set_conn_state(conn, 'connected')
+            terminal = conn['terminal']
+            terminal.set_terminal_mode(True)
+            # 同步 pty 尺寸到终端控件实际尺寸
+            cols = getattr(terminal, '_cols', 120)
+            rows = getattr(terminal, '_rows', 40)
             try:
-                channel = self.current_ssh['tool'].channel
-                if channel and channel.active:
-                    channel.resize_pty(width=cols, height=rows)
-            except Exception as e:
-                self.update_run_info(f'调整终端大小失败: {e}', 'ERROR')
+                if ssh_tool.channel:
+                    ssh_tool.channel.resize_pty(width=cols, height=rows)
+            except Exception:
+                pass
+            self.update_run_info(f'已连接 {name}')
 
-    def _on_terminal_key(self, key_text):
-        """终端按键：发送给服务器"""
-        if (self.connect_pushButton.text() == '断开' and
-                'tool' in self.current_ssh and self.current_ssh['tool']):
-            try:
-                channel = self.current_ssh['tool'].channel
-                if channel and channel.active:
-                    channel.send(key_text)
-            except Exception as e:
-                self.update_run_info(f'发送按键失败: {e}', 'ERROR')
+        def on_worker_finished(_result):
+            if conn['closing']:
+                thread.quit()
+                return
+            self._set_conn_state(conn, 'disconnected')
+            conn['terminal'].set_terminal_mode(False)
+            self.update_run_info(f'{name} 连接已断开（点击标签页内"重连"或双击标签页可重连）')
+            thread.quit()
 
-    def _on_terminal_paste(self, text):
-        """终端粘贴：发送给服务器"""
-        if (self.connect_pushButton.text() == '断开' and
-                'tool' in self.current_ssh and self.current_ssh['tool']):
+        def on_thread_finished():
+            worker.deleteLater()
+            thread.deleteLater()
+            if conn.get('thread') is thread:
+                conn['thread'] = None
+                conn['worker'] = None
+
+        worker = qthread_worker.OneClickWorker(current_ssh)
+        worker.kwargs = {"echo_signal": worker.echo_signal}
+        thread = QThread()
+        worker.moveToThread(thread)
+        conn['thread'] = thread
+        conn['worker'] = worker
+        # 回显直连该标签终端；按键/粘贴/尺寸也只路由到该连接
+        worker.echo_signal.connect(conn['terminal'].append_output)
+        worker.info_signal.connect(on_conn_established)
+        worker.finished.connect(on_worker_finished)
+        thread.started.connect(worker.run_task)
+        thread.finished.connect(on_thread_finished)
+        thread.start()
+
+    def _disconnect_conn(self, conn):
+        """断开连接（后台执行，接收线程随后自动退出并更新标签状态）"""
+        if conn['state'] != 'connected' or conn['tool'] is None:
+            return
+        # 防重复点击；断开后 on_worker_finished 会把状态置为已断开
+        conn['btn'].setText('连接中...')
+        conn['btn'].setEnabled(False)
+        self._spawn_disconnect(conn['tool'])
+
+    def _reconnect_conn(self, conn):
+        """重连：复用标签和终端（保留已显示内容）"""
+        if conn['state'] == 'connecting':
+            return
+        self._connect_conn(conn)
+
+    def _remove_connection(self, conn):
+        """关闭标签：立即移除标签页，连接后台断开"""
+        conn['closing'] = True  # 过期回调不再动 UI
+        index = self.terminal_tabs.indexOf(conn['page'])
+        if index >= 0:
+            self.terminal_tabs.removeTab(index)
+        self.connections.pop(conn['id'], None)
+        if self.active_conn_id == conn['id']:
+            self.active_conn_id = None
+            self._sync_active_side_ui()
+
+        tool = conn.get('tool')
+        if tool is not None:
+            # 已连接：后台断开（channel 关闭后接收线程自然退出）
+            # 连接中：connect 完成后 on_conn_established 会看到 closing 自行断开
             try:
-                channel = self.current_ssh['tool'].channel
-                if channel and channel.active:
-                    # 分块发送避免一次发太多
-                    chunk_size = 4096
-                    for i in range(0, len(text), chunk_size):
-                        channel.send(text[i:i+chunk_size])
-            except Exception as e:
-                self.update_run_info(f'粘贴发送失败: {e}', 'ERROR')
+                if tool.is_connected():
+                    self._spawn_disconnect(tool)
+            except Exception:
+                pass
+
+        # 回显专用标签："发送并接收回显"的会话是独立的 SSH 连接（不属于 conn['tool']），
+        # 不主动断开的话会话会在后台继续跑、按钮一直灰着。关标签即断开它的 SSH，
+        # worker 的回显循环检测到断开后自行退出，按钮恢复、线程清理走原有流程
+        thread_name = conn.get('sc_thread')
+        if thread_name and thread_name in self.sc_threads:
+            echo_tool = self.sc_threads[thread_name].get('tool')
+            if echo_tool is not None:
+                try:
+                    if echo_tool.is_connected():
+                        self._spawn_disconnect(echo_tool)
+                except Exception:
+                    pass
+
+    def _disconnect_all(self):
+        """退出程序前断开所有终端连接（尽力而为）"""
+        for conn in list(self.connections.values()):
+            try:
+                if conn.get('tool') is not None:
+                    conn['tool'].disconnect()
+            except Exception:
+                pass
+        self.connections.clear()
 
     # ---------- 文件浏览器：上传/下载 ----------
 
     def _fb_upload(self, remote_dir, local_paths):
         """文件浏览器：上传本地文件/文件夹到远程目录"""
-        if ('tool' not in self.current_ssh or
-                not self.current_ssh['tool'] or
-                not self.current_ssh['tool'].is_connected()):
+        conn = self._active_conn()
+        if (conn is None or conn.get('tool') is None or
+                not conn['tool'].is_connected()):
             self.update_run_info('请先连接服务器', 'WARNING')
             return
 
@@ -1881,10 +2297,11 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         import time, os
 
-        ssh_tool = self.current_ssh['tool']
+        ssh_tool = conn['tool']
         button_name = '文件上传'
         exec_id = f"fb_upload_{int(time.time()*1000)}"
         self.update_run_info(f'<{button_name}> 开始执行')
+        self.logger.info("文件浏览器上传开始: %s -> %s（%d 项）", local_paths, remote_dir, len(local_paths))
 
         # 构造 source_items（文件浏览器上传不做筛选，直接传）
         source_items = []
@@ -1904,6 +2321,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             return result
 
         def on_worker_finished(result):
+            self.logger.info("文件浏览器上传结束: result=%s", result)
             if result:
                 self.update_run_info(f'<{button_name}> 执行成功')
                 self.file_browser.status_label.setText("上传完成")
@@ -1938,9 +2356,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
     def _fb_download(self, remote_paths, local_dir):
         """文件浏览器：下载远程文件/文件夹到本地"""
-        if ('tool' not in self.current_ssh or
-                not self.current_ssh['tool'] or
-                not self.current_ssh['tool'].is_connected()):
+        conn = self._active_conn()
+        if (conn is None or conn.get('tool') is None or
+                not conn['tool'].is_connected()):
             self.update_run_info('请先连接服务器', 'WARNING')
             return
 
@@ -1949,10 +2367,11 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         import time, os
 
-        ssh_tool = self.current_ssh['tool']
+        ssh_tool = conn['tool']
         button_name = '文件下载'
         exec_id = f"fb_download_{int(time.time()*1000)}"
         self.update_run_info(f'<{button_name}> 开始执行')
+        self.logger.info("文件浏览器下载开始: %s -> %s（%d 项）", remote_paths, local_dir, len(remote_paths))
 
         # 构造 source_items（文件浏览器下载不做筛选，直接下）
         source_items = []
@@ -1972,6 +2391,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             return result
 
         def on_worker_finished(result):
+            self.logger.info("文件浏览器下载结束: result=%s", result)
             if result:
                 self.update_run_info(f'<{button_name}> 执行成功')
                 self.file_browser.status_label.setText("下载完成")
@@ -2002,37 +2422,41 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.sc_threads[thread_name] = {"thread": thread, "worker": worker}
         thread.start()
 
-    # ──────────────────── 文件浏览器：双击远程文件 → 本地打开 ────────────────────
+    # ──────────────────── 文件浏览器：双击远程文件 → 下载本地打开 + 编辑回传 ────────────────────
 
-    def _fb_open_file(self, remote_path):
+    def _fb_open_file(self, remote_path, choose_app=False):
         """
-        双击远程文件：下载到 exe 同目录下的 OneClick_Temp，完成后用本地默认程序打开。
-        下载链路与 get_files 一致（先进临时再移动），只是目标改为 OneClick_Temp。
+        双击远程文件：下载到 OneClick_Temp/时间戳子目录/（文件保持原始
+        文件名），弹 Windows 现代"打开方式"选择框用本地程序打开。
+        同时登记编辑会话：本地编辑保存后自动回传覆盖远端文件。
+        choose_app=True 时始终弹出打开方式选择框（右键菜单"打开方式..."）
         """
-        if ('tool' not in self.current_ssh or
-                not self.current_ssh['tool'] or
-                not self.current_ssh['tool'].is_connected()):
+        conn = self._active_conn()
+        if (conn is None or conn.get('tool') is None or
+                not conn['tool'].is_connected()):
             self.update_run_info('请先连接服务器', 'WARNING')
             return
 
         import time as _time
-        from PyQt5.QtGui import QDesktopServices
-        from PyQt5.QtCore import QUrl
 
         # ── 计算 OneClick_Temp 路径（exe 同目录）──
         if getattr(sys, 'frozen', False):
             exe_dir = os.path.dirname(sys.executable)
         else:
             exe_dir = os.path.dirname(os.path.abspath(__file__))
-        temp_dir = os.path.join(exe_dir, 'OneClick_Temp')
+        temp_base = os.path.join(exe_dir, 'OneClick_Temp')
+        # 每次打开一个时间戳工作子目录隔离冲突，文件保持原始文件名；同秒冲突追加序号
+        temp_dir = self._timestamp_work_dir(temp_base)
         os.makedirs(temp_dir, exist_ok=True)
 
-        ssh_tool = self.current_ssh['tool']
+        ssh_tool = conn['tool']
+        conn_id = conn['id']
+        fname = os.path.basename(remote_path)
         button_name = '打开远程文件'
         exec_id = f"fb_open_{int(_time.time()*1000)}"
-        self.update_run_info(f'<{button_name}> 下载中: {os.path.basename(remote_path)}')
+        self.update_run_info(f'<{button_name}> 下载中: {fname}')
 
-        # ── 用已封装的 get_files 链路下载 ──
+        # ── 用已封装的 get_files 链路下载（以原始文件名落入时间戳子目录）──
         source_items = [{
             '路径': remote_path,
             '修改时间': '全部',
@@ -2046,22 +2470,240 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         def execute_download():
             return ssh_tool.get_files(source_items, temp_dir, progress_cb=progress_cb)
 
-        def on_worker_finished(result):
-            if result:
-                # 拼本地路径：get_files 会把远程文件直接下载到 temp_dir 下
-                local_path = os.path.join(temp_dir, os.path.basename(remote_path))
-                if os.path.exists(local_path):
-                    self.update_run_info(f'<{button_name}> 成功，正在打开…')
-                    # 用本地默认程序打开（Windows → 注册表关联的那个）
-                    QDesktopServices.openUrl(QUrl.fromLocalFile(local_path))
-                else:
+        def on_worker_finished(result, _conn_id=conn_id, _remote=remote_path,
+                               _choose=choose_app, _work_dir=temp_dir):
+            import shutil as _shutil
+
+            def _drop_work_dir():
+                # 下载未成功：该时间戳子目录无人使用，直接清掉避免空目录堆积
+                _shutil.rmtree(_work_dir, ignore_errors=True)
+
+            try:
+                if _conn_id not in self.connections:
+                    self.update_run_info(f'<{button_name}> 标签已关闭，不再打开', 'WARNING')
+                    _drop_work_dir()
+                    return
+                if not result:
+                    self.update_run_info(f'<{button_name}> 下载失败', 'ERROR')
+                    _drop_work_dir()
+                    return
+                local_path = os.path.join(_work_dir, os.path.basename(_remote))
+                if not os.path.exists(local_path):
                     self.update_run_info(f'<{button_name}> 完成但文件未找到', 'WARNING')
-            else:
-                self.update_run_info(f'<{button_name}> 下载失败', 'ERROR')
-            thread.quit()
+                    _drop_work_dir()
+                    return
+                self._register_edit_session(local_path, _conn_id, _remote)
+                if self._shell_open_local(local_path, _choose):
+                    self.update_run_info(
+                        f'<{button_name}> 已弹出"打开方式"选择: {os.path.basename(local_path)}'
+                        f'（选中程序即打开；本地保存后将自动回传 {_remote}）')
+                else:
+                    self.update_run_info(
+                        f'<{button_name}> 选择框拉起失败: {os.path.basename(local_path)}'
+                        f'（可右键该文件选"打开方式..."重试）；'
+                        f'本地手动打开编辑保存后仍会自动回传', 'WARNING')
+            finally:
+                thread.quit()
 
         worker = qthread_worker.OneClickWorker(
             execute_download, op_name=button_name, op_id=exec_id
+        )
+
+        self.thread_count += 1
+        thread_name = f'sc_thread_{self.thread_count}'
+        thread = QThread()
+        worker.moveToThread(thread)
+
+        def on_thread_finished():
+            if thread_name in self.sc_threads:
+                del self.sc_threads[thread_name]
+
+        worker.finished.connect(on_worker_finished)
+        worker.finished.connect(worker.deleteLater)
+        thread.started.connect(worker.run_task)
+        thread.finished.connect(on_thread_finished)
+        thread.finished.connect(thread.deleteLater)
+
+        self.sc_threads[thread_name] = {"thread": thread, "worker": worker}
+        thread.start()
+
+    def _fb_open_with(self, remote_path):
+        """文件浏览器右键"打开方式..."：下载后强制弹出打开方式选择框"""
+        self._fb_open_file(remote_path, choose_app=True)
+
+    def _timestamp_work_dir(self, temp_base):
+        """生成时间戳工作子目录路径：OneClick_Temp/YYYYmmdd_HHMMSS（同秒冲突追加序号）；
+        只计算路径不创建，由调用方 makedirs"""
+        import datetime
+        ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        candidate = os.path.join(temp_base, ts)
+        i = 1
+        while os.path.exists(candidate):
+            candidate = os.path.join(temp_base, f'{ts}_{i}')
+            i += 1
+        return candidate
+
+    def _shell_open_local(self, local_path, choose_app=False):
+        """
+        双击/右键打开本地文件：弹 Windows 现代版"你要如何打开这个文件?"
+        选择框（与 资源管理器右键 → 打开方式 → 选择其他应用 同款界面，
+        由系统 OpenWith.exe 承载，带"始终使用此应用"勾选）。
+        实现：ShellExecuteEx + SEE_MASK_INVOKEIDLIST + 'openas' 动词，
+        走 IContextMenu 通道（本机实测：裸 ShellExecuteW 'openas' 对无
+        UserChoice 的扩展返回 31 静默失败，必须带 INVOKEIDLIST 掩码）。
+        异步：选择框弹出后本函数即返回，用户选中程序后系统自行打开文件。
+        choose_app 参数保留以兼容右键入口（现双击/右键行为一致）。
+        返回 True=选择框已拉起；False=拉起失败
+        """
+        try:
+            import ctypes
+
+            SEE_MASK_INVOKEIDLIST = 0x0000000C
+
+            class SHELLEXECUTEINFOW(ctypes.Structure):
+                _fields_ = [
+                    ('cbSize', ctypes.c_uint),
+                    ('fMask', ctypes.c_uint),
+                    ('hwnd', ctypes.c_void_p),
+                    ('lpVerb', ctypes.c_wchar_p),
+                    ('lpFile', ctypes.c_wchar_p),
+                    ('lpParameters', ctypes.c_wchar_p),
+                    ('lpDirectory', ctypes.c_wchar_p),
+                    ('nShow', ctypes.c_int),
+                    ('hInstApp', ctypes.c_void_p),
+                    ('lpIDList', ctypes.c_void_p),
+                    ('lpClass', ctypes.c_wchar_p),
+                    ('hkeyClass', ctypes.c_void_p),
+                    ('dwHotKey', ctypes.c_uint),
+                    ('hIcon', ctypes.c_void_p),
+                    ('hProcess', ctypes.c_void_p),
+                ]
+
+            shell32 = ctypes.WinDLL('shell32')
+            info = SHELLEXECUTEINFOW()
+            info.cbSize = ctypes.sizeof(SHELLEXECUTEINFOW)
+            info.fMask = SEE_MASK_INVOKEIDLIST
+            info.lpVerb = 'openas'
+            info.lpFile = local_path
+            info.nShow = 1  # SW_SHOWNORMAL
+            if shell32.ShellExecuteExW(ctypes.byref(info)):
+                return True
+            self.logger.info('ShellExecuteExW openas 失败: %s', local_path)
+            return False
+        except Exception as e:
+            self.update_run_info(f'打开本地文件失败: {e}', 'ERROR')
+            return False
+
+    def _register_edit_session(self, local_path, conn_id, remote_path):
+        """登记编辑会话并启动轮询：本地保存（mtime+size 变化且稳定）后自动回传"""
+        st = os.stat(local_path)
+        self._edit_sessions[local_path] = {
+            'conn_id': conn_id,
+            'remote_path': remote_path,
+            'base_mtime': st.st_mtime,   # 上次已回传（或已判定失败不再重试）的基线
+            'base_size': st.st_size,
+            'last_mtime': st.st_mtime,  # 上次轮询看到的值，防抖参照
+            'last_size': st.st_size,
+            'synced': True,
+            'uploading': False,
+        }
+        self.logger.info("编辑会话登记: %s -> %s", local_path, remote_path)
+        if not self._edit_watch_timer.isActive():
+            self._edit_watch_timer.start()
+
+    def _poll_edit_sessions(self):
+        """每2秒轮询编辑会话的本地临时文件：mtime+size 变化且连续两轮一致 → 回传"""
+        if not self._edit_sessions:
+            self._edit_watch_timer.stop()
+            return
+        for local_path in list(self._edit_sessions.keys()):
+            s = self._edit_sessions[local_path]
+            if s.get('uploading'):
+                continue
+            try:
+                st = os.stat(local_path)
+            except OSError:
+                # 本地临时文件被删（清理/用户手动删）→ 会话结束
+                del self._edit_sessions[local_path]
+                self.update_run_info(
+                    f"<文件回传> 编辑会话结束（临时文件已删除）: {os.path.basename(local_path)}",
+                    'WARNING')
+                continue
+            mtime, size = st.st_mtime, st.st_size
+            if (mtime, size) == (s['base_mtime'], s['base_size']):
+                continue
+            if (mtime, size) == (s['last_mtime'], s['last_size']):
+                # 连续两轮一致：保存动作已稳定 → 回传
+                self._upload_edit_session(local_path)
+            else:
+                s['last_mtime'], s['last_size'] = mtime, size
+
+    def _upload_edit_session(self, local_path):
+        """把本地修改回传覆盖远端文件（QThread 后台执行，不卡 UI）"""
+        s = self._edit_sessions.get(local_path)
+        if s is None or s.get('uploading'):
+            return
+        remote_path = s['remote_path']
+        fname = os.path.basename(remote_path)
+        conn = self.connections.get(s['conn_id'])
+        if (conn is None or conn.get('tool') is None or
+                not conn['tool'].is_connected()):
+            # 连接已断开：只提示不重试；推进基线到当前修改，等用户再次保存才触发下一次回传
+            s['synced'] = False
+            try:
+                st = os.stat(local_path)
+                s['base_mtime'], s['base_size'] = st.st_mtime, st.st_size
+                s['last_mtime'], s['last_size'] = st.st_mtime, st.st_size
+            except OSError:
+                pass
+            self.update_run_info(
+                f'<文件回传> {fname} 保存未同步到服务器（连接已断开），'
+                f'重新保存可再次回传', 'ERROR')
+            return
+
+        # 上传前把基线锁定为本轮快照：上传期间再有保存属于新版本，
+        # 成功后轮询会检测到并自动再传，不丢更新
+        try:
+            st0 = os.stat(local_path)
+        except OSError:
+            return
+        s['base_mtime'], s['base_size'] = st0.st_mtime, st0.st_size
+        s['last_mtime'], s['last_size'] = st0.st_mtime, st0.st_size
+        s['uploading'] = True
+        ssh_tool = conn['tool']
+        conn_id = s['conn_id']
+        self.update_run_info(f'<文件回传> {fname} 回传中…')
+
+        import time as _time
+        exec_id = f"fb_edit_{int(_time.time()*1000)}"
+        button_name = '文件回传'
+
+        def execute_upload():
+            return ssh_tool.upload_single_file(local_path, remote_path)
+
+        def on_worker_finished(result, _s=s, _remote=remote_path, _conn_id=conn_id):
+            try:
+                if result:
+                    _s['synced'] = True
+                    self.update_run_info(
+                        f'<{button_name}> {os.path.basename(_remote)} 已同步覆盖服务器文件')
+                    # 来源连接是当前激活连接时刷新文件浏览器，立即可见远端新状态
+                    ac = self._active_conn()
+                    if (ac is not None and ac['id'] == _conn_id
+                            and self.file_browser.is_connected()):
+                        self.file_browser.refresh()
+                else:
+                    # 回传失败：不重试（基线已锁定为快照），标记未同步，等用户再次保存触发
+                    _s['synced'] = False
+                    self.update_run_info(
+                        f'<{button_name}> {os.path.basename(_remote)} 回传失败，'
+                        f'保存未同步到服务器，重新保存可再次回传', 'ERROR')
+            finally:
+                _s['uploading'] = False
+                thread.quit()
+
+        worker = qthread_worker.OneClickWorker(
+            execute_upload, op_name=button_name, op_id=exec_id
         )
 
         self.thread_count += 1
@@ -2231,6 +2873,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 '资源监控': self.resource_monitor_dialog,
                 '弱网': self.weak_net_dialog,
                 '服务器检查': self.server_check_dialog,
+                '记事本': self.notepad_dialog,
             }
             sc_ty = self.sc_buttons[button_id]['config']['指令类型']
             dialog_func = ty_dialog.get(sc_ty)  # 假设指令类型是发送命令，dialog_func就是self.cmd1_dialog
@@ -2242,7 +2885,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
     # ==================== 分组批量操作 ====================
 
     # 批量执行时跳过的类型
-    SKIP_BATCH_TYPES = {'发送命令并接收回显', '资源监控', '弱网', '服务器检查'}
+    SKIP_BATCH_TYPES = {'发送命令并接收回显', '资源监控', '弱网', '服务器检查', '记事本'}
 
     def select_all_in_group(self, group_name):
         """切换分组内所有按钮的勾选状态"""
@@ -2417,13 +3060,13 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.stop_pushButton.setEnabled(True)
 
     def clean_linux_print(self):
-        # 清屏：终端模式下清空终端，否则清空服务器回显区
-        if hasattr(self, 'terminal_widget'):
-            self.terminal_widget.clear_terminal()
+        # 清屏：清空当前激活标签的终端
+        conn = self._active_conn()
+        if conn is not None:
+            conn['terminal'].clear_terminal()
             self.update_run_info("终端已清空")
         else:
-            self.linux_print_browser.clear()
-            self.update_run_info(f"服务器回显区已清空")
+            self.update_run_info('当前没有打开的终端标签')
 
     def get_default_path(self):
         # 获取可执行文件（.exe）本身所在的路径，不包含自己的名称
@@ -2438,6 +3081,23 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 格式化路径全部左斜
         current_path = current_path.replace('\\', '/')
         return current_path
+
+    def open_program_dir(self):
+        """用系统文件管理器打开程序所在目录（打包后为 exe 目录，开发时为脚本目录）"""
+        import subprocess
+        if getattr(sys, 'frozen', False):
+            target_dir = os.path.dirname(sys.executable)
+        else:
+            target_dir = os.path.dirname(os.path.abspath(__file__))
+        try:
+            if sys.platform.startswith('win'):
+                os.startfile(target_dir)
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', target_dir])
+            else:
+                subprocess.Popen(['xdg-open', target_dir])
+        except Exception as e:
+            self.update_run_info(f'打开程序目录失败: {e}', 'ERROR')
 
     def open_log_settings(self):
         """打开日志设置对话框"""
@@ -2464,7 +3124,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if os.path.exists(self.default_config_path):
             try:
                 with open(self.default_config_path, 'r', encoding='utf-8') as f:
-                    import json
                     cfg_data = json.load(f)
             except Exception:
                 cfg_data = {}
@@ -2473,7 +3132,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         cfg_data['日志配置'] = self._log_config.copy()
         try:
             with open(self.default_config_path, 'w', encoding='utf-8') as f:
-                import json
                 json.dump(cfg_data, f, ensure_ascii=False, indent=4)
         except Exception:
             pass
@@ -2771,162 +3429,10 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 continue
         self.update_run_info(f"批量添加服务器 成功，来自{file_path}")
 
-    def is_config_changed(self, path):
-        if not os.path.exists(path):
-            file_cfg = {}
-
-        # 读取文件中的配置
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                file_cfg = json.load(f)
-        except (json.JSONDecodeError, IOError):
-            file_cfg = {}
-
-        # 生成当前界面中的配置
-        current_cfg = {}
-        server_count = 1
-        button_count = 1
-        for server in self.servers_cfg:
-            current_cfg[f'服务器{server_count}'] = server
-            server_count += 1
-        # 按分组顺序生成按钮配置
-        for gname in self._group_order:
-            for i, button_id in enumerate(self._groups[gname]['buttons']):
-                btn_cfg = self.sc_buttons[button_id]['config'].copy()
-                btn_cfg['位置'] = i + 1
-                btn_cfg['分组'] = gname
-                current_cfg[f'快捷按钮{button_count}'] = btn_cfg
-                button_count += 1
-        if len(self.commands) != 0:
-            current_cfg['指令'] = self.commands
-        # 加入日志配置（日志设置即时保存，不参与修改检测）
-        current_cfg['日志配置'] = self._log_config.copy()
-
-        # 比较时忽略日志配置（日志设置即时保存，不触发修改提示）
-        current_cmp = {k: v for k, v in current_cfg.items() if k != '日志配置'}
-        file_cmp = {k: v for k, v in file_cfg.items() if k != '日志配置'}
-        return current_cmp != file_cmp
-
     def update_server_combobox(self):
-        self.server_comboBox.clear()
-        for server in self.servers_cfg:
-            self.server_comboBox.addItem(server['服务器名称'], server)
-        self.server_comboBox.setCurrentIndex(-1)
-
-    def connect_server(self):
-        if self.connect_pushButton.text() == '连接':
-            if self.server_comboBox.currentIndex() == -1:
-                self.update_run_info(f'请先选择服务器', 'WARNING')
-                return
-            self.connect_pushButton.setEnabled(False)
-            self.server_comboBox.setEnabled(False)
-            self.current_ssh['config'] = self.server_comboBox.currentData()
-
-            # 创建一个ssh连接对象，给对象初始化属性
-            ssh_tool = ssh_tools.SSHTools()
-            # 初始化属性
-            try:
-                ssh_tool.ip = self.current_ssh['config']['IP']
-                ssh_tool.port = self.current_ssh['config']['端口']
-                ssh_tool.username = self.current_ssh['config']['用户名']
-                ssh_tool.password = self.current_ssh['config']['密码']
-            except Exception as e:
-                self.update_run_info(f'请检查服务器ssh连接配置{e}', 'ERROR')
-                self.connect_pushButton.setEnabled(True)
-                self.server_comboBox.setEnabled(True)
-                return
-
-            def update_connect_button(data):
-                """data[0]=text, data[1]=True"""
-                self.connect_pushButton.setText(data[0])
-                self.connect_pushButton.setEnabled(data[1])
-                # 连接成功后切换终端模式
-                if data[0] == '断开':
-                    self._start_terminal_mode()
-
-            # 封装指令发送和回显接收方法
-            def current_ssh(echo_signal):
-                c_result = ssh_tool.connect()
-                if not c_result:
-                    return False
-                worker.info_signal.emit(('断开',True))
-                g_result = ssh_tool.get_output_continue(timeout=float('inf'), echo_signal=echo_signal, raw=True)
-                return g_result
-
-            def on_worker_finished():
-                update_connect_button(('连接',True))
-                self.server_comboBox.setEnabled(True)
-                # 退出终端模式
-                self._stop_terminal_mode()
-                self.update_run_info('退出终端模式')
-                # 关闭文件浏览器
-                if hasattr(self, 'file_browser'):
-                    self.file_browser.set_ssh_tool(None)
-                # 不要在worker里deleteLater自己，会被放到worker的线程中执行
-                thread.quit()
-
-            def on_thread_finished():
-                worker.deleteLater()
-                thread.deleteLater()
-                self.current_ssh.clear()
-
-            # 初始化worker
-            worker = qthread_worker.OneClickWorker(current_ssh)
-            worker.kwargs = {
-                "echo_signal": worker.echo_signal
-                }
-
-            # 初始化线程
-            thread = QThread()
-
-            # 将worker移动到线程中
-            worker.moveToThread(thread)
-
-            # 绑定信号槽（连接过程日志通过 logger 自动进入运行信息面板）
-            worker.echo_signal.connect(self._on_terminal_output)
-            worker.info_signal.connect(update_connect_button)
-            worker.finished.connect(on_worker_finished)
-
-            # 绑定线程信号槽
-            thread.started.connect(worker.run_task)
-            thread.finished.connect(on_thread_finished)
-
-            # 保存worker和线程信息
-            self.current_ssh.update(
-                {
-                    "tool": ssh_tool,
-                    "task_connect": (thread, worker)
-                }
-            )
-
-            thread.start()
-
-        else:
-            # 断开操作：disconnect 内部自行判断连接状态，主线程不做阻塞式检查
-            # 初始化worker
-            worker = qthread_worker.OneClickWorker(self.current_ssh['tool'].disconnect)
-
-            # 初始化线程
-            thread = QThread()
-
-            # 将worker移动到线程中
-            worker.moveToThread(thread)
-
-            # 绑定信号槽（断连日志通过 logger 自动进入运行信息面板）
-            worker.finished.connect(thread.quit)
-
-            # 绑定线程信号槽
-            thread.started.connect(worker.run_task)
-            thread.finished.connect(worker.deleteLater)
-            thread.finished.connect(thread.deleteLater)
-
-            # 保存worker和线程信息
-            self.current_ssh.update(
-                {
-                    "task_disconnect": (thread, worker)
-                }
-            )
-            thread.start()
+        # 服务器列表变化：重建每个终端标签页自己的服务器下拉框
+        for conn in self.connections.values():
+            self._fill_conn_combo(conn)
 
     @staticmethod
     def _normalize_command(cmd):
@@ -2979,12 +3485,12 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
     def _insert_cmd_to_terminal(self, cmd):
         """插入指令到终端（直接发送给服务器，不自动回车）"""
-        if not (self.connect_pushButton.text() == '断开' and
-                'tool' in self.current_ssh and self.current_ssh['tool']):
+        conn = self._active_conn()
+        if conn is None or conn['state'] != 'connected':
             self.update_run_info('请先建立SSH连接', 'WARNING')
             return
         try:
-            channel = self.current_ssh['tool'].channel
+            channel = conn['tool'].channel
             if channel and channel.active:
                 channel.send(cmd)
         except Exception as e:
@@ -2992,29 +3498,56 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
     def closeEvent(self, event):
         """
-        重写窗口关闭事件：检测运行中的按钮，提示用户确认；退出时清理 OneClick_Temp
+        重写窗口关闭事件：检测运行中的按钮/未同步的编辑文件，提示用户确认；
+        退出时清理 OneClick_Temp
         """
         running_count = len(self.sc_threads)
-        if running_count > 0:
+        # 双击打开编辑的文件：保存了但回传失败/连接断开，退出清临时目录会丢修改
+        # 多次打开同名文件时按文件名去重显示
+        unsynced_names = []
+        for p, s in self._edit_sessions.items():
+            if not s.get('synced'):
+                name = os.path.basename(p)
+                if name not in unsynced_names:
+                    unsynced_names.append(name)
+        if running_count > 0 or unsynced_names:
             msg_box = QMessageBox(self)
             msg_box.setWindowTitle("确认退出")
-            msg_box.setText(f"有 {running_count} 个快捷按钮正在运行，是否直接退出？")
-            msg_box.setInformativeText("直接退出会强制中断正在执行的操作。")
+            if running_count > 0 and unsynced_names:
+                msg_box.setText(f"有 {running_count} 个后台任务正在运行，"
+                                f"且有 {len(unsynced_names)} 个文件的修改未同步到服务器")
+                msg_box.setInformativeText(
+                    f"未同步文件: {'、'.join(unsynced_names[:5])}"
+                    f"{'等' if len(unsynced_names) > 5 else ''}\n"
+                    "直接退出会强制中断任务，并丢失这些文件的本地修改。")
+            elif running_count > 0:
+                msg_box.setText(f"有 {running_count} 个快捷按钮正在运行，是否直接退出？")
+                msg_box.setInformativeText("直接退出会强制中断正在执行的操作。")
+            else:
+                msg_box.setText(f"有 {len(unsynced_names)} 个文件的修改未同步到服务器，是否直接退出？")
+                msg_box.setInformativeText(
+                    f"未同步文件: {'、'.join(unsynced_names[:5])}"
+                    f"{'等' if len(unsynced_names) > 5 else ''}\n"
+                    "直接退出会丢失这些文件的本地修改。")
             msg_box.setIcon(QMessageBox.Icon.Warning)
             btn_exit = msg_box.addButton("直接退出", QMessageBox.ButtonRole.DestructiveRole)
             btn_cancel = msg_box.addButton("取消", QMessageBox.ButtonRole.RejectRole)
             msg_box.setDefaultButton(btn_cancel)
             msg_box.exec_()
             if msg_box.clickedButton() == btn_exit:
-                # 自动保存 + 清理临时目录 + 退出
+                # 自动保存 + 停止编辑轮询 + 断开所有终端连接 + 清理临时目录 + 退出
+                self._edit_watch_timer.stop()
                 self._save_config_auto()
+                self._disconnect_all()
                 self._cleanup_oneclick_temp()
                 event.accept()
             else:
                 event.ignore()
         else:
-            # 没有运行中的任务，自动保存 + 清理临时目录 + 退出
+            # 没有运行中的任务，自动保存 + 断开所有终端连接 + 清理临时目录 + 退出
+            self._edit_watch_timer.stop()
             self._save_config_auto()
+            self._disconnect_all()
             self._cleanup_oneclick_temp()
             event.accept()
 

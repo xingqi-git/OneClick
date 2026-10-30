@@ -227,18 +227,28 @@ class SSHTools(object):
             return False
         try:
             timeout_count = 0
+            logger.debug("回显接收循环开始: raw=%s, timeout=%s", raw, timeout)
             while True:
                 time.sleep(0.1)
                 if self.channel is None:
+                    logger.debug("channel 已置空，回显接收循环退出")
                     break
                 # 用 transport.is_active() 快速判断，避免每次循环都 exec_command 阻塞
                 if not (self.transport and self.transport.is_active()):
+                    logger.debug("transport 失效/断开，回显接收循环退出")
+                    break
+                # 通道级断开检测：服务器空闲超时踢人、shell 退出会直接关闭通道。
+                # 不能只靠 recv_ready——纯 EOF 不带数据时 recv_ready 永远是 False，
+                # 而 timeout=inf 又让超时分支失效，会导致死循环、连接状态永不更新
+                if self.channel.closed or not self.channel.active:
+                    logger.info("通道已被关闭（服务器空闲超时/主动断开），回显接收循环退出")
                     break
                 try:
                     if self.channel.recv_ready():
                         output_bytes = self.channel.recv(4096)
                         # EOF：对端关闭写方向，recv 返回空串
                         if not output_bytes:
+                            logger.debug("收到 EOF，回显接收循环退出")
                             break
                         if raw:
                             # 原始模式：直接发字符串（带 \r\n 和 ANSI），给 pyte 处理
@@ -254,6 +264,11 @@ class SSHTools(object):
 
                         timeout_count = 0  # 重置超时计数器
                     else:
+                        # 无数据可读但对端已发 EOF：纯 EOF 场景在这里退出，
+                        # 有缓冲数据时先读完（recv_ready 为 True）再走到这
+                        if self.channel.eof_received:
+                            logger.info("收到通道 EOF（服务器空闲超时/主动断开），回显接收循环退出")
+                            break
                         timeout_count += 1
                         # 无数据超时退出
                         if timeout is not None and timeout_count > timeout * 30:
@@ -261,34 +276,13 @@ class SSHTools(object):
                             break
                 except (AttributeError, EOFError):
                     # 断开操作把 channel 设为 None 时，直接退出
+                    logger.debug("接收中 channel 失效，回显接收循环退出")
                     break
+            logger.debug("回显接收循环结束")
             return True
         except Exception as e:
             logger.error(f"执行命令时出错: {e}")
             return False
-
-    def get_path_mode(self, path):
-        """获取路径的权限，755、777，如果是root用户登录，直接用sftp获取权限，否则用channel"""
-        if not self.is_connected():
-            return False
-        else:
-            if not self.sudo:
-                self.get_root_priority()
-            if self.sudo:
-                try:
-                    if self.username == 'root':
-                        sftp = self.ssh.open_sftp()
-                        path_attr = sftp.stat(path)
-                        permission = oct(path_attr.st_mode & 0o777)[2:]
-                        return permission
-                    else:
-                        output = self.send_get_output_once(f'stat -c %a {path}')
-                        return output
-                except Exception as e:
-                    logger.error(f"获取路径的用户权限失败{e}")
-                    return False
-            else:
-                return False
 
     def get_pathtree_info(self, remote_path, path_only=False, recursive=False, tree_list=None):
         """
@@ -510,6 +504,30 @@ class SSHTools(object):
                     file_list.append(full_path)
 
         return dir_list, file_list
+
+    def upload_single_file(self, local_path, remote_path):
+        """
+        轻量单文件上传（双击打开的远程文件保存后回传覆盖）
+        直接 sftp.put 覆盖远端文件，不走 send_files 的打包/SCP 重流程。
+        注意：要求登录用户对远端文件有写权限（不做 sudo 中转）
+        """
+        if not self.is_connected():
+            logger.error("upload_single_file: SSH 未连接")
+            return False
+        try:
+            sftp = self.ssh.open_sftp()
+            try:
+                sftp.put(local_path, remote_path)
+            finally:
+                try:
+                    sftp.close()
+                except Exception:
+                    pass
+            logger.info(f"单文件回传成功 [{local_path} -> {remote_path}]")
+            return True
+        except Exception as e:
+            logger.error(f"单文件回传失败 [{local_path} -> {remote_path}]: {e}")
+            return False
 
     def send_files(self, source_items, remote_path, work_dir=None, progress_cb=None):
         """

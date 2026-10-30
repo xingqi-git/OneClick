@@ -1,5 +1,7 @@
 from PyQt5.QtCore import pyqtSignal, QObject
-from utils.logger import operation_context
+from utils.logger import get_logger, operation_context
+
+logger = get_logger("worker")
 
 
 class OneClickWorker(QObject):
@@ -29,4 +31,6 @@ class OneClickWorker(QObject):
                 result = self.func(*self.args, **self.kwargs)
                 self.finished.emit(result)
             except Exception as e:
+                # 线程内异常必须留完整堆栈，否则事后无从定位
+                logger.exception("工作线程任务[%s]异常: %s", self.op_name or self.func.__name__, e)
                 self.finished.emit(f"{self.func.__name__}出错了: {str(e)}")
