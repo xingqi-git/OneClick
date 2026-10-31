@@ -49,11 +49,15 @@ def _make_version_info(version_str, app_name='OneClick'):
         kids=[
             StringFileInfo([
                 StringTable('080404B0', [  # 简体中文/Unicode
-                    StringStruct('CompanyName', ''),
-                    StringStruct('FileDescription', app_name),
+                    # StringStruct('CompanyName', 'xingqi'),
+                    StringStruct('FileDescription', '远程终端工具'),
                     StringStruct('FileVersion', version_str),
+                    StringStruct('InternalName', app_name),
+                    # StringStruct('LegalCopyright', 'Copyright © 2026 xingqi'),
+                    StringStruct('OriginalFilename', f'{app_name}.exe'),
                     StringStruct('ProductName', app_name),
                     StringStruct('ProductVersion', version_str),
+                    # StringStruct('Comments', '仅供个人学习使用，禁止商用'),
                 ])
             ]),
             VarFileInfo([VarStruct('Translation', [0x0804, 1200])]),
