@@ -33,8 +33,13 @@ class SSHTools(object):
         try:
             self.ssh = paramiko.SSHClient()
             self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            # allow_agent/look_for_keys 显式关闭：本工具只用密码认证。
+            # paramiko 默认会探测 Windows 的 \\.\pipe\openssh-ssh-agent，
+            # 部分电脑该管道存在但打开时报 [Errno 22] Invalid argument，
+            # 且 paramiko 2.10.4 不捕获该错误，会导致密码认证根本走不到
             self.ssh.connect(self.ip, self.port, self.username, self.password,
-                             timeout=timeout, banner_timeout=timeout, auth_timeout=timeout)
+                             timeout=timeout, banner_timeout=timeout, auth_timeout=timeout,
+                             allow_agent=False, look_for_keys=False)
 
             # 打开一个通道用于传输数据
             self.channel = self.ssh.invoke_shell(term='xterm-256color')

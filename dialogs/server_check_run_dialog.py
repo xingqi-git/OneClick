@@ -428,7 +428,8 @@ class ServerCheckRunDialog(QDialog, server_check_run_dlg.Ui_Dialog):
             import paramiko
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(hostname=host, port=port, username=username, password=password, timeout=5)
+            ssh.connect(hostname=host, port=port, username=username, password=password,
+                        timeout=5, allow_agent=False, look_for_keys=False)
             return True, ssh
         except Exception:
             return False, None
