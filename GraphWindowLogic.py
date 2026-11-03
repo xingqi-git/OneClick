@@ -33,6 +33,22 @@ def _autoscale_to_visible(ax):
     ax.autoscale_view()
 
 
+class _NamedCanvas(FigureCanvas):
+    """保存图片时默认文件名取标签页名的画布。
+
+    matplotlib 3.4.3 的 save_figure 用 canvas.get_default_filename()
+    拼默认保存路径，原生固定返回 'image.png'，这里改为当前标签页名。
+    """
+    default_save_name = None  # 由 _draw_indicator 设置为标签页名
+
+    def get_default_filename(self):
+        name = self.default_save_name or 'image'
+        # 过滤 Windows 文件名非法字符
+        for ch in r'\/:*?"<>|':
+            name = name.replace(ch, '_')
+        return f"{name}.png"
+
+
 class _AutoHomeToolbar(NavigationToolbar):
     """工具栏 Home(小房子)按钮：回到【当前可见曲线】的全景范围。
 
@@ -435,7 +451,12 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
 
         if is_checkbox_click:
             # 点复选框：让 Qt 默认处理（翻转勾选 + itemChanged）
-            # itemChanged 里没有 switch_action，不会切标签
+            # 本次是勾选（非取消）时带上切换目标，itemChanged 里据此
+            # 切到新图标签页并选中树节点（与点文字区域的行为一致）
+            if item.checkState(0) == QtCore.Qt.CheckState.Unchecked:
+                action_name = self._get_action_name_for_item(item)
+                if action_name:
+                    self._pending_switch_action = action_name
             return False
 
         # 点三角折叠/展开：让 Qt 默认处理（只折叠/展开，不操作复选框）
@@ -964,7 +985,9 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             fig = result
             ax = fig.axes[0] if fig.axes else None
             logger.debug("创建 FigureCanvas: %s", action_name)
-            canvas = FigureCanvas(fig)
+            canvas = _NamedCanvas(fig)
+            # 保存图片按钮的默认文件名 = 标签页名
+            canvas.default_save_name = action_name
             # 开启图例拖拽：必须等 Qt canvas 挂到 fig 上之后，
             # 否则 DraggableLegend 缓存旧 canvas 引用，拖拽不实时重绘
             if ax is not None and ax.get_legend() is not None:
@@ -984,6 +1007,10 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             self.action_tab_map[action_name] = tab_index
             if switch_tab:
                 self.tab_widget.setCurrentIndex(tab_index)
+                # 勾选触发的切换发生在 itemChanged 处理中（_updating_tree
+                # 为 True），_on_tab_current_changed 的树同步会被跳过，
+                # 这里直接选中树节点，保证"勾选即切页即选中"
+                self._select_tree_item_by_action(action_name)
 
             # 保存图信息用于后续动态更新
             lines = {}  # {pid: line}
