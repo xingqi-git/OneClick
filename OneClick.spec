@@ -35,10 +35,8 @@ from PyInstaller.utils.win32.versioninfo import (
 
 
 def _make_version_info(version_str, app_name='OneClick'):
-    """把 "2.5" 这样的版本号构造成 Windows exe 版本资源（文件/产品版本取四段）"""
-    nums = [int(x) for x in version_str.split('.') if x.isdigit()]
-    nums = (nums + [0, 0, 0, 0])[:4]
-    ver = tuple(nums)
+    """把 "2.5.0.0" 四段版本号填入 Windows exe 版本资源（version.py 保证四段）"""
+    ver = tuple(int(x) for x in version_str.split('.'))
     return VSVersionInfo(
         ffi=FixedFileInfo(
             filevers=ver,

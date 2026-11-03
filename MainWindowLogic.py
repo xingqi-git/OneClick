@@ -69,9 +69,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         super().__init__(parent) # 调用父类QMainWindow，实例化了self为QMainWindow
         self.setupUi(self) # 现在self是个窗口，self直接调用，相当于MainWindow.Ui_MainWindow的setupUi
 
-        # 窗口标题版本号统一取自 version.py（单一事实来源，升级只改 version.py）
-        from version import __version__
-        self.setWindowTitle(f"OneClick v{__version__}")
+        # 窗口标题只显示软件名（任务栏同此）；版本号在"关于"对话框中展示
+        self.setWindowTitle("OneClick")
 
         # 设置窗口图标（任务栏和标题栏显示）
         from PyQt5.QtGui import QIcon
@@ -128,6 +127,13 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.edit_server_action.triggered.connect(self.server_cfg_dialog)  # 服务器列表的编辑框
 
         self.help_action.triggered.connect(self.show_help_dialog)  # 显示帮助文档
+
+        # 关于菜单项：版本号只在关于对话框中展示，窗口标题/任务栏只显示软件名
+        from PyQt5.QtWidgets import QAction
+        self.about_action = QAction("关于", self)
+        self.menu_4.addAction(self.about_action)
+        self.about_action.triggered.connect(self.show_about_dialog)
+
         # 创建按钮逻辑
         self.stop_pushButton.clicked.connect(self.stop_sc)
         self.clean_pushButton.clicked.connect(self.clean_linux_print)
@@ -3576,6 +3582,13 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         """显示帮助文档对话框"""
         help_dialog = HelpDialog(self)
         help_dialog.exec_()
+
+    def show_about_dialog(self):
+        """关于对话框：展示软件名称与版本号（版本号不再放窗口标题）"""
+        from version import __version__
+        QtWidgets.QMessageBox.about(
+            self, "关于 OneClick",
+            f"<h3>OneClick</h3><p>版本 v{__version__}</p>")
 
 
 if __name__ == '__main__':

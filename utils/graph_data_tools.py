@@ -120,6 +120,8 @@ def make_plot_figure(data_dic, action_name, time_start=None, time_end=None, filt
         ax.set_title(action_name, fontsize=12, fontweight='bold')
         ax.set_xlabel("系统时间", fontsize=10)
         ax.set_ylabel(data_indicator, fontsize=10)
+        # 纵轴关闭科学计数法与轴角偏移(+1.0e6)，始终显示完整数字
+        ax.ticklabel_format(style='plain', useOffset=False, axis='y')
 
         for label, ts, vs in series_to_plot:
             line = ax.plot(ts.values, vs.values, label=label,
@@ -143,38 +145,21 @@ def make_plot_figure(data_dic, action_name, time_start=None, time_end=None, filt
             legend = None
 
         if legend is not None:
-            legend.set_draggable(True)
             for leg_line, leg_text in zip(legend.get_lines(), legend.get_texts()):
                 leg_line.set_picker(True)
                 leg_text.set_picker(True)
 
-            # 双击切换图例显隐
-            def on_double_click(event):
-                if event.dblclick and event.inaxes == ax:
-                    legend.set_visible(not legend.get_visible())
-                    fig.canvas.draw()
-            fig.canvas.mpl_connect('button_press_event', on_double_click)
+        # 注意：不在此处调用 legend.set_draggable(True)。
+        # DraggableBase 会在创建时缓存 fig.canvas 引用，而此处 fig 还挂着
+        # 临时 FigureCanvasBase，待 GraphWindow 换上 Qt canvas 后缓存即失效，
+        # 导致拖拽时不实时重绘（要等下一次全量 draw 才显示新位置）。
+        # 可拖拽在 GraphWindowLogic 挂上 Qt canvas 后再开启。
 
-            # 拾取事件（点击图例/折线切换显隐）
-            def on_pick(event):
-                try:
-                    clicked_artist = event.artist
-                    if hasattr(clicked_artist, 'get_text'):
-                        target_label = clicked_artist.get_text()
-                    else:
-                        target_label = clicked_artist.get_label()
-                    line = next(l for l in lines if l.get_label() == target_label)
-                    line.set_visible(not line.get_visible())
-                    for leg_line, leg_text in zip(legend.get_lines(), legend.get_texts()):
-                        if leg_text.get_text() == target_label:
-                            alpha = 1.0 if line.get_visible() else 0.2
-                            leg_line.set_alpha(alpha)
-                            leg_text.set_alpha(alpha)
-                            break
-                    fig.canvas.draw()
-                except StopIteration:
-                    pass
-            fig.canvas.mpl_connect('pick_event', on_pick)
+        # 注意：不在此处注册 pick/button_press 处理器。
+        # 本函数的 lines/legend 是局部对象，后续 GraphWindow 动态更新
+        # 会增删曲线并重建图例，闭包引用旧对象会导致点击切换失效。
+        # 处理器统一在 GraphWindowLogic.GraphWindow 注册（实时取
+        # ax.get_lines()/ax.get_legend()，永不失效）。此处只需设置 picker。
 
         return fig
     except Exception as e:

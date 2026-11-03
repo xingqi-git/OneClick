@@ -8,12 +8,45 @@ import logging
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 import matplotlib.pyplot as plt
+import matplotlib.text
 from utils.graph_data_tools import Worker
 
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
 logger = logging.getLogger('GraphWindow')
+
+
+def _autoscale_to_visible(ax):
+    """按【当前可见曲线】自适应 x/y 轴范围，并取消手动缩放状态。
+
+    - 隐藏的曲线不再撑着坐标轴范围（relim visible_only）
+    - 手动缩放/平移会把 autoscale 标志置为 False，导致 autoscale_view
+      直接不生效，必须先重新启用标志
+    - 全部隐藏时不重算（无可见数据，范围无定义，保持当前视图）
+    """
+    if not any(l.get_visible() for l in ax.lines):
+        return
+    ax.set_autoscalex_on(True)
+    ax.set_autoscaley_on(True)
+    ax.relim(visible_only=True)
+    ax.autoscale_view()
+
+
+class _AutoHomeToolbar(NavigationToolbar):
+    """工具栏 Home(小房子)按钮：回到【当前可见曲线】的全景范围。
+
+    原生语义是恢复打开窗口时的初始视图，被隐藏的曲线仍会撑着坐标轴；
+    这里改为按可见曲线重新计算 x/y 两轴范围后再重绘（取消手动缩放）。"""
+
+    def home(self, *args):
+        try:
+            for ax in self.canvas.figure.axes:
+                _autoscale_to_visible(ax)
+            self.canvas.draw_idle()
+        except Exception:
+            logger.exception("Home 回到可见数据全景异常，回退原生行为")
+            super().home(*args)
 
 
 class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
@@ -932,7 +965,16 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             ax = fig.axes[0] if fig.axes else None
             logger.debug("创建 FigureCanvas: %s", action_name)
             canvas = FigureCanvas(fig)
-            toolbar = NavigationToolbar(canvas, self.centralwidget)
+            # 开启图例拖拽：必须等 Qt canvas 挂到 fig 上之后，
+            # 否则 DraggableLegend 缓存旧 canvas 引用，拖拽不实时重绘
+            if ax is not None and ax.get_legend() is not None:
+                ax.get_legend().set_draggable(True)
+            # 点击曲线/图例切换显隐、双击切换图例显隐。
+            # 处理器实时取 ax.get_lines()/ax.get_legend()，
+            # 动态更新增删曲线、重建图例后依然有效
+            canvas.mpl_connect('pick_event', self._on_pick_toggle_curve)
+            canvas.mpl_connect('button_press_event', self._on_dblclick_toggle_legend)
+            toolbar = _AutoHomeToolbar(canvas, self.centralwidget)
             tab_content = QtWidgets.QWidget()
             tab_layout = QtWidgets.QVBoxLayout(tab_content)
             tab_layout.addWidget(toolbar)
@@ -1097,14 +1139,75 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                 if ax.get_legend():
                     ax.get_legend().remove()
 
-            # 自动调整坐标轴范围
-            ax.relim()
-            ax.autoscale_view()
+            # 自动调整坐标轴范围：按可见曲线适应，并取消手动缩放
+            _autoscale_to_visible(ax)
             logger.debug("触发重绘: %s", action_name)
             canvas.draw_idle()
             logger.debug("动态更新曲线完成: %s", action_name)
         except Exception as e:
             logger.error("动态更新曲线异常: %s, %s", action_name, e, exc_info=True)
+
+    def _on_pick_toggle_curve(self, event):
+        """点击曲线/图例项：切换对应曲线显隐，图例项同步变淡/恢复。
+        全程实时取 ax.get_lines()/ax.get_legend()，动态更新重建后不失效。"""
+        try:
+            artist = event.artist
+            ax = event.mouseevent.inaxes
+            legend = ax.get_legend() if ax is not None else None
+            if ax is None:
+                # 图例被拖到子图外时，按 artist 归属反查子图
+                for a in event.canvas.figure.axes:
+                    lg = a.get_legend()
+                    if lg is not None and (artist in lg.get_lines()
+                                           or artist in lg.get_texts()):
+                        ax, legend = a, lg
+                        break
+                if ax is None:
+                    return
+
+            if isinstance(artist, matplotlib.text.Text):
+                target = artist.get_text()
+            else:
+                target = artist.get_label()
+                if not target and legend is not None:
+                    # 图例中的样例线没有 label，按序号映射到图例文字
+                    try:
+                        target = legend.get_texts()[
+                            legend.get_lines().index(artist)].get_text()
+                    except ValueError:
+                        target = ''
+            if not target:
+                return
+
+            line = next((l for l in ax.lines if l.get_label() == target), None)
+            if line is None:
+                return
+            line.set_visible(not line.get_visible())
+            alpha = 1.0 if line.get_visible() else 0.2
+            if legend is not None:
+                for leg_line, leg_text in zip(legend.get_lines(),
+                                              legend.get_texts()):
+                    if leg_text.get_text() == target:
+                        leg_line.set_alpha(alpha)
+                        leg_text.set_alpha(alpha)
+                        break
+            # 每次显示/隐藏后自动适应坐标轴到可见数据全景（覆盖手动缩放；
+            # 恢复显示的曲线若在原视图外，也保证立即看得见）
+            _autoscale_to_visible(ax)
+            event.canvas.draw()
+        except Exception:
+            logger.exception("点击切换曲线显隐异常")
+
+    def _on_dblclick_toggle_legend(self, event):
+        """双击子图区域：切换该子图图例的显隐（图例被隐藏后双击恢复）"""
+        try:
+            if event.dblclick and event.inaxes is not None:
+                legend = event.inaxes.get_legend()
+                if legend is not None:
+                    legend.set_visible(not legend.get_visible())
+                    event.canvas.draw()
+        except Exception:
+            logger.exception("双击切换图例显隐异常")
 
     def _sync_check_from_action(self, action_name, checked):
         """根据 action_name 同步树节点勾选状态 + 更新 selected_indicators"""
