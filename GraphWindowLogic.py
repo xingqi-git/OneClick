@@ -1472,7 +1472,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         port = cfg.get('端口')
         username = cfg.get('用户名')
         password = cfg.get('密码')
-        work_dir = cfg.get('临时文件路径') or cfg.get('文件暂存路径')
+        work_dir = cfg.get('临时文件路径')
         user_path = f"{work_dir}/OneClick/Monitor"
 
         ssh_client = ssh_tools.SSHTools()

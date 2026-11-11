@@ -11,7 +11,7 @@ from UI import resource_monitor_dlg
 from utils import ssh_tools, qthread_worker
 from utils import log_cleaner
 from utils.logger import get_logger, log_progress, subscribe_progress
-from .base_dialog import SendCMDDialog, sc_class2str
+from .base_dialog import SendCMDDialog, sc_class2str, validate_work_dir
 from .clean_range_dialog import CleanRangeDialog
 from .download_range_dialog import DownloadRangeDialog
 
@@ -60,6 +60,9 @@ class ResourceMonitorDialog1(SendCMDDialog):
                 if not t.text().strip():
                     t.setStyleSheet("QLineEdit { border: 2px solid red; }")
                     return
+            # 校验临时文件路径：必须是 Linux 绝对路径，不能填 Windows 路径
+            if not validate_work_dir(self.work_dir_lineEdit):
+                return
 
         # 将输入框内容保存到字典
         self.sc_cfg['指令类型'] = sc_class2str[self.__class__.__name__]
@@ -68,11 +71,11 @@ class ResourceMonitorDialog1(SendCMDDialog):
         self.sc_cfg['密码'] = self.passwd_lineEdit.text()
         self.sc_cfg['端口'] = self.sshport_lineEdit.text()
         self.sc_cfg['指令名称'] = self.sc_name_lineEdit.text()
-        # 保存文件暂存路径，本机情况下为空
+        # 保存临时文件路径，本机情况下为空
         if self.server_comboBox.currentData() == '本机':
-            self.sc_cfg['文件暂存路径'] = ""
+            self.sc_cfg['临时文件路径'] = ""
         else:
-            self.sc_cfg['文件暂存路径'] = self.work_dir_lineEdit.text().strip()
+            self.sc_cfg['临时文件路径'] = self.work_dir_lineEdit.text().strip()
 
         # 编辑模式下，保留原有配置中不在此UI里的字段（进程、采样频率、监控时长等）
         if hasattr(self, 'button_id'):
@@ -113,9 +116,9 @@ class ResourceMonitorDialog1(SendCMDDialog):
             self.sshport_lineEdit.setText(sc_data['端口'])
             self.username_lineEdit.setText(sc_data['用户名'])
             self.passwd_lineEdit.setText(sc_data['密码'])
-            # 回显文件暂存路径
-            if '文件暂存路径' in sc_data:
-                self.work_dir_lineEdit.setText(sc_data['文件暂存路径'])
+            # 回显临时文件路径
+            if '临时文件路径' in sc_data:
+                self.work_dir_lineEdit.setText(sc_data['临时文件路径'])
             self.linux_ip_lineEdit.setEnabled(True)
             self.username_lineEdit.setEnabled(True)
             self.passwd_lineEdit.setEnabled(True)
@@ -410,7 +413,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         port = self.parent.sc_buttons[self.button_id]['config']['端口']
         username = self.parent.sc_buttons[self.button_id]['config']['用户名']
         password = self.parent.sc_buttons[self.button_id]['config']['密码']
-        work_dir = self.parent.sc_buttons[self.button_id]['config'].get('文件暂存路径', '')
+        work_dir = self.parent.sc_buttons[self.button_id]['config'].get('临时文件路径', '')
 
         ssh_client = ssh_tools.SSHTools()
         ssh_client.ip = ip
@@ -642,8 +645,8 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
             # 构建并检查指令的内容
             try:
-                # 从配置中获取文件暂存路径
-                work_dir = self.parent.sc_buttons[self.button_id]['config']['文件暂存路径']
+                # 从配置中获取临时文件路径
+                work_dir = self.parent.sc_buttons[self.button_id]['config']['临时文件路径']
                 user_path = f"{work_dir}/OneClick/Monitor"
                 script_path = f"{user_path}/OneClickMonitor.sh"
                 # 不再构建命令行参数，直接执行脚本（参数已写死在脚本中）
@@ -669,7 +672,13 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     if not ssh_result:
                         worker.info_signal.emit(("提示", "连接服务器失败"))
                         return False
-                    # 在服务器创建脚本和监控文件所在文件夹/home/root/OneClick
+                    # 用校验后的临时根目录重算脚本放置路径（空值/Windows 路径 → 家目录），
+                    # 避免在远端家目录下造出相对路径怪目录
+                    safe_base = ssh_client.resolve_work_dir(work_dir)
+                    user_path = f"{safe_base}/OneClick/Monitor"
+                    script_path = f"{user_path}/OneClickMonitor.sh"
+                    monitor_cmd_bash = f"{script_path}"
+                    # 在服务器创建脚本和监控文件所在文件夹
                     mkdir_temp_cmd = f"mkdir -p \"{user_path}\""
                     stdin, stdout, stderr = ssh_client.ssh.exec_command(mkdir_temp_cmd)
                     stdout.read()
@@ -900,7 +909,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                                 ssh_client.ssh.exec_command(f"kill -9 {pid}")
                         
                         # 写入停止日志
-                        work_dir = self.parent.sc_buttons[self.button_id]['config'].get('文件暂存路径', '')
+                        work_dir = self.parent.sc_buttons[self.button_id]['config'].get('临时文件路径', '')
                         if work_dir:
                             remote_log_path = f"{work_dir}/OneClick/Monitor/OneClickMonitor.log"
                             ssh_client.ssh.exec_command(
@@ -1148,7 +1157,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     AutoCloseMessageBox("提示", f"请检查服务器配置{e}", 2000, self).exec_()
                     return
 
-                work_dir = self.parent.sc_buttons[self.button_id]['config']['文件暂存路径']
+                work_dir = self.parent.sc_buttons[self.button_id]['config']['临时文件路径']
                 user_path = f"{work_dir}/OneClick/Monitor"
 
                 progress_dialog = QProgressDialog("准备中...", None, 0, 100, self)
@@ -1388,8 +1397,8 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
         self._operation_running = True
         self.set_all_buttons_enable(False)
-        # 从配置中获取文件暂存路径
-        work_dir = self.parent.sc_buttons[self.button_id]['config']['文件暂存路径']
+        # 从配置中获取临时文件路径
+        work_dir = self.parent.sc_buttons[self.button_id]['config']['临时文件路径']
         user_path = f"{work_dir}/OneClick/Monitor"
 
         # 进度条对话框
@@ -1803,7 +1812,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                 '端口': cfg.get('端口'),
                 '用户名': cfg.get('用户名'),
                 '密码': cfg.get('密码'),
-                '文件暂存路径': cfg.get('文件暂存路径'),
+                '临时文件路径': cfg.get('临时文件路径'),
             }
         if server_config:
             logger.info("【监控绘图】使用服务器增量更新配置: IP=%s", server_config.get('IP'))

@@ -86,10 +86,30 @@ class NotepadEditWindow(QWidget):
         self.button_id = button_id
 
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowType.Window)
-        self.resize(480, 360)
 
         cfg = self.main_window.sc_buttons[button_id]['config']
         self.setWindowTitle(f"记事本 - {cfg.get('指令名称', '')}")
+
+        # 尺寸防抖落盘（拖动调整时避免频繁写 config.json）
+        self._size_timer = QtCore.QTimer(self)
+        self._size_timer.setSingleShot(True)
+        self._size_timer.setInterval(400)
+        self._size_timer.timeout.connect(self._save_window_size)
+
+        # 恢复上次窗口尺寸（默认 480×360），并限制在当前屏幕可用区域内，
+        # 避免上次在大屏上保存的尺寸把小屏下的窗口撑出屏幕
+        width, height = 480, 360
+        try:
+            width = int(cfg.get('窗口宽度', width))
+            height = int(cfg.get('窗口高度', height))
+        except (TypeError, ValueError):
+            width, height = 480, 360
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            width = max(320, min(width, avail.width()))
+            height = max(200, min(height, avail.height()))
+        self.resize(width, height)
 
         layout = QVBoxLayout(self)
 
@@ -122,6 +142,24 @@ class NotepadEditWindow(QWidget):
         self.setWindowFlags(flags)
         self.show()  # setWindowFlags 后需重新 show
 
+    def resizeEvent(self, event):
+        """尺寸变化后防抖保存（拖动过程中不立即写盘）"""
+        super().resizeEvent(event)
+        self._size_timer.start()
+
+    def _update_size_cfg(self):
+        """把当前窗口尺寸写入按钮配置（只改内存，不落盘）"""
+        if self.button_id not in self.main_window.sc_buttons:
+            return  # 按钮已删除
+        cfg = self.main_window.sc_buttons[self.button_id]['config']
+        cfg['窗口宽度'] = self.width()
+        cfg['窗口高度'] = self.height()
+
+    def _save_window_size(self):
+        """尺寸防抖到点：写入配置并落盘"""
+        self._update_size_cfg()
+        self.main_window._save_config_auto()
+
     def _save_now(self):
         if self.button_id not in self.main_window.sc_buttons:
             return  # 按钮已删除
@@ -130,6 +168,8 @@ class NotepadEditWindow(QWidget):
         self.main_window._save_config_auto()
 
     def closeEvent(self, event):
+        self._size_timer.stop()
+        self._update_size_cfg()  # 关窗前立即记下最终尺寸（防抖可能还没到点）
         self._save_timer.stop()
         self._save_now()  # 关窗兜底保存
         # 通知主窗口移除引用

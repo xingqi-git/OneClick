@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (QDialog, QListWidget,
                              QWidget, QSizePolicy, QLabel, QLineEdit, QButtonGroup,
                              QRadioButton)
 from UI import send_files_dlg
-from .base_dialog import sc_class2str, wrap_server_info_in_frame
+from .base_dialog import sc_class2str, wrap_server_info_in_frame, validate_work_dir
 
 
 class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
@@ -64,7 +64,7 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
             text = self.time_comboBox.itemText(index)
             self.time_dic[text] = index
 
-        # 文件暂存路径：用户名变化时自动联动更新
+        # 临时文件路径：用户名变化时自动联动更新
         self.username_lineEdit.textChanged.connect(self._on_username_changed)
         if self.username_lineEdit.text():
             self.work_dir_lineEdit.setText(f"/home/{self.username_lineEdit.text()}")
@@ -424,7 +424,7 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
             self.sc_name_lineEdit.clear()
 
     def _on_username_changed(self, username):
-        """用户名变化时自动更新文件暂存路径"""
+        """用户名变化时自动更新临时文件路径"""
         if username:
             self.work_dir_lineEdit.setText(f"/home/{username}")
 
@@ -455,6 +455,11 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
             self.parent.update_run_info("请至少添加一个源路径", "WARNING")
             return
 
+        # 校验临时文件路径：必须是 Linux 绝对路径，不能填 Windows 路径
+        if not validate_work_dir(self.work_dir_lineEdit):
+            self.parent.update_run_info("临时文件路径必须是 Linux 绝对路径（/ 开头），不能填 Windows 路径", "WARNING")
+            return
+
         # 将输入框内容保存到字典
         self.sc_cfg['指令类型'] = sc_class2str[self.__class__.__name__]
         self.sc_cfg['IP'] = self.linux_ip_lineEdit.text()
@@ -464,7 +469,7 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         self.sc_cfg['源路径列表'] = valid_items[:]
         self.sc_cfg['服务器路径'] = self.server_path_lineEdit.text()
         self.sc_cfg['指令名称'] = self.sc_name_lineEdit.text()
-        self.sc_cfg['文件暂存路径'] = self.work_dir_lineEdit.text().strip()
+        self.sc_cfg['临时文件路径'] = self.work_dir_lineEdit.text().strip()
 
         # 将快捷方式的配置内容传递给主窗口，区分编辑模式还是添加模式
         if self.parent:
@@ -485,9 +490,9 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         self.passwd_lineEdit.setText(sc_data['密码'])
         self.server_path_lineEdit.setText(sc_data['服务器路径'])
         self.sc_name_lineEdit.setText(sc_data['指令名称'])
-        # 回显文件暂存路径
-        if '文件暂存路径' in sc_data:
-            self.work_dir_lineEdit.setText(sc_data['文件暂存路径'])
+        # 回显临时文件路径
+        if '临时文件路径' in sc_data:
+            self.work_dir_lineEdit.setText(sc_data['临时文件路径'])
 
         # 回显源路径列表（兼容旧版配置）
         self.source_items = []
@@ -541,5 +546,5 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         self.username_lineEdit.setText(self.server_comboBox.currentData()['用户名'])
         self.passwd_lineEdit.setText(self.server_comboBox.currentData()['密码'])
         self.sc_name_lineEdit.setText(f'{sc_class2str[self.__class__.__name__]}：' + self.server_comboBox.currentText())
-        # 选择服务器时，同步更新文件暂存路径
+        # 选择服务器时，同步更新临时文件路径
         self.work_dir_lineEdit.setText(f"/home/{self.server_comboBox.currentData()['用户名']}")

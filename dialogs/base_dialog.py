@@ -3,6 +3,25 @@ from PyQt5.QtWidgets import QDialog, QFrame, QGridLayout, QLabel
 from UI import send_cmd_dlg
 from utils.logger import get_logger
 
+# ── 临时文件路径前端校验（保存时即时反馈） ─────────────
+_WORKDIR_STYLE_INVALID = "border: 1px solid red;"
+
+
+def is_valid_linux_dir(text):
+    """是否为合法 Linux 绝对路径；空串视为合法（允许留空，运行时回退家目录）"""
+    path = (text or '').strip()
+    if not path:
+        return True
+    # 必须 / 开头；禁止反斜杠（Windows 路径特征）。盘符 X: 不可能以 / 开头
+    return path.startswith('/') and '\\' not in path
+
+
+def validate_work_dir(line_edit):
+    """校验输入框并设置红框，返回是否通过"""
+    ok = is_valid_linux_dir(line_edit.text())
+    line_edit.setStyleSheet('' if ok else _WORKDIR_STYLE_INVALID)
+    return ok
+
 
 def wrap_server_info_in_frame(dialog, grid_layout, server_row_count):
     """
@@ -107,7 +126,7 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
         # IP输入框变化时，自动生成快捷按钮名称
         self.linux_ip_lineEdit.textChanged.connect(self._on_ip_changed)
 
-        # 文件暂存路径：用户名变化时自动联动更新
+        # 临时文件路径：用户名变化时自动联动更新
         if hasattr(self, 'username_lineEdit') and hasattr(self, 'work_dir_lineEdit'):
             self.username_lineEdit.textChanged.connect(self._on_username_changed)
             # 初始化时设置默认值（如果已有用户名则自动填入）
@@ -133,7 +152,7 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
             self.sc_name_lineEdit.clear()
 
     def _on_username_changed(self, username):
-        """用户名变化时自动更新文件暂存路径"""
+        """用户名变化时自动更新临时文件路径"""
         if username:
             self.work_dir_lineEdit.setText(f"/home/{username}")
 
@@ -161,6 +180,11 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
             self.parent.update_run_info("请输入指令内容", "WARNING")
             return
 
+        # 校验临时文件路径：非空时必须是 Linux 绝对路径（防止误填 Windows 路径）
+        if hasattr(self, 'work_dir_lineEdit') and not validate_work_dir(self.work_dir_lineEdit):
+            self.parent.update_run_info("临时文件路径必须是 Linux 绝对路径（/ 开头），不能填 Windows 路径", "WARNING")
+            return
+
         # 将输入框内容保存到字典
         self.sc_cfg['指令类型'] = sc_class2str[self.__class__.__name__]
         self.sc_cfg['IP'] = self.linux_ip_lineEdit.text()
@@ -169,11 +193,11 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
         self.sc_cfg['端口'] = self.sshport_lineEdit.text()
         self.sc_cfg['指令'] = self.cmd_TextEdit.toPlainText()
         self.sc_cfg['指令名称'] = self.sc_name_lineEdit.text()
-        # 保存文件暂存路径
+        # 保存临时文件路径
         if hasattr(self, 'work_dir_lineEdit'):
-            self.sc_cfg['文件暂存路径'] = self.work_dir_lineEdit.text().strip()
+            self.sc_cfg['临时文件路径'] = self.work_dir_lineEdit.text().strip()
         else:
-            self.sc_cfg['文件暂存路径'] = f"/home/{self.username_lineEdit.text()}"
+            self.sc_cfg['临时文件路径'] = f"/home/{self.username_lineEdit.text()}"
 
         # 将快捷方式的配置内容传递给主窗口，区分编辑模式还是添加模式
         if self.parent:
@@ -194,9 +218,9 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
         self.passwd_lineEdit.setText(sc_data['密码'])
         self.cmd_TextEdit.setPlainText(sc_data['指令'])
         self.sc_name_lineEdit.setText(sc_data['指令名称'])
-        # 回显文件暂存路径
-        if '文件暂存路径' in sc_data and hasattr(self, 'work_dir_lineEdit'):
-            self.work_dir_lineEdit.setText(sc_data['文件暂存路径'])
+        # 临时文件路径
+        if '临时文件路径' in sc_data and hasattr(self, 'work_dir_lineEdit'):
+            self.work_dir_lineEdit.setText(sc_data['临时文件路径'])
         self._loading = False  # 加载完成
 
     def reset(self):
@@ -216,6 +240,6 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
         self.username_lineEdit.setText(self.server_comboBox.currentData()['用户名'])
         self.passwd_lineEdit.setText(self.server_comboBox.currentData()['密码'])
         self.sc_name_lineEdit.setText(f'{sc_class2str[self.__class__.__name__]}：' + self.server_comboBox.currentText())
-        # 选择服务器时，同步更新文件暂存路径
+        # 选择服务器时，同步更新临时文件路径
         if hasattr(self, 'work_dir_lineEdit'):
             self.work_dir_lineEdit.setText(f"/home/{self.server_comboBox.currentData()['用户名']}")

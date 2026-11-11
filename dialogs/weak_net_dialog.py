@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import QDialog, QMessageBox, QTableWidgetItem
 from UI import weak_net_control_dlg
 from utils import ssh_tools, qthread_worker
 from utils.logger import get_logger, log_progress
-from .base_dialog import SendCMDDialog, sc_class2str
+from .base_dialog import SendCMDDialog, sc_class2str, validate_work_dir
 import sip
 
 
@@ -180,6 +180,11 @@ class WeakNetDialog1(SendCMDDialog):
                 t.setStyleSheet("QLineEdit { border: 2px solid red; }")
                 return
 
+        # 校验临时文件路径：必须是 Linux 绝对路径，不能填 Windows 路径
+        if not validate_work_dir(self.work_dir_lineEdit):
+            self.parent.update_run_info("临时文件路径必须是 Linux 绝对路径（/ 开头），不能填 Windows 路径", "WARNING")
+            return
+
         self.sc_cfg['指令类型'] = sc_class2str[self.__class__.__name__]
         self.sc_cfg['IP'] = self.linux_ip_lineEdit.text()
         self.sc_cfg['用户名'] = self.username_lineEdit.text()
@@ -188,7 +193,7 @@ class WeakNetDialog1(SendCMDDialog):
         self.sc_cfg['规则列表'] = []
         self.sc_cfg['循环次数'] = '0'
         self.sc_cfg['指令名称'] = self.sc_name_lineEdit.text()
-        self.sc_cfg['文件暂存路径'] = self.work_dir_lineEdit.text().strip() if self.work_dir_lineEdit.text().strip() else ''
+        self.sc_cfg['临时文件路径'] = self.work_dir_lineEdit.text().strip() if self.work_dir_lineEdit.text().strip() else ''
 
         if self.parent:
             if hasattr(self, 'button_id'):
@@ -206,8 +211,8 @@ class WeakNetDialog1(SendCMDDialog):
         self.username_lineEdit.setText(sc_data['用户名'])
         self.passwd_lineEdit.setText(sc_data['密码'])
         self.sc_name_lineEdit.setText(sc_data['指令名称'])
-        if '文件暂存路径' in sc_data:
-            self.work_dir_lineEdit.setText(sc_data['文件暂存路径'])
+        if '临时文件路径' in sc_data:
+            self.work_dir_lineEdit.setText(sc_data['临时文件路径'])
         self._loading = False
 
 
@@ -242,8 +247,10 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
         self.loop_lineEdit.setText(cfg.get('循环次数', '0'))
         validate_loop_count()  # 初始化时验证一次
         self.saved_nic = cfg.get('网卡', '')  # 保存配置的网卡，用于后续恢复
-        self.work_dir = cfg.get('文件暂存路径', '')
-        if not self.work_dir:
+        self.work_dir = cfg.get('临时文件路径', '')
+        # 空值或非法（Windows 路径等）→ 登录用户家目录，保证下游路径安全
+        if (not self.work_dir or not self.work_dir.strip().startswith('/')
+                or '\\' in self.work_dir):
             self.work_dir = f"/home/{cfg.get('用户名', 'root')}"
 
         # 【关键】如果有保存的网卡，先添加到下拉框并选中，让界面打开就显示
@@ -636,13 +643,14 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
         start_ssh.username = cfg['用户名']
         start_ssh.password = cfg['密码']
 
-        # 从配置中获取文件暂存路径
-        work_dir = cfg['文件暂存路径']
+        # 从配置中获取临时文件路径
+        work_dir = cfg['临时文件路径']
         user_path = f"{work_dir}/OneClick/WeakNet"
         script_path = f"{user_path}/OneClickWeakNet.sh"
 
-        # 构建脚本参数：nic loop_count log_path 规则参数...
-        script_args = f"{nic} {loop_count} {self.remote_log_path}"
+        # 脚本参数：nic loop_count log_path 规则参数...
+        # log_path 占位，连接后用校验过的安全路径替换（见 do_start）
+        script_args = f"{nic} {loop_count} __LOG_PATH__"
         for rule in rule_queue:
             script_args += f" {rule.get('延迟', '0')} {rule.get('抖动', '0')} {rule.get('丢包率', '0')} {rule.get('损坏率', '0')} {rule.get('重复率', '0')} {rule.get('重排率', '0')} {rule.get('重排间隔', '0')} {rule.get('带宽', '0')} {rule.get('持续时长', '0')}"
 
@@ -657,6 +665,15 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
                 if not start_ssh.connect():
                     worker.info_signal.emit(("提示", "连接服务器失败"))
                     return False
+
+                # 校验/规范化临时根目录（空值/Windows 路径 → 家目录），
+                # 脚本目录与日志路径都基于安全路径，避免造出相对路径怪目录
+                safe_base = start_ssh.resolve_work_dir(work_dir)
+                user_path = f"{safe_base}/OneClick/WeakNet"
+                script_path = f"{user_path}/OneClickWeakNet.sh"
+                remote_log_path = f"{user_path}/OneClickWeakNet.log"
+                # 用安全日志路径替换占位符
+                safe_script_args = script_args.replace('__LOG_PATH__', remote_log_path)
 
                 # 创建远程目录
                 start_ssh.ssh.exec_command(f"mkdir -p {user_path}")
@@ -687,9 +704,9 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
 
                 # 用完整路径直接执行（和资源监控一样），避免 cd 导致的问题
                 if has_nohup:
-                    monitor_cmd = f"nohup {script_path} {script_args} >/dev/null 2>&1 & echo $!"
+                    monitor_cmd = f"nohup {script_path} {safe_script_args} >/dev/null 2>&1 & echo $!"
                 else:
-                    monitor_cmd = f"{script_path} {script_args} >/dev/null 2>&1 & echo $!"
+                    monitor_cmd = f"{script_path} {safe_script_args} >/dev/null 2>&1 & echo $!"
 
                 stdin, stdout, stderr = start_ssh.ssh.exec_command(monitor_cmd)
                 pid = stdout.read().decode().strip()
@@ -865,7 +882,7 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
         clear_ssh.username = cfg['用户名']
         clear_ssh.password = cfg['密码']
 
-        work_dir = cfg['文件暂存路径']
+        work_dir = cfg['临时文件路径']
         user_path = f"{work_dir}/OneClick/WeakNet"
         clean_cmd = f"rm -rf {user_path}"
 
@@ -874,8 +891,12 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
                 if not clear_ssh.connect():
                     worker.info_signal.emit(("提示", "连接服务器失败"))
                     return False
+                # 用校验后的安全路径删除（空值/Windows 路径 → 家目录）
+                safe_base = clear_ssh.resolve_work_dir(work_dir)
+                safe_user_path = f"{safe_base}/OneClick/WeakNet"
                 # 删除远程日志目录
-                stdin, stdout, stderr = clear_ssh.ssh.exec_command(clean_cmd)
+                stdin, stdout, stderr = clear_ssh.ssh.exec_command(
+                    f"rm -rf {safe_user_path}")
                 err = stderr.read().decode().strip()
                 clear_ssh.disconnect()
                 if err:

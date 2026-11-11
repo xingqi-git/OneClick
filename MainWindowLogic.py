@@ -3,7 +3,7 @@ import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import QThread, QTimer
 from PyQt5.QtWidgets import (QDialog, QPushButton, QWidget, QVBoxLayout, QHBoxLayout,
-                             QMenu, QMessageBox, QMainWindow,
+                             QMenu, QMessageBox, QMainWindow, QTabBar, QToolButton,
                              QTabWidget, QCheckBox, QScrollArea, QInputDialog, QLineEdit)
 
 from UI import MainWindow
@@ -15,6 +15,32 @@ from dialogs import (SendCMDDialog, SendCMD2Dialog, SendFilesDialog, GetFilesDia
                      SetServerDialog, ResourceMonitorDialog1, ResourceMonitorDialog2,
                      WeakNetDialog1, WeakNetControlDialog, HelpDialog, ServerCheckDialog,
                      ServerCheckRunDialog, CmdManageDialog, NotepadDialog, NotepadEditWindow)
+
+class ScrollSafeTabBar(QTabBar):
+    """标签过多时，左右滚动箭头压住最后一个标签的修复。
+
+    Qt 的 QTabBar 在标签溢出时会把滚动按钮直接叠在最后半个标签上，
+    标签文字/关闭按钮被箭头遮住。这里在绘制完标签后用底色覆盖箭头占位区，
+    使溢出的标签被干净裁边，箭头落在空白条上。
+    """
+
+    def _scroller_width(self):
+        """当前可见滚动按钮的总宽度（没有溢出时为 0）"""
+        total = 0
+        for btn in self.findChildren(QToolButton):
+            if btn.isVisible():
+                total += btn.width()
+        return total
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        gutter = self._scroller_width()
+        if gutter <= 0:
+            return
+        painter = QtGui.QPainter(self)
+        painter.fillRect(self.width() - gutter, 0, gutter, self.height(),
+                         self.palette().color(QtGui.QPalette.Window))
+
 
 class DraggableButton(QPushButton):
     """可拖动的按钮类，支持长按拖动改变位置"""
@@ -140,6 +166,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         # ---- 替换 scrollArea_2 为 QTabWidget（分组标签页） ----
         self.group_tabWidget = QTabWidget(self.centralwidget)
+        # 先换标签栏，避免标签溢出时滚动箭头压住标签（须在信号接线之前）
+        self.group_tabWidget.setTabBar(ScrollSafeTabBar(self.group_tabWidget))
         self.group_tabWidget.setTabsClosable(True)
         self.group_tabWidget.setMovable(True)  # 允许拖拽排序
         self.group_tabWidget.tabCloseRequested.connect(self.on_tab_close_requested)
@@ -309,6 +337,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
         # 终端标签页：每个 SSH 连接一个标签，各标签独立一个 TerminalEdit
         self.terminal_tabs = QtWidgets.QTabWidget(self.centralwidget)
+        # 同上：标签溢出时滚动箭头不压标签
+        self.terminal_tabs.setTabBar(ScrollSafeTabBar(self.terminal_tabs))
         self.terminal_tabs.setTabsClosable(True)   # 标签带关闭按钮
         self.terminal_tabs.setMovable(True)        # 标签可拖动排序
         self.terminal_tabs.setDocumentMode(True)
@@ -1303,7 +1333,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 读取源路径列表（兼容旧版单条配置）
         sc_cfg = self.sc_buttons[button_id]['config']
         remote_path = sc_cfg['服务器路径'] if '服务器路径' in sc_cfg else sc_cfg.get('目的路径', '')
-        work_dir = sc_cfg['文件暂存路径'] if '文件暂存路径' in sc_cfg else ''
+        work_dir = sc_cfg.get('临时文件路径', '')
 
         if '源路径列表' in sc_cfg:
             source_items = sc_cfg['源路径列表']
@@ -1442,7 +1472,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             return
 
         sc_cfg = self.sc_buttons[button_id]['config']
-        work_dir = sc_cfg['文件暂存路径'] if '文件暂存路径' in sc_cfg else ''
+        work_dir = sc_cfg.get('临时文件路径', '')
 
         # 读取源路径列表（兼容旧版单条配置）
         if '源路径列表' in sc_cfg:

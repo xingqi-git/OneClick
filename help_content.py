@@ -221,7 +221,7 @@ HELP_HTML = '''<!DOCTYPE html>
         </tr>
         <tr>
             <td><strong>记事本</strong></td>
-            <td>点击打开独立笔记窗口，随手记录，内容自动保存，窗口可置顶</td>
+            <td>点击打开独立笔记窗口，随手记录，内容与窗口大小自动记住，窗口可置顶</td>
         </tr>
     </table>
 
@@ -319,7 +319,7 @@ HELP_HTML = '''<!DOCTYPE html>
     </ul>
 
     <h3>监控数据在哪？</h3>
-    <p>远程监控数据在服务器的 <code>文件暂存路径/OneClick/Monitor/</code> 下；点控制面板的 <code>下载数据</code> 下载到本地 <code>&lt;服务器IP&gt;/Monitor/</code> 目录。</p>
+    <p>远程监控数据在服务器的 <code>临时文件路径/OneClick/Monitor/</code> 下；点控制面板的 <code>下载数据</code> 下载到本地 <code>&lt;服务器IP&gt;/Monitor/</code> 目录。临时文件路径必须是 Linux 绝对路径（<code>/</code> 开头），留空或填错时自动使用登录用户的家目录。</p>
 
     <h3>绘图窗口看不到某条曲线？</h3>
     <p>每次切换曲线显隐后坐标轴都会自动适应到可见数据范围，若仍看不到，点工具栏 <code>Home</code> 恢复全景，或检查左侧树里该 PID/指标是否已勾选。</p>

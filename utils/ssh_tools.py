@@ -25,6 +25,27 @@ class SSHTools(object):
 
         self.win_tool = WindowsTools()
 
+    def resolve_work_dir(self, work_dir):
+        """校验并规范化服务器临时文件路径（唯一收口点）。
+
+        合法：Linux 绝对路径（'/' 开头，不含反斜杠/盘符），原样返回。
+        非法（典型：误填 Windows 路径 'C:\\Users\\...'）：不抛异常，
+        回退到登录用户家目录 /home/{用户名}，否则拼接 mkdir 时会被当成
+        相对路径，在远端家目录下造出 'C:\\Users\\...' 这样的怪目录。
+        空值同样回退家目录。
+        """
+        default = f"/home/{self.username}" if self.username else "/home"
+        if not work_dir or not isinstance(work_dir, str):
+            return default
+        path = work_dir.strip()
+        # 必须绝对路径；禁止反斜杠（Windows 路径特征）和盘符 C: / D:
+        if not path.startswith('/') or '\\' in path or re.match(r'^[A-Za-z]:', path):
+            logger.warning(
+                "临时文件路径不是合法的 Linux 绝对路径('%s')，回退到 %s",
+                work_dir, default)
+            return default
+        return path.rstrip('/') or '/'
+
     def connect(self, timeout=10):
         import paramiko
         from scp import SCPClient
@@ -649,7 +670,9 @@ class SSHTools(object):
                 pass
 
         # 构造服务器临时目录
-        base_dir = work_dir if work_dir else f"/home/{self.username}"
+        # 校验/规范化临时根目录：非法（如 Windows 路径）回退家目录，
+        # 保证拼出的一定是绝对路径，不会在远端造出相对路径怪目录
+        base_dir = self.resolve_work_dir(work_dir)
         temp_remote_dir = f"{base_dir}/OneClick_temp{local_timestamp_ms}"
 
         # 收集所有需要创建的目录
@@ -1044,8 +1067,8 @@ class SSHTools(object):
         # 生成毫秒级本地时间戳，用于临时目录命名，避免重名
         local_timestamp_ms = f"{int(time.time() * 1000)}"
 
-        # 构造服务器临时目录
-        base_dir = work_dir if work_dir else f"/home/{self.username}"
+        # 构造服务器临时目录（校验/规范化，非法路径回退家目录）
+        base_dir = self.resolve_work_dir(work_dir)
         temp_remote_path = f"{base_dir}/OneClick_temp{local_timestamp_ms}"
 
         logger.debug("开始查找符合条件的文件...")
