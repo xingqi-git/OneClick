@@ -11,35 +11,44 @@ from utils import ssh_tools, windows_tools, qthread_worker
 import json
 import datetime
 from utils.logger import log_progress
+from utils.config_schema import normalize_button_config, find_missing_required
 from dialogs import (SendCMDDialog, SendCMD2Dialog, SendFilesDialog, GetFilesDialog, CopyFilesDialog,
                      SetServerDialog, ResourceMonitorDialog1, ResourceMonitorDialog2,
                      WeakNetDialog1, WeakNetControlDialog, HelpDialog, ServerCheckDialog,
                      ServerCheckRunDialog, CmdManageDialog, NotepadDialog, NotepadEditWindow)
 
 class ScrollSafeTabBar(QTabBar):
-    """标签过多时，左右滚动箭头压住最后一个标签的修复。
+    """标签过多时，左右滚动箭头压住标签的修复。
 
-    Qt 的 QTabBar 在标签溢出时会把滚动按钮直接叠在最后半个标签上，
-    标签文字/关闭按钮被箭头遮住。这里在绘制完标签后用底色覆盖箭头占位区，
-    使溢出的标签被干净裁边，箭头落在空白条上。
+    Qt 的 QTabBar 在标签溢出时会把滚动按钮直接叠在标签上：右箭头压
+    最右可见标签，左箭头压最左可见标签（往左滚动到接近起点时出现）。
+    这里在绘制完标签后，用底色分别覆盖左右箭头的占位区，使被遮住的
+    标签被干净裁边，箭头落在空白条上。
     """
 
-    def _scroller_width(self):
-        """当前可见滚动按钮的总宽度（没有溢出时为 0）"""
-        total = 0
+    def _scroll_gutters(self):
+        """返回左右两侧可见滚动按钮的占位宽度 (左, 右)；无溢出时为 (0, 0)"""
+        left = right = 0
         for btn in self.findChildren(QToolButton):
-            if btn.isVisible():
-                total += btn.width()
-        return total
+            if not btn.isVisible():
+                continue
+            if btn.x() + btn.width() / 2 < self.width() / 2:
+                left = max(left, btn.x() + btn.width())
+            else:
+                right = max(right, self.width() - btn.x())
+        return left, right
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        gutter = self._scroller_width()
-        if gutter <= 0:
+        left, right = self._scroll_gutters()
+        if left <= 0 and right <= 0:
             return
         painter = QtGui.QPainter(self)
-        painter.fillRect(self.width() - gutter, 0, gutter, self.height(),
-                         self.palette().color(QtGui.QPalette.Window))
+        bg = self.palette().color(QtGui.QPalette.Window)
+        if left > 0:
+            painter.fillRect(0, 0, left, self.height(), bg)
+        if right > 0:
+            painter.fillRect(self.width() - right, 0, right, self.height(), bg)
 
 
 class DraggableButton(QPushButton):
@@ -181,14 +190,15 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.add_group_btn.setFixedSize(24, 24)
         self.add_group_btn.setToolTip("新建分组")
         self.add_group_btn.clicked.connect(self.add_new_group)
-        add_btn_container = QWidget(self.centralwidget)
+        add_btn_container = QWidget(self.group_tabWidget)
         add_btn_layout = QHBoxLayout(add_btn_container)
         add_btn_layout.setContentsMargins(0, 0, 0, 0)
         add_btn_layout.addStretch()
         add_btn_layout.addWidget(self.add_group_btn)
         self.group_tabWidget.setCornerWidget(add_btn_container, QtCore.Qt.Corner.TopLeftCorner)
-        # 消除corner widget与tab之间的间隙
-        self.group_tabWidget.tabBar().setStyleSheet("QTabBar { qproperty-usesScrollButtons: 1; }")
+        # usesScrollButtons 为 QTabBar 默认行为，无需设置；
+        # 不要在此 setStyleSheet——会让标签栏走 QStyleSheetStyle 渲染路径，
+        # 其内部几何随系统主题变化，曾导致测试机上滚动箭头压住标签（终端标签栏不设样式表故无此问题）
         # 替换布局中的 scrollArea_2
         idx_scroll = self.verticalLayout.indexOf(self.scrollArea_2)
         self.verticalLayout.removeWidget(self.scrollArea_2)
@@ -885,6 +895,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
     def add_button(self, config_data):
         """根据配置数据创建新按钮（带复选框+按钮，添加到对应分组）"""
+        # 统一规范化：旧键迁移、缺失补默认、剔除未知键
+        # （启动加载/导入配置/新建按钮的唯一收口点）
+        config_data = normalize_button_config(config_data)
         if '指令名称' in config_data:
             button_text = config_data['指令名称']
         else:
@@ -944,7 +957,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if handler is None:
             self.update_run_info(f'添加快捷按钮{button_text}失败:错误的指令类型', 'ERROR')
             return
-        new_button.clicked.connect(lambda _, para=button_id: handler(para))
+        new_button.clicked.connect(
+            lambda _, para=button_id: self._check_required_then_run(para, handler))
 
         # 右键菜单
         new_button.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
@@ -975,6 +989,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
     def edit_button(self, config_data, button_id):
         self.sc_buttons[button_id]['config'].update(config_data)  # 更新按钮字典内容
+        # 重新规范化：清除编辑前残留的旧键/未知键，补齐缺失键
+        self.sc_buttons[button_id]['config'] = normalize_button_config(
+            self.sc_buttons[button_id]['config'])
         btn = self.sc_buttons[button_id]['button']  # 按钮对象
         btn.setText(config_data['指令名称'])  # 修改按钮名称
         # 更新按钮样式（类型可能变了）
@@ -984,6 +1001,22 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             btn.style().unpolish(btn)
             btn.style().polish(btn)
         self._save_config_auto()
+
+    def _check_required_then_run(self, button_id, handler):
+        """点击时校验必填配置键（如 IP/用户名），缺失则提示编辑补全，不执行。
+
+        配置文件手改/导入可能缺关键键，规范化只补可推导的默认值，
+        必填键不瞎猜——在这里拦截，与前端编辑的红框校验形成修复闭环。
+        """
+        config = self.sc_buttons[button_id]['config']
+        missing = find_missing_required(config)
+        if missing:
+            name = config.get('指令名称', button_id)
+            self.update_run_info(
+                f'快捷按钮"{name}"配置不完整：缺少 {"、".join(missing)}，请右键编辑补全',
+                'WARNING')
+            return
+        handler(button_id)
 
     def _on_drag_started(self, button, button_id, container):
         """拖动开始"""

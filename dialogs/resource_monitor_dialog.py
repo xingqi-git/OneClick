@@ -646,7 +646,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
             # 构建并检查指令的内容
             try:
                 # 从配置中获取临时文件路径
-                work_dir = self.parent.sc_buttons[self.button_id]['config']['临时文件路径']
+                work_dir = self.parent.sc_buttons[self.button_id]['config'].get('临时文件路径', '')
                 user_path = f"{work_dir}/OneClick/Monitor"
                 script_path = f"{user_path}/OneClickMonitor.sh"
                 # 不再构建命令行参数，直接执行脚本（参数已写死在脚本中）
@@ -1157,7 +1157,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     AutoCloseMessageBox("提示", f"请检查服务器配置{e}", 2000, self).exec_()
                     return
 
-                work_dir = self.parent.sc_buttons[self.button_id]['config']['临时文件路径']
+                work_dir = self.parent.sc_buttons[self.button_id]['config'].get('临时文件路径', '')
                 user_path = f"{work_dir}/OneClick/Monitor"
 
                 progress_dialog = QProgressDialog("准备中...", None, 0, 100, self)
@@ -1398,7 +1398,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         self._operation_running = True
         self.set_all_buttons_enable(False)
         # 从配置中获取临时文件路径
-        work_dir = self.parent.sc_buttons[self.button_id]['config']['临时文件路径']
+        work_dir = self.parent.sc_buttons[self.button_id]['config'].get('临时文件路径', '')
         user_path = f"{work_dir}/OneClick/Monitor"
 
         # 进度条对话框
