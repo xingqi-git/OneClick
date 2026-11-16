@@ -413,7 +413,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         port = self.parent.sc_buttons[self.button_id]['config']['端口']
         username = self.parent.sc_buttons[self.button_id]['config']['用户名']
         password = self.parent.sc_buttons[self.button_id]['config']['密码']
-        work_dir = self.parent.sc_buttons[self.button_id]['config'].get('临时文件路径', '')
 
         ssh_client = ssh_tools.SSHTools()
         ssh_client.ip = ip
@@ -422,6 +421,11 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         ssh_client.password = password
         # 注册到活跃连接列表，便于关闭窗口时主动断开
         self._active_ssh_clients.append(ssh_client)
+
+        # 规范化临时根目录（空值/Windows 路径 → 登录用户家目录），
+        # 使轮询 tail 的日志路径与启动监控写入的实际路径一致
+        work_dir = ssh_client.resolve_work_dir(
+            self.parent.sc_buttons[self.button_id]['config'].get('临时文件路径', ''))
 
         def do_ssh_monitor_check():
             try:
@@ -658,6 +662,15 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
             def do_ssh_monitor_worker():
                 try:
+                    # 先校验/规范化临时根目录（空值/Windows 路径 → 家目录）：
+                    # resolve_work_dir 只依赖用户名，连接前即可调用；
+                    # 脚本内嵌的数据目录与上传路径都基于安全路径，
+                    # 避免在远端家目录下造出相对路径怪目录
+                    safe_base = ssh_client.resolve_work_dir(work_dir)
+                    user_path = f"{safe_base}/OneClick/Monitor"
+                    script_path = f"{user_path}/OneClickMonitor.sh"
+                    monitor_cmd_bash = f"{script_path}"
+
                     # 生成本地IP/Monitor文件夹
                     os.makedirs(self.monitor_data_path + "/Monitor", mode=0o777, exist_ok=True)
                     monitor_sh_path = self.monitor_data_path + "/Monitor/OneClickMonitor.sh"
@@ -672,12 +685,6 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     if not ssh_result:
                         worker.info_signal.emit(("提示", "连接服务器失败"))
                         return False
-                    # 用校验后的临时根目录重算脚本放置路径（空值/Windows 路径 → 家目录），
-                    # 避免在远端家目录下造出相对路径怪目录
-                    safe_base = ssh_client.resolve_work_dir(work_dir)
-                    user_path = f"{safe_base}/OneClick/Monitor"
-                    script_path = f"{user_path}/OneClickMonitor.sh"
-                    monitor_cmd_bash = f"{script_path}"
                     # 在服务器创建脚本和监控文件所在文件夹
                     mkdir_temp_cmd = f"mkdir -p \"{user_path}\""
                     stdin, stdout, stderr = ssh_client.ssh.exec_command(mkdir_temp_cmd)
@@ -908,8 +915,10 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                             if pid.isdigit():
                                 ssh_client.ssh.exec_command(f"kill -9 {pid}")
                         
-                        # 写入停止日志
-                        work_dir = self.parent.sc_buttons[self.button_id]['config'].get('临时文件路径', '')
+                        # 写入停止日志（规范化：空值/Windows 路径 → 家目录，
+                        # 避免 echo 追加到相对路径在家目录创建怪文件）
+                        work_dir = ssh_client.resolve_work_dir(
+                            self.parent.sc_buttons[self.button_id]['config'].get('临时文件路径', ''))
                         if work_dir:
                             remote_log_path = f"{work_dir}/OneClick/Monitor/OneClickMonitor.log"
                             ssh_client.ssh.exec_command(
@@ -1157,7 +1166,11 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                     AutoCloseMessageBox("提示", f"请检查服务器配置{e}", 2000, self).exec_()
                     return
 
-                work_dir = self.parent.sc_buttons[self.button_id]['config'].get('临时文件路径', '')
+                # 规范化临时根目录（空值/Windows 路径 → 登录用户家目录），
+                # 保证 rm/脚本上传/清理脚本内的路径都是 Linux 绝对路径，
+                # 不会拼出相对路径在远端家目录下造出怪目录
+                work_dir = ssh_client.resolve_work_dir(
+                    self.parent.sc_buttons[self.button_id]['config'].get('临时文件路径', ''))
                 user_path = f"{work_dir}/OneClick/Monitor"
 
                 progress_dialog = QProgressDialog("准备中...", None, 0, 100, self)
@@ -1397,8 +1410,10 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
 
         self._operation_running = True
         self.set_all_buttons_enable(False)
-        # 从配置中获取临时文件路径
-        work_dir = self.parent.sc_buttons[self.button_id]['config'].get('临时文件路径', '')
+        # 规范化临时根目录（空值/Windows 路径 → 登录用户家目录），
+        # 保证下载链路里的远端脚本/临时目录路径都是 Linux 绝对路径
+        work_dir = ssh_client.resolve_work_dir(
+            self.parent.sc_buttons[self.button_id]['config'].get('临时文件路径', ''))
         user_path = f"{work_dir}/OneClick/Monitor"
 
         # 进度条对话框
