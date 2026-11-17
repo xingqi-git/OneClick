@@ -470,7 +470,9 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                         # 发送信号更新 UI
                         worker.info_signal.emit(("已连接", script_status, log_content))
                     except Exception as e:
-                        worker.log_signal.emit(f'检查监控状态失败: {e}')
+                        # log_signal 声明为 (消息, 级别) 两个参数，少传会在 emit 处抛
+                        # TypeError 导致轮询线程崩溃（闪断本可下轮自动重连）
+                        worker.log_signal.emit(f'检查监控状态失败: {e}', 'ERROR')
                         worker.info_signal.emit(("连接中...", "未知", ""))
                         continue
             finally:

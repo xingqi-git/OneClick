@@ -465,7 +465,9 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
                     # 发送信号更新 UI
                     worker.info_signal.emit(("已连接", script_status, nics, log_content))
                 except Exception as e:
-                    worker.log_signal.emit(f'状态检查失败: {e}')
+                    # log_signal 声明为 (消息, 级别) 两个参数，少传会在 emit 处抛
+                    # TypeError 导致状态检查线程崩溃（闪断本可下轮自动重连）
+                    worker.log_signal.emit(f'状态检查失败: {e}', 'ERROR')
                     worker.info_signal.emit(("连接中...", "未知", None, ""))
                     continue
 
