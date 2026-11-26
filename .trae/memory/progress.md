@@ -1,6 +1,10 @@
 # 当前进度与待办
 
 ## 已完成（2026-11 近期）
+- 终端回显接收循环改阻塞式读取（ssh_tools.get_output_continue）：原 sleep(0.1)+recv_ready 轮询平均引入 50ms 按键延迟、吞吐上限 40KB/s；现 channel.settimeout(0.5) 阻塞 recv + 抽干缓冲 + 增量 UTF-8 解码（修跨包乱码），空闲期 0.5s 做健康检查，超时语义保留历史 3 倍行为
+- 弱网控制窗口 + 服务器列表编辑窗口改为自动落盘（600ms 防抖，启动/停止/关闭前冲刷）：删除手动保存按钮/关闭时三问/_original_* 快照，启动与停止前冲刷防抖；服务器列表 del/clear 行需手动调度（removeRow 不触发 cellChanged），主窗口 server_cfg_dialog 不再依赖 accept 返回码
+- 弱网 sudo 提权（方案A+C）：脚本内 sudo tc + 凭据缓存，启动前三连探测（sudo 存在/密码/tc 存在）失败给明确原因，停止命令同步提权；脚本第4参数传密码（单引号包裹）
+- 更新数据（GraphWindowLogic do_update）SFTP 改 SCP 单文件下载：某现场网络策略阻断 sftp 子系统，详见 pitfalls.md
 - 快捷按钮配置通用键名迁移 + 三档自适应 + 必填键点击拦截（config_schema.py / MainWindowLogic）
 - 临时文件路径全链路收口：resolve_work_dir（ssh_tools）+ 前端五对话框校验 + 资源监控四条链路 + 弱网三条链路 + 停止监控写日志/轮询 tail
 - log_signal 双参数 emit 修复（资源监控/弱网状态轮询线程崩溃）

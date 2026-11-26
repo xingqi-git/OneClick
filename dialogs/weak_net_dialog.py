@@ -13,6 +13,11 @@ import sip
 logger = get_logger("weak_net")
 
 
+def _sh_quote(text):
+    """单引号包裹字符串，防止密码中的特殊字符破坏 shell 命令"""
+    return "'" + (text or '').replace("'", "'\\''") + "'"
+
+
 # ===================================== 弱网脚本内容 =====================================
 # 延迟用的 shell 脚本，和其他脚本类似，都是传输到服务器执行
 WEAK_NET_SH = '''#!/bin/bash
@@ -21,7 +26,8 @@ WEAK_NET_SH = '''#!/bin/bash
 NIC="$1"
 LOOP_COUNT="$2"
 LOG_FILE="$3"
-shift 3
+SUDO_PASS="$4"
+shift 4
 # 剩余参数是规则列表：每个规则9个参数，用空格分隔
 # 备份所有规则参数，便于循环中重复使用
 ALL_RULES="$*"
@@ -33,8 +39,16 @@ log() {
     echo "[$(date "+%Y-%m-%d %H:%M:%S")] $*" >> "$LOG_FILE"
 }
 
+# 缓存 sudo 凭据（root 用户 sudo 直接通过；失败则写明原因后退出）
+echo "$SUDO_PASS" | sudo -S -v 2>/dev/null
+if ! sudo -n true 2>/dev/null; then
+    log "sudo 凭据验证失败：当前用户无 sudo 权限或密码错误，弱网无法执行，脚本退出"
+    exit 1
+fi
+log "sudo 凭据验证通过"
+
 cleanup() {
-    tc qdisc del dev "$NIC" root 2>/dev/null || true
+    sudo tc qdisc del dev "$NIC" root 2>/dev/null || true
     log "弱网脚本已终止，tc规则已清除"
     exit 0
 }
@@ -88,7 +102,7 @@ while true; do
         shift 9
         
         # 先清除
-        tc qdisc del dev "$NIC" root 2>/dev/null || true
+        sudo tc qdisc del dev "$NIC" root 2>/dev/null || true
         
         # 检查是否全0（仅清除）
         has_param=0
@@ -123,15 +137,15 @@ while true; do
             
             if [ "$rate" != "0" ]; then
                 # 有带宽限制，用 htb + netem
-                tc qdisc add dev "$NIC" root handle 1: htb default 1
+                sudo tc qdisc add dev "$NIC" root handle 1: htb default 1
                 tc class add dev "$NIC" parent 1: classid 1:1 htb rate ${rate}kbit
                 if [ -n "$netem_args" ]; then
-                    tc qdisc add dev "$NIC" parent 1:1 handle 10: netem $netem_args
+                    sudo tc qdisc add dev "$NIC" parent 1:1 handle 10: netem $netem_args
                 fi
             else
                 # 只有 netem
                 if [ -n "$netem_args" ]; then
-                    tc qdisc add dev "$NIC" root netem $netem_args
+                    sudo tc qdisc add dev "$NIC" root netem $netem_args
                 fi
             fi
             log "  应用规则${rule_idx}: tc qdisc add ..."
@@ -265,10 +279,13 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
         self.restore_rules_from_config(rule_list)
         self.setup_table_validators()
 
-        # 【关键】必须在表格填充后再保存原始配置快照！！！
-        self._original_rules = self._get_table_rules()
-        self._original_loop = cfg.get('循环次数', '0')
-        self._original_nic = self.saved_nic
+        # 自动落盘：任何编辑（表格/循环次数/网卡）经 600ms 防抖后自动写配置文件，
+        # 不再需要手动点保存；回显阶段用 _suppress_auto_save 屏蔽
+        self._suppress_auto_save = True
+        self._auto_save_timer = QTimer(self)
+        self._auto_save_timer.setSingleShot(True)
+        self._auto_save_timer.setInterval(600)
+        self._auto_save_timer.timeout.connect(self.save_current_config)
 
         # 信号连接
         self.add_rule_pushButton.clicked.connect(self.add_rule_to_queue)
@@ -277,8 +294,17 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
         self.move_down_pushButton.clicked.connect(self.move_rule_down)
         self.start_pushButton.clicked.connect(self.start_weak_net)
         self.stop_pushButton.clicked.connect(self.stop_weak_net)
-        self.save_cfg_pushButton.clicked.connect(self.save_config_only)
         self.clear_local_log_pushButton.clicked.connect(self.clear_server_logs)
+
+        # 移除手动保存按钮（配置已改为自动落盘）
+        self.save_cfg_pushButton.setParent(None)
+        self.save_cfg_pushButton.deleteLater()
+
+        # 编辑信号 → 自动落盘
+        self.nic_comboBox.activated.connect(self._schedule_auto_save)  # activated 仅用户操作触发，程序刷新网卡列表不会误触发
+        self.loop_lineEdit.editingFinished.connect(self._schedule_auto_save)
+        # 回显结束，放开自动保存
+        self._suppress_auto_save = False
 
         # 关闭事件
         self.closeEvent = self.on_close_event
@@ -304,6 +330,7 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
             int(text)
         except ValueError:
             item.setText('0')
+        self._schedule_auto_save()
 
     def restore_rules_from_config(self, rule_list):
         """从配置恢复规则到表格"""
@@ -347,12 +374,14 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
     def add_rule_to_queue(self):
         """添加一行空规则"""
         self._add_rule_row()
+        self._schedule_auto_save()
 
     def del_rule_from_queue(self):
         """删除选中的行"""
         rows = sorted(set(item.row() for item in self.rule_tableWidget.selectedItems()), reverse=True)
         for row in rows:
             self.rule_tableWidget.removeRow(row)
+        self._schedule_auto_save()
 
     def move_rule_up(self):
         """选中行上移"""
@@ -363,8 +392,9 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
             item1 = self.rule_tableWidget.takeItem(current_row, col)
             item2 = self.rule_tableWidget.takeItem(current_row - 1, col)
             self.rule_tableWidget.setItem(current_row, col, item2 if item2 else QTableWidgetItem('0'))
-            self.rule_tableWidget.setItem(current_row - 1, col, item1 if item1 else QTableWidgetItem('0'))
+        self.rule_tableWidget.setItem(current_row - 1, col, item1 if item1 else QTableWidgetItem('0'))
         self.rule_tableWidget.selectRow(current_row - 1)
+        self._schedule_auto_save()
 
     def move_rule_down(self):
         """选中行下移"""
@@ -375,8 +405,9 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
             item1 = self.rule_tableWidget.takeItem(current_row, col)
             item2 = self.rule_tableWidget.takeItem(current_row + 1, col)
             self.rule_tableWidget.setItem(current_row, col, item2 if item2 else QTableWidgetItem('0'))
-            self.rule_tableWidget.setItem(current_row + 1, col, item1 if item1 else QTableWidgetItem('0'))
+        self.rule_tableWidget.setItem(current_row + 1, col, item1 if item1 else QTableWidgetItem('0'))
         self.rule_tableWidget.selectRow(current_row + 1)
+        self._schedule_auto_save()
 
     def _get_table_rules(self):
         """从表格获取所有规则"""
@@ -492,20 +523,20 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
         thread.finished.connect(on_thread_finished)
         thread.start()
 
-    def save_config_only(self):
-        """仅保存配置，不启动弱网"""
+    def _schedule_auto_save(self):
+        """任何编辑发生时调用：重置防抖定时器，600ms 无新编辑后自动落盘"""
+        if self._suppress_auto_save:
+            return
+        self._auto_save_timer.start()
+
+    def save_current_config(self):
+        """把当前界面配置写入内存并落盘"""
         cfg = self.parent.sc_buttons[self.button_id]['config']
         cfg['规则列表'] = self._get_table_rules()
         cfg['循环次数'] = self.loop_lineEdit.text()
         cfg['网卡'] = self.nic_comboBox.currentText()
-        self.saved_nic = cfg['网卡']  # 更新内存中的保存网卡
+        self.saved_nic = cfg['网卡']
         self.parent.save_config()
-        # 更新原始配置基准，避免关闭时重复提示
-        self._original_rules = self._get_table_rules()
-        self._original_loop = self.loop_lineEdit.text()
-        self._original_nic = self.saved_nic
-        AutoCloseMessageBox("提示", "配置已保存", 2000, self).exec_()
-        self._log("配置已保存")
 
     def update_status(self, status):
         """更新状态：(ssh_status, script_status, nics_list, log_content)"""
@@ -569,7 +600,6 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
     def set_all_buttons_enable(self, enable=True):
         """设置所有按钮状态 - 和资源监控一样的逻辑"""
         self.start_pushButton.setEnabled(enable)
-        self.save_cfg_pushButton.setEnabled(enable)
         self.add_rule_pushButton.setEnabled(enable)
         self.del_rule_pushButton.setEnabled(enable)
         self.move_up_pushButton.setEnabled(enable)
@@ -589,6 +619,10 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
 
     def start_weak_net(self):
         """开始弱网 - 和资源监控完全一样的逻辑"""
+        # 启动前冲刷防抖中未落盘的编辑，保证脚本用的参数与配置文件一致
+        if self._auto_save_timer.isActive():
+            self._auto_save_timer.stop()
+            self.save_current_config()
         self._operation_running = True  # 开始操作，禁止状态检查线程更新按钮
         self.set_all_buttons_enable(False)
 
@@ -650,9 +684,9 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
         user_path = f"{work_dir}/OneClick/WeakNet"
         script_path = f"{user_path}/OneClickWeakNet.sh"
 
-        # 脚本参数：nic loop_count log_path 规则参数...
-        # log_path 占位，连接后用校验过的安全路径替换（见 do_start）
-        script_args = f"{nic} {loop_count} __LOG_PATH__"
+        # 脚本参数：nic loop_count log_path sudo密码 规则参数...
+        # log_path/密码为占位符，连接后用安全路径/单引号密码替换（见 do_start）
+        script_args = f"{nic} {loop_count} __LOG_PATH__ __SUDO_PASS__"
         for rule in rule_queue:
             script_args += f" {rule.get('延迟', '0')} {rule.get('抖动', '0')} {rule.get('丢包率', '0')} {rule.get('损坏率', '0')} {rule.get('重复率', '0')} {rule.get('重排率', '0')} {rule.get('重排间隔', '0')} {rule.get('带宽', '0')} {rule.get('持续时长', '0')}"
 
@@ -668,14 +702,53 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
                     worker.info_signal.emit(("提示", "连接服务器失败"))
                     return False
 
+                # ── 弱网前置探测：tc 必须 root 权限，先确认 sudo 可用并给出明确失败原因 ──
+                if start_ssh.username == 'root':
+                    # root 直连无需 sudo 授权，只确认 tc 存在
+                    _, stdout, _ = start_ssh.ssh.exec_command("which tc 2>/dev/null")
+                    if not stdout.read().decode().strip():
+                        worker.info_signal.emit(("提示", "服务器无 tc 命令，无法模拟弱网"))
+                        start_ssh.disconnect()
+                        return False
+                else:
+                    # 1) sudo 命令是否存在
+                    _, stdout, _ = start_ssh.ssh.exec_command("which sudo 2>/dev/null")
+                    if not stdout.read().decode().strip():
+                        worker.info_signal.emit(("提示", "服务器无 sudo 命令，弱网功能无法使用（弱网需要 root 权限修改网卡）"))
+                        start_ssh.disconnect()
+                        return False
+                    # 2) sudo 密码验证（-S 从 stdin 喂密码）
+                    stdin, stdout, stderr = start_ssh.ssh.exec_command("sudo -S -v 2>&1")
+                    stdin.write(start_ssh.password + '\n')
+                    stdin.flush()
+                    sudo_err = stderr.read().decode()
+                    exit_status = stdout.channel.recv_exit_status()
+                    if exit_status != 0:
+                        if 'sudoers' in sudo_err.lower():
+                            worker.info_signal.emit(("提示", "当前用户无 sudo 权限，弱网功能无法使用"))
+                        else:
+                            worker.info_signal.emit(("提示", f"sudo 验证失败：{sudo_err.strip() or '密码验证不通过'}"))
+                        start_ssh.disconnect()
+                        return False
+                    # 3) tc 命令是否存在（用 sudo 路径查，覆盖 /sbin）
+                    stdin, stdout, _ = start_ssh.ssh.exec_command("sudo -S which tc 2>/dev/null")
+                    stdin.write(start_ssh.password + '\n')
+                    stdin.flush()
+                    if not stdout.read().decode().strip():
+                        worker.info_signal.emit(("提示", "服务器无 tc 命令，无法模拟弱网"))
+                        start_ssh.disconnect()
+                        return False
+
                 # 校验/规范化临时根目录（空值/Windows 路径 → 家目录），
                 # 脚本目录与日志路径都基于安全路径，避免造出相对路径怪目录
                 safe_base = start_ssh.resolve_work_dir(work_dir)
                 user_path = f"{safe_base}/OneClick/WeakNet"
                 script_path = f"{user_path}/OneClickWeakNet.sh"
                 remote_log_path = f"{user_path}/OneClickWeakNet.log"
-                # 用安全日志路径替换占位符
-                safe_script_args = script_args.replace('__LOG_PATH__', remote_log_path)
+                # 用安全日志路径替换占位符，sudo 密码单引号包裹防止特殊字符破坏命令
+                safe_script_args = (script_args
+                                    .replace('__LOG_PATH__', remote_log_path)
+                                    .replace('__SUDO_PASS__', _sh_quote(start_ssh.password)))
 
                 # 创建远程目录
                 start_ssh.ssh.exec_command(f"mkdir -p {user_path}")
@@ -714,15 +787,24 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
                 pid = stdout.read().decode().strip()
                 err = stderr.read().decode().strip()
 
-                start_ssh.disconnect()
-
                 if err:
                     worker.info_signal.emit(("提示", f"执行指令失败{err}"))
+                    start_ssh.disconnect()
                     return False
-                if pid.isdigit():
-                    return True
-                else:
+                if not pid.isdigit():
+                    start_ssh.disconnect()
                     return False
+
+                # 脚本启动后若 sudo 验证失败会立刻退出并写失败日志，稍候确认一次，
+                # 避免进程拿到 PID 但实际没干活的"假启动"
+                time.sleep(1.5)
+                _, stdout, _ = start_ssh.ssh.exec_command(f"tail -n 5 {remote_log_path} 2>/dev/null")
+                log_tail = stdout.read().decode()
+                start_ssh.disconnect()
+                if 'sudo 凭据验证失败' in log_tail:
+                    worker.info_signal.emit(("提示", "弱网启动失败：sudo 凭据验证不通过（用户无 sudo 权限或密码不符），详见弱网日志"))
+                    return False
+                return True
             except Exception as e:
                 worker.info_signal.emit(("提示", f"执行指令失败: {e}"))
                 try:
@@ -735,16 +817,6 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
             if result:
                 AutoCloseMessageBox("提示", "弱网已经开始，关闭软件不会停止弱网", 2000, self, 'start_weak_net').exec_()
                 self._log("弱网脚本已启动")
-                # 保存配置
-                cfg['规则列表'] = self._get_table_rules()
-                cfg['循环次数'] = self.loop_lineEdit.text()
-                cfg['网卡'] = self.nic_comboBox.currentText()
-                self.saved_nic = cfg['网卡']  # 更新内存中的保存网卡
-                self.parent.save_config()
-                # 更新原始配置基准，避免关闭时重复提示
-                self._original_rules = self._get_table_rules()
-                self._original_loop = self.loop_lineEdit.text()
-                self._original_nic = self.saved_nic
             else:
                 # 失败情况（普通提示框已由 worker.info_signal 弹出），手动启用按钮
                 self._operation_running = False
@@ -777,6 +849,10 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
 
     def stop_weak_net(self):
         """停止弱网 - 和资源监控完全一样的逻辑"""
+        # 停止前冲刷防抖中未落盘的编辑，保证清理用的网卡名与界面一致
+        if self._auto_save_timer.isActive():
+            self._auto_save_timer.stop()
+            self.save_current_config()
         self._operation_running = True  # 开始操作，禁止状态检查线程更新按钮
         self.set_all_buttons_enable(False)
 
@@ -812,9 +888,16 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
                     if pid.isdigit():
                         stop_ssh.ssh.exec_command(f"kill -9 {pid}")
 
-                # 清除 tc 规则
+                # 清除 tc 规则（规则是脚本以 sudo(root) 加的，普通用户删不掉，同样提权）
                 if nic:
-                    stop_ssh.ssh.exec_command(f"tc qdisc del dev {nic} root 2>/dev/null || true")
+                    if stop_ssh.username == 'root':
+                        stop_ssh.ssh.exec_command(f"tc qdisc del dev {nic} root 2>/dev/null || true")
+                    else:
+                        stdin, stdout, stderr = stop_ssh.ssh.exec_command(
+                            f"sudo -S tc qdisc del dev {nic} root 2>/dev/null || true")
+                        stdin.write(stop_ssh.password + '\n')
+                        stdin.flush()
+                        stdout.read()
 
                 # 手动写停止日志
                 stop_ssh.ssh.exec_command(
@@ -956,47 +1039,16 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
     def message_info_box(self, data):
         QMessageBox.information(self, data[0], data[1], QMessageBox.StandardButton.Ok)
 
-    def is_config_changed(self):
-        """检查配置是否被修改"""
-        # 检查规则是否变化
-        current_rules = self._get_table_rules()
-        rules_changed = (current_rules != self._original_rules)
-        # 检查循环次数是否变化
-        loop_changed = (self.loop_lineEdit.text() != self._original_loop)
-        # 检查网卡是否变化
-        nic_changed = (self.nic_comboBox.currentText() != self._original_nic)
-        return rules_changed or loop_changed or nic_changed
-
-    def save_current_config(self):
-        """保存当前配置（不提示）"""
-        cfg = self.parent.sc_buttons[self.button_id]['config']
-        cfg['规则列表'] = self._get_table_rules()
-        cfg['循环次数'] = self.loop_lineEdit.text()
-        cfg['网卡'] = self.nic_comboBox.currentText()
-        self.saved_nic = cfg['网卡']
-        self.parent.save_config()
-
     def on_close_event(self, event):
         if not self._can_close:
             event.ignore()  # 忽略关闭事件
             self.message_info_box(("提示", "操作中，请稍后"))
             return
 
-        # 检查配置是否修改
-        if self.is_config_changed():
-            reply = QMessageBox.question(
-                self, "提示",
-                "配置已修改，是否保存修改并退出？",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
-                QMessageBox.StandardButton.Yes
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self.save_current_config()
-                self._log("配置已保存")
-            elif reply == QMessageBox.StandardButton.Cancel:
-                event.ignore()
-                return
-            # No 的话直接继续退出
+        # 防抖定时器里可能还有未落盘的编辑，关闭前立即落盘
+        if self._auto_save_timer.isActive():
+            self._auto_save_timer.stop()
+            self.save_current_config()
 
         # 安全结束监控线程
         if self.work_thread_id is not None and self.work_thread_id in self.parent.sc_threads:
@@ -1067,7 +1119,6 @@ class AutoCloseMessageBox(QMessageBox):
                 # 开始弱网完成
                 self._parent_dialog.start_pushButton.setEnabled(True)
                 self._parent_dialog.stop_pushButton.setEnabled(True)
-                self._parent_dialog.save_cfg_pushButton.setEnabled(True)
                 self._parent_dialog.add_rule_pushButton.setEnabled(True)
                 self._parent_dialog.del_rule_pushButton.setEnabled(True)
                 self._parent_dialog.move_up_pushButton.setEnabled(True)
@@ -1079,7 +1130,6 @@ class AutoCloseMessageBox(QMessageBox):
                 # 停止弱网完成
                 self._parent_dialog.start_pushButton.setEnabled(True)
                 self._parent_dialog.stop_pushButton.setEnabled(False)
-                self._parent_dialog.save_cfg_pushButton.setEnabled(True)
                 self._parent_dialog.add_rule_pushButton.setEnabled(True)
                 self._parent_dialog.del_rule_pushButton.setEnabled(True)
                 self._parent_dialog.move_up_pushButton.setEnabled(True)

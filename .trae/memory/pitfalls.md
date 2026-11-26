@@ -29,6 +29,20 @@
 ## 本地复现不了、测试机才出现的问题
 - 例：分组标签栏箭头压标签（本地源码 OK）。疑因：测试机 DPI 缩放 + 分组栏独有的 setStyleSheet（QStyleSheetStyle 几何随主题变化）。教训：环境差异类 bug 先找"该组件独有因素"再改代码，拿不到截图不盲改。
 
+## 终端颜色渲染失效（只有粗细深浅，无彩色）
+- 现象：终端里 `ls --color=always` 目录/文件只有亮暗差别，没有红蓝绿彩色。
+- 根因：本项目 pyte 版本的 `Char.fg/bg` 只存三种**字符串**——`"default"`、基础 8 色色名（`"red"`/`"brown"` 及 `"bright*"` 变体）、256 色与真彩色统一存为不带 `#` 的 `"rrggbb"` 六位十六进制串；而 `_resolve_fg/_resolve_bg` 只处理了 `default`/int/tuple 三种形态（int/tuple 在该版本是死分支），色名和 rrggbb 串全部掉进兜底灰色，只剩粗体生效。
+- 修法：`_resolve_color` 统一解析：色名查标准 16 色表（粗体+基础色提升为亮色变体，对齐主流终端），6 位十六进制串加 `#` 前缀，其余兜底。教训：接入第三方库前先查该版本字段的**实际取值形态**，不要按想象中的 API 写分支。
+
+## 现场网络策略阻断 SFTP 子系统（Channel closed）
+- 现象：某现场电脑 2026-11-23 09:05 起，绘图窗口「更新数据」100% 失败 `Channel closed`，且跨 3 台服务器（243/246/250）同时出现；失败文件名各不相同=各自列表字母序第一个（下载循环失败即中止）。
+- 根因：网络新上的安全设备只放行 exec 和 scp、掐掉 sftp 子系统通道；同连接上 exec_command 正常、SCP（下载数据/get_files）正常、open_sftp 秒挂。诊断方法：按服务器 IP 关联日志找"分水岭时刻"、对比同一时段 sftp 与 scp 两条路径表现。
+- 修法：更新数据改走 SCP 单文件下载。教训：项目传输约定是 SCP（send_files/get_files 一律 SCP），散装小操作不要随手用 open_sftp，先对齐约定。
+- 通用排查思路：`Channel closed` 类错误先分清是服务器问题还是客户端网络问题——多台服务器同时刻开始失败 = 客户端网络侧变化。
+
+## Windows 非法文件名（冒号）写本地失败
+- 服务器端合法文件名含 `:`（如 `u40:3-flush-252:0_2450854.log`）下载到 NTFS 报 `[Errno 22] Invalid argument`。Linux 合法、Windows 非法的字符冲突，未修（罕见场景）。
+
 ## 环境备忘
 - 打包：`pyinstaller OneClick.spec --clean`；venv 解释器 `d:/github/OneClick/.venv/Scripts/python.exe`；PowerShell 5 不支持 `&&`，用 `;` 或 `$LASTEXITCODE`。
 - GUI 程序（PyQt）会占住终端：AI 只跑非阻塞检查（py_compile/冒烟/AST），界面验证由用户手动 `run.bat`。

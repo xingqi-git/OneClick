@@ -21,6 +21,7 @@
 - 分组/终端两处 QTabWidget 均换用；分组栏**不要 setStyleSheet**（会让 QTabBar 走 QStyleSheetStyle 渲染路径，几何随系统主题/DPI 变化，曾在测试机复现箭头压标签），corner「+」容器父对象设为 tabWidget 与终端栏一致。
 
 ## 其他
+- 绘图窗口「更新数据」的单文件下载改走 SCP（GraphWindowLogic do_update），与主传输约定一致；不加 sftp/scp 降级（用户明确要求，全项目无降级机制）。背景：2026-11-23 起某现场网络策略阻断 sftp 子系统（exec/SCP 正常），导致 sftp 版更新数据全挂，详见 pitfalls.md。
 - 版本号固定 Windows 四段式 `2.5.0.0`（version.py），spec 直接 split 转元组，格式错立即报错。
 - 绘图保存默认文件名 = 标签页名（GraphWindowLogic `_NamedCanvas.get_default_filename`）；节点树勾选复选框自动切标签+选节点。
 - 记事本窗口尺寸持久化（键：窗口宽度/窗口高度，默认 480×360，resizeEvent 400ms 防抖）。

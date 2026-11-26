@@ -50,7 +50,6 @@ class SetServerDialog(QDialog, edit_servers_dlg.Ui_Dialog):
         self.copy_pushButton.clicked.connect(self.copy_item)
         self.del_pushButton.clicked.connect(self.del_item)
         self.clear_pushButton.clicked.connect(self.clear_table)
-        self.save_pushButton.clicked.connect(self.save_table)
         self.close_pushButton.clicked.connect(self.close)
 
         # 排序按钮：动态插入到"清空"与弹簧之间（不改 pyuic5 生成的 UI 文件）
@@ -61,6 +60,43 @@ class SetServerDialog(QDialog, edit_servers_dlg.Ui_Dialog):
         self.horizontalLayout.insertWidget(5, self.down_pushButton)
         self.up_pushButton.clicked.connect(self.move_up)
         self.down_pushButton.clicked.connect(self.move_down)
+
+        # 移除手动保存按钮（表格编辑改为自动落盘）
+        self.save_pushButton.setParent(None)
+        self.save_pushButton.deleteLater()
+
+        # 自动落盘：表格编辑（单元格修改/增删/移动）经 600ms 防抖后
+        # 同步到主窗口服务器列表并写配置文件；初始填充在连接信号之前，不会误触发
+        self._auto_save_timer = QtCore.QTimer(self)
+        self._auto_save_timer.setSingleShot(True)
+        self._auto_save_timer.setInterval(600)
+        self._auto_save_timer.timeout.connect(self._sync_to_parent)
+        self.tableWidget.cellChanged.connect(self._schedule_auto_save)
+
+    def _schedule_auto_save(self):
+        """表格有编辑时调用：重置防抖定时器，600ms 无新编辑后自动落盘"""
+        self._auto_save_timer.start()
+
+    def _sync_to_parent(self):
+        """把表格内容同步到主窗口服务器列表并落盘"""
+        col_count = self.tableWidget.columnCount()
+        self.parent.servers_cfg.clear()
+        for row in range(self.tableWidget.rowCount()):
+            row_data = {}
+            for col in range(col_count):
+                item = self.tableWidget.item(row, col)
+                header = self.tableWidget.horizontalHeaderItem(col).text()
+                row_data[header] = item.text() if item else ""
+            self.parent.servers_cfg.append(row_data)
+        self.parent.update_server_combobox()
+        self.parent._save_config_auto()
+
+    def closeEvent(self, event):
+        # 关闭前冲刷防抖中未落盘的编辑
+        if self._auto_save_timer.isActive():
+            self._auto_save_timer.stop()
+            self._sync_to_parent()
+        event.accept()
 
     def add_item(self):
         row_count = self.tableWidget.rowCount()
@@ -97,6 +133,7 @@ class SetServerDialog(QDialog, edit_servers_dlg.Ui_Dialog):
         # 遍历删除选中行
         for row in selected_rows:
             self.tableWidget.removeRow(row)
+        self._schedule_auto_save()  # removeRow 不触发 cellChanged，手动调度
 
     def _current_row(self):
         """当前选中行：优先 currentRow，其次选中区域的首行；无选中返回 -1"""
@@ -140,23 +177,4 @@ class SetServerDialog(QDialog, edit_servers_dlg.Ui_Dialog):
         result = confirm_dialog.exec_()
         if result == QMessageBox.StandardButton.Yes:
             self.tableWidget.setRowCount(0)
-
-    def save_table(self):
-        # 获取表格总行数
-        row_count = self.tableWidget.rowCount()
-        # 获取表格总列数
-        col_count = self.tableWidget.columnCount()
-
-        self.parent.servers_cfg.clear()
-        # 遍历每行获取数据
-        for row in range(row_count):
-            row_data = {}
-            for col in range(col_count):
-                item = self.tableWidget.item(row, col)
-                if item:
-                    row_data[self.tableWidget.horizontalHeaderItem(col).text()] = item.text()
-                else:
-                    row_data[self.tableWidget.horizontalHeaderItem(col).text()] = ""
-            self.parent.servers_cfg.append(row_data)
-        self.parent.update_server_combobox()
-        self.accept()
+            self._schedule_auto_save()  # removeRow 不触发 cellChanged，手动调度

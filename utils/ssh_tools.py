@@ -2,6 +2,8 @@ import time
 import os
 import re
 import shutil
+import socket
+import codecs
 from utils.windows_tools import WindowsTools
 from utils.logger import get_logger
 
@@ -252,10 +254,16 @@ class SSHTools(object):
             logger.warning("未连接到服务器，请先连接。")
             return False
         try:
-            timeout_count = 0
+            CHECK_INTERVAL = 0.5  # 阻塞读超时=空闲期健康检查周期
+            idle = 0.0            # 连续无数据累计时长
             logger.debug("回显接收循环开始: raw=%s, timeout=%s", raw, timeout)
+            # 阻塞式读取：数据到达即刻返回（按键回显零等待，替代旧的
+            # sleep(0.1)+recv_ready 轮询，旧方案平均引入 50ms、最坏 100ms 延迟）
+            self.channel.settimeout(CHECK_INTERVAL)
+            # 增量 UTF-8 解码器：TCP 段可能在多字节字符中间截断，
+            # 逐包独立 decode 会产生替换符乱码；增量解码保留残缺尾部到下一包
+            utf8_decoder = codecs.getincrementaldecoder('utf-8')('replace')
             while True:
-                time.sleep(0.1)
                 if self.channel is None:
                     logger.debug("channel 已置空，回显接收循环退出")
                     break
@@ -270,39 +278,52 @@ class SSHTools(object):
                     logger.info("通道已被关闭（服务器空闲超时/主动断开），回显接收循环退出")
                     break
                 try:
-                    if self.channel.recv_ready():
-                        output_bytes = self.channel.recv(4096)
-                        # EOF：对端关闭写方向，recv 返回空串
-                        if not output_bytes:
+                    try:
+                        output_bytes = self.channel.recv(65536)  # 阻塞至多 CHECK_INTERVAL 秒
+                    except socket.timeout:
+                        # 空闲期：无数据，做周期性健康检查
+                        output_bytes = b''
+                    if output_bytes:
+                        # 数据到达：把缓冲区一次抽干再合并上屏，
+                        # 大突发（cat 大文件等）不被 4KB/0.1s 的旧节流拖慢
+                        chunks = [output_bytes]
+                        while self.channel.recv_ready():
+                            chunks.append(self.channel.recv(65536))
+                        payload = b''.join(chunks)
+                        if not payload:
                             logger.debug("收到 EOF，回显接收循环退出")
                             break
                         if raw:
                             # 原始模式：直接发字符串（带 \r\n 和 ANSI），给 pyte 处理
-                            output = output_bytes.decode('utf-8', errors='replace')
+                            output = utf8_decoder.decode(payload)
                             if echo_signal is not None:
                                 echo_signal.emit(output)
                         else:
-                            output = output_bytes.decode().strip()
+                            output = payload.decode().strip()
                             output = self.purify_output(output, False)
 
                             if echo_signal is not None:
                                 echo_signal.emit(output)
 
-                        timeout_count = 0  # 重置超时计数器
+                        idle = 0.0  # 有数据，重置空闲计时
                     else:
                         # 无数据可读但对端已发 EOF：纯 EOF 场景在这里退出，
                         # 有缓冲数据时先读完（recv_ready 为 True）再走到这
                         if self.channel.eof_received:
                             logger.info("收到通道 EOF（服务器空闲超时/主动断开），回显接收循环退出")
                             break
-                        timeout_count += 1
-                        # 无数据超时退出
-                        if timeout is not None and timeout_count > timeout * 30:
+                        idle += CHECK_INTERVAL
+                        # 无数据超时退出（保留历史行为：实际等待 timeout×3 秒）
+                        if timeout is not None and idle > timeout * 3:
                             logger.info(f"超时({timeout}秒)无内容，回显退出")
                             break
-                except (AttributeError, EOFError):
+                except EOFError:
+                    # 对端关闭写方向且缓冲已空：阻塞 recv 直接抛 EOFError
+                    logger.info("收到通道 EOF（服务器空闲超时/主动断开），回显接收循环退出")
+                    break
+                except (AttributeError, OSError) as e:
                     # 断开操作把 channel 设为 None 时，直接退出
-                    logger.debug("接收中 channel 失效，回显接收循环退出")
+                    logger.debug("接收中 channel 失效，回显接收循环退出: %s", e)
                     break
             logger.debug("回显接收循环结束")
             return True

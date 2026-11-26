@@ -10,6 +10,7 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 import matplotlib.pyplot as plt
 import matplotlib.text
 from utils.graph_data_tools import Worker
+from scp import SCPClient
 
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
@@ -1548,9 +1549,10 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                     except Exception:
                         pass
                     try:
-                        sftp = ssh_client.ssh.open_sftp()
-                        sftp.get(remote_file, local_file)
-                        sftp.close()
+                        # 与项目主传输约定一致，单文件下载走 SCP（scp 命令走 exec 通道，
+                        # 不依赖 sftp 子系统——后者可能被网络策略单独阻断导致 Channel closed）
+                        with SCPClient(ssh_client.transport) as client:
+                            client.get(remote_file, local_file)
                     except Exception as e:
                         ssh_client.disconnect()
                         logger.error("更新数据失败：下载 %s 出错: %s", fname, e)

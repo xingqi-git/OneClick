@@ -45,6 +45,9 @@ def _color_256(n):
     return '#{:02X}{:02X}{:02X}'.format(gray, gray, gray)
 
 
+# pyte 基础 8 色色名（SGR 30-37 / 40-47），索引即标准色编号
+_ANSI_BASIC = ['black', 'red', 'green', 'brown', 'blue', 'magenta', 'cyan', 'white']
+
 _DEFAULT_FG = '#E5E5E5'
 _DEFAULT_BG = '#1E1E1E'
 _HISTORY_LINES = 2000
@@ -764,25 +767,37 @@ class TerminalWidget(QtWidgets.QAbstractScrollArea):
             col_pos += w
 
     def _resolve_fg(self, char):
-        if char.fg == 'default':
-            return _DEFAULT_FG
-        if isinstance(char.fg, int):
-            return _color_256(char.fg)
-        # 真彩色 (256, R, G, B) 元组
-        if isinstance(char.fg, (tuple, list)) and len(char.fg) >= 4:
-            r, g, b = char.fg[1], char.fg[2], char.fg[3]
-            return '#{:02X}{:02X}{:02X}'.format(r, g, b)
-        return _DEFAULT_FG
+        return self._resolve_color(char.fg, _DEFAULT_FG, char.bold)
 
     def _resolve_bg(self, char):
-        if char.bg == 'default':
-            return _DEFAULT_BG
-        if isinstance(char.bg, int):
-            return _color_256(char.bg)
-        if isinstance(char.bg, (tuple, list)) and len(char.bg) >= 4:
-            r, g, b = char.bg[1], char.bg[2], char.bg[3]
-            return '#{:02X}{:02X}{:02X}'.format(r, g, b)
-        return _DEFAULT_BG
+        return self._resolve_color(char.bg, _DEFAULT_BG)
+
+    def _resolve_color(self, value, fallback, bold=False):
+        """把 pyte 的颜色属性解析为 #RRGGBB。
+
+        本项目 pyte 版本中 Char.fg/bg 只会是字符串：
+        - "default"：默认前景/背景
+        - 基础 8 色色名（"red" 等）及 aixterm 亮色变体（"brightred" 等）
+        - 256 色与 24bit 真彩色统一存为不带 # 的 "rrggbb" 六位十六进制字符串
+        """
+        if value == 'default' or not isinstance(value, str):
+            return fallback
+        # 基础 8 色；粗体时按主流终端习惯提升为亮色变体（如粗体蓝目录 → 亮蓝）
+        if value in _ANSI_BASIC:
+            idx = _ANSI_BASIC.index(value)
+            if bold:
+                idx += 8
+            return _color_256(idx)
+        if value.startswith('bright') and value[6:] in _ANSI_BASIC:
+            return _color_256(_ANSI_BASIC.index(value[6:]) + 8)
+        # 256 色与真彩色的 "rrggbb" 字符串
+        if len(value) == 6:
+            try:
+                int(value, 16)
+                return '#' + value
+            except ValueError:
+                pass
+        return fallback
 
     # ===================== 选中文本 =====================
 

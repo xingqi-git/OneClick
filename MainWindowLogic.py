@@ -662,12 +662,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
     def server_cfg_dialog(self):
         s_cfg_dlg = SetServerDialog(parent=self)
-        # 显示弹出窗口（模态显示，阻止操作主窗口）
-        if s_cfg_dlg.exec_() == QtWidgets.QDialog.DialogCode.Accepted:
-            self.update_run_info('服务器列表编辑 成功')
-            self._save_config_auto()
-        else:
-            self.update_run_info('服务器列表编辑 取消')
+        # 模态显示；表格编辑已自动同步并落盘，无需再根据返回码处理
+        s_cfg_dlg.exec_()
 
     # ---- 按钮类型颜色映射（不含红色） ----
     BUTTON_COLOR_MAP = {
@@ -2237,6 +2233,15 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             c_result = ssh_tool.connect()
             if not c_result:
                 return False
+            # 注入彩色提示符（对齐 MobaXterm 效果，所有服务器通用、零服务器侧改动）：
+            # 用户名绿色、主机名粉色、路径青色；执行后清屏，注入回显不留痕迹。
+            # 本连接的终端专用通道，注入不影响快捷按钮等其它功能（那些用独立 SSHTools）
+            try:
+                ssh_tool.channel.send(
+                    "export PS1='\\[\\e[32m\\][\\u\\[\\e[0m\\]@\\[\\e[35m\\]\\h"
+                    "\\[\\e[0m\\] \\W]\\$ '; printf '\\033[2J\\033[H'\n".encode('utf-8'))
+            except Exception:
+                pass  # 注入失败不影响正常终端使用
             worker.info_signal.emit(('断开', True))
             self.logger.info("[%s] 终端接收线程启动（持续读取服务器回显）", name)
             g_result = ssh_tool.get_output_continue(
