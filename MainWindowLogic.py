@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import QThread, QTimer
@@ -169,10 +170,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.menu_4.addAction(self.about_action)
         self.about_action.triggered.connect(self.show_about_dialog)
 
-        # 创建按钮逻辑
-        self.stop_pushButton.clicked.connect(self.stop_sc)
-        self.clean_pushButton.clicked.connect(self.clean_linux_print)
-
         # ---- 替换 scrollArea_2 为 QTabWidget（分组标签页） ----
         self.group_tabWidget = QTabWidget(self.centralwidget)
         # 先换标签栏，避免标签溢出时滚动箭头压住标签（须在信号接线之前）
@@ -204,21 +201,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.verticalLayout.removeWidget(self.scrollArea_2)
         self.scrollArea_2.deleteLater()
         self.verticalLayout.insertWidget(idx_scroll, self.group_tabWidget)
-
-        # ---- 在"结束所有"按钮旁边添加"开始所有"按钮，大小保持一致 ----
-        self.execute_all_btn = QPushButton("开始所有", self.centralwidget)
-        self.execute_all_btn.clicked.connect(self.execute_all_buttons)
-        # 统一两个按钮的大小：取两个按钮sizeHint的最大值作为固定宽度
-        from PyQt5.QtWidgets import QSizePolicy
-        w1 = self.stop_pushButton.fontMetrics().boundingRect("结束所有").width() + 20
-        w2 = self.execute_all_btn.fontMetrics().boundingRect("开始所有").width() + 20
-        fixed_w = max(w1, w2, 80)
-        self.stop_pushButton.setFixedWidth(fixed_w)
-        self.execute_all_btn.setFixedWidth(fixed_w)
-        self.stop_pushButton.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.execute_all_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        # horizontalLayout 中 stop_pushButton 在 index 2，在它前面插入
-        self.horizontalLayout.insertWidget(2, self.execute_all_btn)
 
         # ---- 分组管理 ----
         # _groups: {'分组名': {'tab_index':, 'buttons': [button_id,...], 'scroll_area':, 'button_container':, 'button_layout':, 'select_all_btn':, 'execute_selected_btn':, 'stop_group_btn':}}
@@ -395,9 +377,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(5)
 
-        # 终端标题行（原 horizontalLayout_2）从 verticalLayout_2 取出
-        self.verticalLayout_2.removeItem(self.horizontalLayout_2)
-        right_layout.addLayout(self.horizontalLayout_2)
         right_layout.addWidget(self.terminal_tabs, 1)
 
         # 3. 主 splitter：左 | 中 | 右
@@ -420,16 +399,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         # 外层 splitter 填满 gridLayout_2
         self.gridLayout_2.addWidget(self.outer_splitter, 0, 0, 2, 2)
 
-        # "服务器回显" 标签改为 "终端"
-        self.linux_print_label.setText("终端")
-
-        # ---- 统一四个区域标题样式：加粗 + 统一高度 ----
-        title_style = "font-weight: bold; font-size: 13px; padding: 4px 0;"
-        for lbl in (self.label, self.run_info_label, self.linux_print_label):
-            lbl.setStyleSheet(title_style)
-        # 远程文件标题也统一样式
-        self.file_browser.set_title_style(title_style)
-
         # 终端标签页信号：关闭标签、切换激活标签
         self.terminal_tabs.tabCloseRequested.connect(self._on_tab_close_requested)
         self.terminal_tabs.currentChanged.connect(self._on_active_tab_changed)
@@ -443,17 +412,6 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.file_browser.download_requested.connect(self._fb_download)
         self.file_browser.open_file_requested.connect(self._fb_open_file)  # 双击远程文件→下载打开
         self.file_browser.open_with_requested.connect(self._fb_open_with)  # 右键"打开方式..."→选择程序打开
-
-        # 指令管理按钮：放在终端标题行"清屏"按钮旁（指令是全局的，不属于任何标签）
-        self.cmd_manage_button = QtWidgets.QPushButton("指令管理", self.centralwidget)
-        self.cmd_manage_button.setObjectName("cmd_manage_button")
-        self.cmd_manage_button.clicked.connect(self.open_cmd_manage_dialog)
-        self.cmd_manage_button.setMinimumWidth(120)
-        self.cmd_manage_button.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
-        # 插到"清屏"按钮前面（清屏是标题行最后一个控件）
-        self.horizontalLayout_2.insertWidget(
-            self.horizontalLayout_2.count() - 1, self.cmd_manage_button)
 
         # 如果有默认配置文件，则获取
         if os.path.exists(self.default_config_path):
@@ -721,22 +679,21 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if group_name in self._groups:
             self.update_run_info(f'分组<{group_name}>已存在', 'WARNING')
             return
-        # 创建标签页内容
+        # 创建标签页内容（紧凑边距，压掉 Qt 默认 9px margins / 6px spacing）
         tab_page = QWidget()
         tab_layout = QVBoxLayout(tab_page)
         tab_layout.setContentsMargins(2, 2, 2, 2)
         tab_layout.setSpacing(2)
+        tab_layout.setContentsMargins(2, 2, 2, 2)
+        tab_layout.setSpacing(2)
 
-        # 工具栏：全选 / 执行选中 / 停止选中 / 删除选中
+        # 工具栏：全选 / 执行选中 / 停止选中 / 删除选中（高度走默认，与主界面其他按钮一致）
         toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(2, 2, 2, 2)
         select_all_btn = QPushButton("全选")
-        select_all_btn.setFixedHeight(28)
         execute_selected_btn = QPushButton("执行选中")
-        execute_selected_btn.setFixedHeight(28)
         stop_group_btn = QPushButton("停止选中")
-        stop_group_btn.setFixedHeight(28)
         delete_selected_btn = QPushButton("删除选中")
-        delete_selected_btn.setFixedHeight(28)
         toolbar.addWidget(select_all_btn)
         toolbar.addWidget(execute_selected_btn)
         toolbar.addWidget(stop_group_btn)
@@ -1524,6 +1481,23 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             local_path = self.get_default_path() + '/' + current_time + '-' + sc_cfg['IP']
             os.mkdir(local_path)
 
+        # 打包下载配置（旧配置经 normalize 已补默认，此处 .get 兜底）
+        pack_enable = bool(sc_cfg.get('打包下载', False))
+        archive_name = ''
+        if pack_enable:
+            current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            # 默认串精确匹配渲染为「时间-IP.tar」（打包不压缩，禁止 .tar.gz 名不副实；
+            # 兼容旧版默认串 .tar.gz，同样落为 .tar）
+            template = str(sc_cfg.get('打包文件名') or '').strip() or '当前时间_IP.tar'
+            if template in ('当前时间_IP.tar', '当前时间_IP.tar.gz'):
+                archive_name = f"{current_time}-{sc_cfg['IP']}.tar"
+            else:
+                archive_name = template.replace('{时间}', current_time).replace('{IP}', sc_cfg['IP'])
+            if re.search(r'[\\/:*?"<>|]', archive_name):
+                self.update_run_info(f'<{button_name}> 打包文件名含 Windows 非法字符: {archive_name}', 'ERROR')
+                self.set_button_executing(button_id, False)
+                return
+
         def execute_get_files():
             c_result = ssh_tool.connect()
             if not c_result:
@@ -1532,7 +1506,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             def get_progress_cb(phase, current, total, extra=''):
                 log_progress(self.logger, phase, current, total, extra)
 
-            g_result = ssh_tool.get_files(source_items, local_path, work_dir=work_dir if work_dir else None, progress_cb=get_progress_cb)
+            g_result = ssh_tool.get_files(source_items, local_path, work_dir=work_dir if work_dir else None,
+                                          progress_cb=get_progress_cb,
+                                          pack=pack_enable, archive_name=archive_name)
 
             ssh_tool.disconnect()
 
@@ -1788,6 +1764,17 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         if phase == 'find':
             return f'{prefix}查找中... 找到{tot}个文件'
 
+        if phase == 'pack':
+            # 服务器端 tar 打包：extra 直接是展示文本
+            if tot > 0:
+                return f'{prefix}打包中... ({int(cur * 100 / tot)}%) {extra}'
+            return f'{prefix}打包中... {extra}'
+
+        if phase == 'extract':
+            if tot > 0:
+                return f'{prefix}解包中... {cur}/{tot} ({int(cur * 100 / tot)}%)  {extra}'
+            return f'{prefix}解包中... {extra}'
+
         if phase == 'upload':
             # 文件浏览器上传：简洁格式；快捷按钮发送文件：详细格式（extra 5段）
             if op_id.startswith('fb_upload') or len(extra_parts) < 5:
@@ -1818,16 +1805,21 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             # 本地文件复制(windows_tools)：extra 直接是展示文本
             if extra and '总进度' in extra:
                 return f'{prefix}复制中... {extra}'
-            # 远程下载前的临时目录复制：extra 是远程路径
-            if extra:
-                cur_name = extra.split('/')[-1] if '/' in extra else extra
-                if tot > 0:
-                    return f'{prefix}复制中... {cur}/{tot} ({int(cur * 100 / tot)}%)  {cur_name}'
             if tot > 0:
                 return f'{prefix}复制中... {cur}% ({cur}/{tot})'
             return None
 
         if phase == 'download':
+            if op_id.startswith('fb_download') and len(extra_parts) >= 5:
+                # 文件浏览器直传：extra = 名称|文件大小|已传|序号|总数，无总体百分比（大小未知）
+                cur_name = os.path.basename(extra_parts[0])
+                cur_size = to_int(extra_parts[1])
+                cur_sent = to_int(extra_parts[2])
+                file_idx = to_int(extra_parts[3])
+                total_files = to_int(extra_parts[4])
+                cur_pct = int(cur_sent * 100 / cur_size) if cur_size > 0 else 0
+                return (f'{prefix}下载中... 文件{file_idx + 1}/{total_files}: '
+                        f'{cur_name} {cur_pct}% ({cur_size / 1048576:.1f}MB)')
             if tot > 0:
                 pct = int(cur * 100 / tot)
                 total_mb = tot / 1048576
@@ -2149,9 +2141,16 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         combo.setToolTip("选择要连接的服务器")
         btn = QtWidgets.QPushButton('连接', page)
         btn.setFixedWidth(90)
+        cmd_btn = QtWidgets.QPushButton('指令管理', page)
+        clean_btn = QtWidgets.QPushButton('清屏', page)
         top_bar.addWidget(combo)
         top_bar.addWidget(btn)
         top_bar.addStretch()
+        top_bar.addWidget(cmd_btn)
+        top_bar.addWidget(clean_btn)
+        # 指令管理是全局弹窗；清屏只清本标签终端（捕获 conn 防晚绑定）
+        cmd_btn.clicked.connect(self.open_cmd_manage_dialog)
+        clean_btn.clicked.connect(lambda _checked, c=conn: self.clean_terminal_conn(c))
         page_layout.addWidget(top_widget)
         terminal = TerminalEdit(page)
         page_layout.addWidget(terminal, 1)
@@ -2432,73 +2431,180 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         self.sc_threads[thread_name] = {"thread": thread, "worker": worker}
         thread.start()
 
-    def _fb_download(self, remote_paths, local_dir):
-        """文件浏览器：下载远程文件/文件夹到本地"""
+    def _fb_download(self, remote_items, local_dir):
+        """文件浏览器：下载远程文件/文件夹到本地
+
+        直传优先：文件 get_file 平铺落盘、文件夹 get_dir 整体递归（以原目录名
+        落盘），无 sudo 依赖、无服务器临时文件。个别项失败（典型为无读取权限）
+        时收尾询问用户是否用 sudo 重试失败项——选是则复用 get_files 的 sudo
+        打包链路，落盘结构与直传一致（条目以父目录为基准还原）。
+        remote_items: [(远程完整路径, 是否目录), ...]
+        """
         conn = self._active_conn()
         if (conn is None or conn.get('tool') is None or
                 not conn['tool'].is_connected()):
             self.update_run_info('请先连接服务器', 'WARNING')
             return
 
-        if not remote_paths:
+        if not remote_items:
             return
 
-        import time, os
+        import time
 
         ssh_tool = conn['tool']
         button_name = '文件下载'
         exec_id = f"fb_download_{int(time.time()*1000)}"
         self.update_run_info(f'<{button_name}> 开始执行')
-        self.logger.info("文件浏览器下载开始: %s -> %s（%d 项）", remote_paths, local_dir, len(remote_paths))
-
-        # 构造 source_items（文件浏览器下载不做筛选，直接下）
-        source_items = []
-        for p in remote_paths:
-            source_items.append({
-                '路径': p,
-                '修改时间': '全部',
-                '名称包含': {'关键词': [], '逻辑': '或'},
-                '名称不包含': {'关键词': [], '逻辑': '和'}
-            })
+        self.logger.info("文件浏览器下载开始: %s -> %s（%d 项）", remote_items, local_dir, len(remote_items))
 
         def progress_cb(phase, current, total, extra=''):
             log_progress(self.logger, phase, current, total, extra)
 
-        def execute_download():
-            result = ssh_tool.get_files(source_items, local_dir, progress_cb=progress_cb)
-            return result
+        def _cleanup_partial(local_target, is_dir):
+            """单项失败后清理本地残留（可能已部分写入）"""
+            import shutil
+            try:
+                if is_dir:
+                    shutil.rmtree(local_target, ignore_errors=True)
+                elif os.path.exists(local_target):
+                    os.remove(local_target)
+            except OSError:
+                pass
 
-        def on_worker_finished(result):
-            self.logger.info("文件浏览器下载结束: result=%s", result)
-            if result:
-                self.update_run_info(f'<{button_name}> 执行成功')
-                self.file_browser.status_label.setText("下载完成")
-            else:
+        def execute_direct_download():
+            """第一段：逐项直传。返回 {'failed': [(路径,是否目录)...],
+            'errors': [失败原因...], 'aborted': 是否被用户中止}"""
+            ssh_tool.transfer_stat = 1
+
+            def make_progress(idx, total_n):
+                """字节级进度 + 中止检查二合一（SFTP 分支的 _print_progress 不生效，
+                中止检查必须由本回调承担；SCP 分支同样走这里）"""
+                def cb(name, size, sent):
+                    if ssh_tool.transfer_stat == 0:
+                        raise ssh_tools.TransferAborted("传输被中止")
+                    progress_cb('download', sent, size,
+                                f"{name}|{size}|{sent}|{idx}|{total_n}")
+                return cb
+
+            failed = []
+            errors = []
+            aborted = False
+            try:
+                total_n = len(remote_items)
+                for idx, (remote_path, is_dir) in enumerate(remote_items):
+                    local_target = os.path.join(
+                        local_dir, os.path.basename(remote_path.rstrip('/')))
+                    cb = make_progress(idx, total_n)
+                    try:
+                        if is_dir:
+                            ssh_tool.get_dir(remote_path, local_dir, progress=cb)
+                        else:
+                            ssh_tool.get_file(remote_path, local_target, progress=cb)
+                    except ssh_tools.TransferAborted:
+                        aborted = True
+                        break
+                    except Exception as e:
+                        self.logger.warning("下载 %s 失败: %s", remote_path, e)
+                        _cleanup_partial(local_target, is_dir)
+                        failed.append((remote_path, is_dir))
+                        errors.append(f"{remote_path}: {e}")
+            finally:
+                ssh_tool.transfer_stat = 0
+            return {'failed': failed, 'errors': errors, 'aborted': aborted}
+
+        def ask_sudo_retry(failed, errors):
+            """主线程询问是否用 sudo 重试失败项。返回用户选择（bool）"""
+            preview = ', '.join(p.split('/')[-1] for p, _ in failed[:5])
+            more = f" 等{len(failed)}项" if len(failed) > 5 else ''
+            detail = '\n'.join(errors[:3])
+            text = (f"以下 {len(failed)} 项下载失败：\n\n{preview}{more}\n\n"
+                    f"{detail}\n\n是否用 sudo 权限重试？")
+            reply = QtWidgets.QMessageBox.question(
+                self, '下载失败', text,
+                QtWidgets.QMessageBox.StandardButton.Yes |
+                QtWidgets.QMessageBox.StandardButton.No,
+                QtWidgets.QMessageBox.StandardButton.No)
+            return reply == QtWidgets.QMessageBox.StandardButton.Yes
+
+        def spawn_worker(func, handler, op_id):
+            """起后台线程执行 func，结束后主线程回调 handler(result)，随后退出线程"""
+            self.thread_count += 1
+            thread_name = f'sc_thread_{self.thread_count}'
+            thread = QThread()
+            worker = qthread_worker.OneClickWorker(
+                func, op_name=button_name, op_id=op_id)
+            worker.moveToThread(thread)
+
+            def on_finished(result):
+                try:
+                    handler(result)
+                finally:
+                    thread.quit()
+
+            def on_thread_finished():
+                if thread_name in self.sc_threads:
+                    del self.sc_threads[thread_name]
+
+            worker.finished.connect(on_finished)
+            worker.finished.connect(worker.deleteLater)
+            thread.started.connect(worker.run_task)
+            thread.finished.connect(on_thread_finished)
+            thread.finished.connect(thread.deleteLater)
+
+            self.sc_threads[thread_name] = {"thread": thread, "worker": worker,
+                                            "tool": ssh_tool}
+            thread.start()
+
+        def finish_success():
+            self.update_run_info(f'<{button_name}> 执行成功')
+            self.file_browser.status_label.setText("下载完成")
+
+        def finish_fail(msg=None):
+            self.update_run_info(f'<{button_name}> 执行失败', 'ERROR')
+            self.file_browser.status_label.setText("下载失败")
+            if msg:
+                QtWidgets.QMessageBox.warning(self, '下载失败', msg)
+
+        def on_direct_finished(result):
+            """第一段收尾（主线程）：全部成功→完成；有失败→询问 sudo 重试"""
+            if not isinstance(result, dict):
+                finish_fail(str(result))
+                return
+            if result['aborted']:
+                self.update_run_info(f'<{button_name}> 已中止')
+                self.file_browser.status_label.setText("下载已中止")
+                return
+            failed = result['failed']
+            if not failed:
+                finish_success()
+                return
+            if not ssh_tool.sudo_ok:
+                finish_fail('以下项下载失败（当前用户无 sudo 权限，无法提权重试）：\n\n'
+                            + '\n'.join(result['errors'][:5]))
+                return
+            if not ask_sudo_retry(failed, result['errors']):
                 self.update_run_info(f'<{button_name}> 执行失败', 'ERROR')
                 self.file_browser.status_label.setText("下载失败")
-            thread.quit()
+                return
+            # 用户选择 sudo 重试：仅对失败项走 get_files（sudo 打包链路）
+            source_items = [{
+                '路径': p,
+                '修改时间': '全部',
+                '名称包含': {'关键词': [], '逻辑': '或'},
+                '名称不包含': {'关键词': [], '逻辑': '和'}
+            } for p, _ in failed]
 
-        worker = qthread_worker.OneClickWorker(
-            execute_download, op_name=button_name, op_id=exec_id
-        )
+            def on_retry_finished(ok):
+                if ok:
+                    finish_success()
+                else:
+                    finish_fail('sudo 重试仍未完成全部下载，详见运行日志')
+            spawn_worker(
+                lambda: ssh_tool.get_files(source_items, local_dir,
+                                           progress_cb=progress_cb),
+                on_retry_finished, f"{exec_id}_retry")
 
-        self.thread_count += 1
-        thread_name = f'sc_thread_{self.thread_count}'
-        thread = QThread()
-        worker.moveToThread(thread)
-
-        def on_thread_finished():
-            if thread_name in self.sc_threads:
-                del self.sc_threads[thread_name]
-
-        worker.finished.connect(on_worker_finished)
-        worker.finished.connect(worker.deleteLater)
-        thread.started.connect(worker.run_task)
-        thread.finished.connect(on_thread_finished)
-        thread.finished.connect(thread.deleteLater)
-
-        self.sc_threads[thread_name] = {"thread": thread, "worker": worker}
-        thread.start()
+        spawn_worker(execute_direct_download, on_direct_finished, exec_id)
 
     # ──────────────────── 文件浏览器：双击远程文件 → 下载本地打开 + 编辑回传 ────────────────────
 
@@ -2534,19 +2640,37 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         exec_id = f"fb_open_{int(_time.time()*1000)}"
         self.update_run_info(f'<{button_name}> 下载中: {fname}')
 
-        # ── 用已封装的 get_files 链路下载（以原始文件名落入时间戳子目录）──
-        source_items = [{
-            '路径': remote_path,
-            '修改时间': '全部',
-            '名称包含': {'关键词': [], '逻辑': '或'},
-            '名称不包含': {'关键词': [], '逻辑': '和'}
-        }]
-
+        # ── 直传下载（以原始文件名落入时间戳子目录）；无权限失败时询问 sudo 重试 ──
         def progress_cb(phase, current, total, extra=''):
             log_progress(self.logger, phase, current, total, extra)
 
         def execute_download():
-            return ssh_tool.get_files(source_items, temp_dir, progress_cb=progress_cb)
+            ssh_tool.transfer_stat = 1
+
+            def progress(name, size, sent):
+                # 字节级进度（运行信息面板同行刷新）+ 中止检查
+                if ssh_tool.transfer_stat == 0:
+                    raise ssh_tools.TransferAborted("传输被中止")
+                progress_cb('download', sent, size)
+
+            local_target = os.path.join(temp_dir, fname)
+            try:
+                try:
+                    ssh_tool.get_file(remote_path, local_target,
+                                      progress=progress)
+                    return {'ok': True}
+                except ssh_tools.TransferAborted:
+                    return {'aborted': True}
+                except Exception as e:
+                    self.logger.warning("下载 %s 失败: %s", remote_path, e)
+                    try:
+                        if os.path.exists(local_target):
+                            os.remove(local_target)
+                    except OSError:
+                        pass
+                    return {'ok': False, 'error': str(e)}
+            finally:
+                ssh_tool.transfer_stat = 0
 
         def on_worker_finished(result, _conn_id=conn_id, _remote=remote_path,
                                _choose=choose_app, _work_dir=temp_dir):
@@ -2556,15 +2680,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                 # 下载未成功：该时间戳子目录无人使用，直接清掉避免空目录堆积
                 _shutil.rmtree(_work_dir, ignore_errors=True)
 
-            try:
-                if _conn_id not in self.connections:
-                    self.update_run_info(f'<{button_name}> 标签已关闭，不再打开', 'WARNING')
-                    _drop_work_dir()
-                    return
-                if not result:
-                    self.update_run_info(f'<{button_name}> 下载失败', 'ERROR')
-                    _drop_work_dir()
-                    return
+            def _open_local():
                 local_path = os.path.join(_work_dir, os.path.basename(_remote))
                 if not os.path.exists(local_path):
                     self.update_run_info(f'<{button_name}> 完成但文件未找到', 'WARNING')
@@ -2580,6 +2696,85 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
                         f'<{button_name}> 选择框拉起失败: {os.path.basename(local_path)}'
                         f'（可右键该文件选"打开方式..."重试）；'
                         f'本地手动打开编辑保存后仍会自动回传', 'WARNING')
+
+            def on_retry_finished(ok):
+                if _conn_id not in self.connections:
+                    self.update_run_info(f'<{button_name}> 标签已关闭，不再打开', 'WARNING')
+                    _drop_work_dir()
+                    return
+                if ok:
+                    _open_local()
+                else:
+                    self.update_run_info(f'<{button_name}> sudo 重试下载失败', 'ERROR')
+                    _drop_work_dir()
+
+            try:
+                if _conn_id not in self.connections:
+                    self.update_run_info(f'<{button_name}> 标签已关闭，不再打开', 'WARNING')
+                    _drop_work_dir()
+                    return
+                if not isinstance(result, dict):
+                    self.update_run_info(f'<{button_name}> 下载失败: {result}', 'ERROR')
+                    _drop_work_dir()
+                    return
+                if result.get('aborted'):
+                    self.update_run_info(f'<{button_name}> 已中止')
+                    _drop_work_dir()
+                    return
+                if result.get('ok'):
+                    _open_local()
+                    return
+                # 直传失败（典型为无读取权限）：询问是否 sudo 重试
+                if not ssh_tool.sudo_ok:
+                    self.update_run_info(f'<{button_name}> 下载失败（当前用户无 sudo 权限，无法提权重试）: '
+                                         f"{result.get('error', '')}", 'ERROR')
+                    _drop_work_dir()
+                    return
+                reply = QtWidgets.QMessageBox.question(
+                    self, '打开远程文件',
+                    f"文件下载失败（可能无读取权限）：\n{_remote}\n"
+                    f"{result.get('error', '')}\n\n是否用 sudo 权限重试？",
+                    QtWidgets.QMessageBox.StandardButton.Yes |
+                    QtWidgets.QMessageBox.StandardButton.No,
+                    QtWidgets.QMessageBox.StandardButton.No)
+                if reply != QtWidgets.QMessageBox.StandardButton.Yes:
+                    self.update_run_info(f'<{button_name}> 下载失败', 'ERROR')
+                    _drop_work_dir()
+                    return
+                source_items = [{
+                    '路径': _remote,
+                    '修改时间': '全部',
+                    '名称包含': {'关键词': [], '逻辑': '或'},
+                    '名称不包含': {'关键词': [], '逻辑': '和'}
+                }]
+                self.thread_count += 1
+                retry_name = f'sc_thread_{self.thread_count}'
+                retry_thread = QThread()
+                retry_worker = qthread_worker.OneClickWorker(
+                    lambda: ssh_tool.get_files(source_items, _work_dir,
+                                               progress_cb=progress_cb),
+                    op_name=button_name, op_id=f"{exec_id}_retry")
+                retry_worker.moveToThread(retry_thread)
+
+                def on_retry_done(ok, _t=retry_thread):
+                    try:
+                        on_retry_finished(ok)
+                    finally:
+                        _t.quit()
+
+                def on_retry_thread_finished():
+                    if retry_name in self.sc_threads:
+                        del self.sc_threads[retry_name]
+
+                retry_worker.finished.connect(on_retry_done)
+                retry_worker.finished.connect(retry_worker.deleteLater)
+                retry_thread.started.connect(retry_worker.run_task)
+                retry_thread.finished.connect(on_retry_thread_finished)
+                retry_thread.finished.connect(retry_thread.deleteLater)
+                self.sc_threads[retry_name] = {"thread": retry_thread,
+                                               "worker": retry_worker,
+                                               "tool": ssh_tool}
+                retry_thread.start()
             finally:
                 thread.quit()
 
@@ -2602,7 +2797,8 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         thread.finished.connect(on_thread_finished)
         thread.finished.connect(thread.deleteLater)
 
-        self.sc_threads[thread_name] = {"thread": thread, "worker": worker}
+        self.sc_threads[thread_name] = {"thread": thread, "worker": worker,
+                                        "tool": ssh_tool}
         thread.start()
 
     def _fb_open_with(self, remote_path):
@@ -3091,60 +3287,9 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
             self.update_run_info(f'分组<{group_name}>已删除{len(deletable)}个按钮')
             self._save_config_auto()
 
-    def execute_all_buttons(self):
-        """全部执行所有标签页的所有按钮（跳过不支持批量执行的类型）"""
-        all_executable = []
-        for gname in self._group_order:
-            for bid in self._groups[gname]['buttons']:
-                cmd_type = self.sc_buttons[bid]['config']['指令类型']
-                if cmd_type not in self.SKIP_BATCH_TYPES:
-                    if not self.sc_buttons[bid]['button'].property('executing'):
-                        all_executable.append(bid)
-        if not all_executable:
-            self.update_run_info('没有可批量执行的按钮', 'WARNING')
-            return
-        self.update_run_info(f'开始批量执行所有标签页的{len(all_executable)}个按钮')
-        for i, bid in enumerate(all_executable):
-            if i > 0:
-                QTimer.singleShot(1000 * i, lambda b=bid: self._execute_button(b))
-            else:
-                self._execute_button(bid)
-
-    def stop_sc(self):
-        """耗时的指令手动中止方法"""
-        # 首先防止重复按下中止键
-        self.stop_pushButton.setEnabled(False)  # 禁用停止按钮
-        # 检查是否有正在执行的线程
-        if len(self.sc_threads) == 0:
-            self.update_run_info('没有正在执行的指令', 'WARNING')
-            self.stop_pushButton.setEnabled(True)
-            return
-        # 如果有，检查线程字典self.sc_threads，将所有线程结束
-        for thread in self.sc_threads:
-            # 检查是否有tool
-            if 'tool' in self.sc_threads[thread]:
-                # 检查tool是否是ssh_tools.SSHTools类型
-                if type(self.sc_threads[thread]['tool']) == ssh_tools.SSHTools:
-                    # 检查是否有连接，如果有连接，发送中止信号，设置传输位=0
-                    if self.sc_threads[thread]['tool'].is_connected():
-                        self.sc_threads[thread]['tool'].send_command_interactive(chr(3))
-                        self.sc_threads[thread]['tool'].transfer_stat = 0
-                        self.sc_threads[thread]['tool'].win_tool.transfer_stat = 0
-                elif type(self.sc_threads[thread]['tool']) == windows_tools.WindowsTools:
-                    self.sc_threads[thread]['tool'].transfer_stat = 0
-            else:
-                continue
-        self.update_run_info('已发送中止请求，请等待')
-        self.stop_pushButton.setEnabled(True)
-
-    def clean_linux_print(self):
-        # 清屏：清空当前激活标签的终端
-        conn = self._active_conn()
-        if conn is not None:
-            conn['terminal'].clear_terminal()
-            self.update_run_info("终端已清空")
-        else:
-            self.update_run_info('当前没有打开的终端标签')
+    def clean_terminal_conn(self, conn):
+        """清屏标签页内终端（按钮在标签页连接条上，按标签各自清各自的）"""
+        conn['terminal'].clear_terminal()
 
     def get_default_path(self):
         # 获取可执行文件（.exe）本身所在的路径，不包含自己的名称
@@ -3417,13 +3562,15 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
         try:
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(cfg_dic, f, ensure_ascii=False, indent=4)
-            self.update_run_info(f"已保存配置到{os.path.abspath(file_path)}")
+            self.update_run_info(f"已保存配置到{os.path.abspath(file_path).replace(chr(92), '/')}")
         except Exception as e:
             self.update_run_info(f"保存配置失败: {str(e)}", 'WARNING')
 
     def load_sc_config(self, path):
         """启动时从默认配置文件加载快捷按钮、分组、指令"""
         file_path = path
+        # 呈现层路径统一正斜杠（正斜杠路径 Windows API 全兼容，不影响 open）
+        file_path = file_path.replace('\\', '/')
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -3491,7 +3638,7 @@ class MainWindowLogic(QMainWindow, MainWindow.Ui_MainWindow):
 
     def load_server_config(self, path):
         """启动时从默认配置文件加载服务器列表"""
-        file_path = path
+        file_path = path.replace('\\', '/')
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()

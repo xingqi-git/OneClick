@@ -1,10 +1,13 @@
+import re
+
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import (QDialog, QListWidget,
                              QListWidgetItem, QHBoxLayout, QPushButton, QVBoxLayout,
                              QWidget, QSizePolicy, QLabel, QLineEdit, QButtonGroup,
-                             QRadioButton, QInputDialog)
+                             QRadioButton, QInputDialog, QCheckBox)
 from UI import get_files_dlg
 from .base_dialog import sc_class2str, wrap_server_info_in_frame, validate_work_dir
+from utils.config_schema import derive_home
 
 
 class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
@@ -65,7 +68,7 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
         # 临时文件路径：用户名变化时自动联动更新
         self.username_lineEdit.textChanged.connect(self._on_username_changed)
         if self.username_lineEdit.text():
-            self.work_dir_lineEdit.setText(f"/home/{self.username_lineEdit.text()}")
+            self.work_dir_lineEdit.setText(derive_home(self.username_lineEdit.text()))
 
         # 筛选条件变化 → 同步到当前选中条目
         self.time_comboBox.currentIndexChanged.connect(self._on_filter_changed)
@@ -100,9 +103,11 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
         self.setTabOrder(self.include_radio_or, self.exclude_lineEdit)
         self.setTabOrder(self.exclude_lineEdit, self.exclude_radio_and)
         self.setTabOrder(self.exclude_radio_and, self.exclude_radio_or)
-        # 目的路径 → 快捷按钮名称 → 底部按钮
+        # 目的路径 → 打包下载 → 快捷按钮名称 → 底部按钮
         self.setTabOrder(self.exclude_radio_or, self.local_path_pushButton)
-        self.setTabOrder(self.local_path_pushButton, self.sc_name_lineEdit)
+        self.setTabOrder(self.local_path_pushButton, self.pack_check)
+        self.setTabOrder(self.pack_check, self.pack_name_edit)
+        self.setTabOrder(self.pack_name_edit, self.sc_name_lineEdit)
         self.setTabOrder(self.sc_name_lineEdit, self.save_pushButton)
         self.setTabOrder(self.save_pushButton, self.reset_pushButton)
         self.setTabOrder(self.reset_pushButton, self.close_pushButton)
@@ -165,6 +170,15 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
         # 目的路径放第3行（筛选条件 frame 下面）
         self.gridLayout.addWidget(self.target_label, 3, 0, 1, 1)
         self.gridLayout.addWidget(self.target_button, 3, 1, 1, 1)
+
+        # 打包下载行（第4行）：勾选后 tar 包即为下载产物，包名可自定义
+        self.pack_check = QCheckBox("打包下载")
+        self.pack_name_edit = QLineEdit()
+        self.pack_name_edit.setPlaceholderText("打包名称,留空默认“当前时间_IP.tar”,可含{IP}{时间}占位符")
+        self.pack_name_edit.setEnabled(False)
+        self.pack_check.toggled.connect(self.pack_name_edit.setEnabled)
+        self.gridLayout.addWidget(self.pack_check, 4, 0, 1, 1)
+        self.gridLayout.addWidget(self.pack_name_edit, 4, 1, 1, 1)
 
         # 连接信号
         self.add_source_btn.clicked.connect(self._on_add_source)
@@ -384,7 +398,7 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
 
     def _on_username_changed(self, username):
         if username:
-            self.work_dir_lineEdit.setText(f"/home/{username}")
+            self.work_dir_lineEdit.setText(derive_home(username))
 
     def create_sc(self):
         text_list = [
@@ -431,6 +445,15 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
             self.parent.update_run_info("临时文件路径必须是 Linux 绝对路径（/ 开头），不能填 Windows 路径", "WARNING")
             return
 
+        # 打包下载校验：自定义包名不能含 Windows 非法字符
+        self.pack_name_edit.setStyleSheet("")
+        pack_enable = self.pack_check.isChecked()
+        pack_name = self.pack_name_edit.text().strip()
+        if pack_enable and pack_name and re.search(r'[\\/:*?"<>|]', pack_name):
+            self.pack_name_edit.setStyleSheet("QLineEdit { border: 2px solid red; }")
+            self.parent.update_run_info("打包文件名包含 Windows 非法字符（\\ / : * ? \" < > |）", "WARNING")
+            return
+
         # 保存到字典
         self.sc_cfg['指令类型'] = sc_class2str[self.__class__.__name__]
         self.sc_cfg['IP'] = self.linux_ip_lineEdit.text()
@@ -439,6 +462,8 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
         self.sc_cfg['端口'] = self.sshport_lineEdit.text()
         self.sc_cfg['源路径列表'] = valid_items[:]
         self.sc_cfg['目的路径'] = self.local_path_pushButton.text()
+        self.sc_cfg['打包下载'] = pack_enable
+        self.sc_cfg['打包文件名'] = pack_name if pack_name else '当前时间_IP.tar'
         self.sc_cfg['指令名称'] = self.sc_name_lineEdit.text()
         self.sc_cfg['临时文件路径'] = self.work_dir_lineEdit.text().strip()
 
@@ -492,13 +517,22 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
             include = sc_data.get('文件名包含', '')
             self._add_source_item(sc_data['服务器路径'], modify_time, include)
 
+        # 打包下载（默认值为空串时 normalize 会补默认，此处 .get 兜底）
+        pack_name = str(sc_data.get('打包文件名', '') or '')
+        self.pack_check.setChecked(bool(sc_data.get('打包下载', False)))
+        # 默认包名显示为空（占位符提示），仅自定义名回显
+        # 旧版默认串(.tar.gz)同样视为未自定义，显示为空走 placeholder
+        self.pack_name_edit.setText(
+            '' if pack_name in ('当前时间_IP.tar.gz', '当前时间_IP.tar') else pack_name)
+
         if self.source_list.count() > 0:
             self.source_list.setCurrentRow(0)
 
         self._loading = False
 
     def reset(self):
-        self.server_comboBox.clear()
+        # 与 base_dialog.reset 对齐：只取消当前选中，保留服务器下拉列表
+        self.server_comboBox.setCurrentIndex(-1)
         self.linux_ip_lineEdit.clear()
         self.username_lineEdit.clear()
         self.passwd_lineEdit.clear()
@@ -506,6 +540,9 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
         self.work_dir_lineEdit.clear()
         self.local_path_pushButton.setText("当前路径/时间IP(例:20251024_031415-1.1.1.1)/")
         self.sc_name_lineEdit.clear()
+        self.pack_check.setChecked(False)
+        self.pack_name_edit.clear()
+        self.pack_name_edit.setStyleSheet("")
         self.source_items = []
         self.source_list.clear()
         self.time_comboBox.setCurrentIndex(0)
@@ -520,7 +557,7 @@ class GetFilesDialog(QDialog, get_files_dlg.Ui_Dialog):
         self.username_lineEdit.setText(self.server_comboBox.currentData()['用户名'])
         self.passwd_lineEdit.setText(self.server_comboBox.currentData()['密码'])
         self.sc_name_lineEdit.setText(f'{sc_class2str[self.__class__.__name__]}：' + self.server_comboBox.currentText())
-        self.work_dir_lineEdit.setText(f"/home/{self.server_comboBox.currentData()['用户名']}")
+        self.work_dir_lineEdit.setText(derive_home(self.server_comboBox.currentData()['用户名']))
 
     # 保留原来的选择路径方法（选择本地目的路径）
     def select_path(self):

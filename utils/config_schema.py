@@ -58,6 +58,8 @@ TYPE_SCHEMAS = {
         '临时文件路径': '',
         '源路径列表': [],
         '目的路径': '',
+        '打包下载': False,
+        '打包文件名': '当前时间_IP.tar',
     },
     '复制本地文件': {
         '指令类型': '',
@@ -122,6 +124,20 @@ REQUIRED_KEYS = {
 }
 
 
+def derive_home(username):
+    """按用户名推导家目录（单一真相源，前后端共用）。
+
+    root 的家目录是 /root 而非 /home/root；普通用户 → /home/{用户名}；
+    用户名为空返回 ''（由调用方决定回退行为）。
+    """
+    username = str(username or '').strip()
+    if not username:
+        return ''
+    if username == 'root':
+        return '/root'
+    return f"/home/{username}"
+
+
 def normalize_button_config(config):
     """规范化单个快捷按钮的配置字典，返回新字典。
 
@@ -160,11 +176,9 @@ def normalize_button_config(config):
             result[key] = cfg[key]
 
     # 可推导键自适应：临时文件路径缺失/为空时按用户名推导家目录
-    # （用户名也没有则留空，运行时由 resolve_work_dir 回退 /home）
+    # （用户名也没有则留空，运行时由 resolve_work_dir 回退）
     if '临时文件路径' in result and not str(result['临时文件路径'] or '').strip():
-        username = str(result.get('用户名') or '').strip()
-        if username:
-            result['临时文件路径'] = f"/home/{username}"
+        result['临时文件路径'] = derive_home(result.get('用户名'))
     return result
 
 

@@ -1,13 +1,30 @@
 import time
 import os
 import re
-import shutil
 import socket
 import codecs
+import stat
+import tarfile
+import tempfile
+from collections import namedtuple
 from utils.windows_tools import WindowsTools
 from utils.logger import get_logger
 
 logger = get_logger("ssh")
+
+# 远程文件条目（fs_listdir 统一返回结构，字段与 paramiko SFTPAttributes 对齐）
+RemoteEntry = namedtuple('RemoteEntry', ['filename', 'st_mode', 'st_size', 'st_mtime',
+                                         'owner', 'permission'])
+
+
+class TransferAborted(Exception):
+    """用户主动中止传输（策略层捕获时必须原样上抛，不得触发协议降级）"""
+    pass
+
+
+def _sh_quote(s):
+    """shell 单引号包裹，安全包含空格/特殊字符的路径"""
+    return "'" + str(s).replace("'", "'\\''") + "'"
 
 
 class SSHTools(object):
@@ -19,11 +36,15 @@ class SSHTools(object):
         self.ssh = None
         self.channel = None
 
-        self.sudo = False
+        self.sudo_ok = False
         self.transfer_stat = 0
         self._last_progress = -1
-        self._download_progress_cb = None
         self.transport = None
+        # 连接期探测一次、本连接内不再变化的结果缓存：
+        # _sftp_ok   = 传输协议能力（SFTP 优先 / SCP+exec 降级）
+        # sudo_ok    = 提权能力（非 root 时能否 sudo），下载/目录操作按此分叉
+        self._sftp_ok = False      # True=后续文件操作优先走 SFTP
+        self._sftp_client = None   # SFTP 可用时保持打开的客户端
 
         self.win_tool = WindowsTools()
 
@@ -32,11 +53,12 @@ class SSHTools(object):
 
         合法：Linux 绝对路径（'/' 开头，不含反斜杠/盘符），原样返回。
         非法（典型：误填 Windows 路径 'C:\\Users\\...'）：不抛异常，
-        回退到登录用户家目录 /home/{用户名}，否则拼接 mkdir 时会被当成
-        相对路径，在远端家目录下造出 'C:\\Users\\...' 这样的怪目录。
-        空值同样回退家目录。
+        回退到登录用户家目录，否则拼接 mkdir 时会被当成相对路径，
+        在远端家目录下造出 'C:\\Users\\...' 这样的怪目录。
+        空值同样回退家目录。root 的家目录推导统一走 config_schema.derive_home。
         """
-        default = f"/home/{self.username}" if self.username else "/home"
+        from utils.config_schema import derive_home
+        default = derive_home(self.username) or "/home"
         if not work_dir or not isinstance(work_dir, str):
             return default
         path = work_dir.strip()
@@ -70,51 +92,67 @@ class SSHTools(object):
             self.channel.settimeout(10)  # 防止卡住
             # 非阻塞通道，在线程里时仍然可以发送数据
             self.channel.setblocking(0)
-            if self.username == "root":
-                self.sudo = True
             logger.info("ssh连接成功")
             self.transport = self.ssh.get_transport()
             self.transport.set_keepalive(5)
+
+            # ---- 传输协议嗅探（连接期一次）：SFTP 优先，不可用则全程走 SCP/exec ----
+            # 结果缓存在本连接实例上，后续所有文件操作直接按已知协议执行，零嗅探
+            self._sftp_client = None
+            self._sftp_ok = False
+            try:
+                # 嗅探加短超时：防止部分网络环境对 sftp 请求黑洞式挂起
+                sock = self.transport.sock
+                old_timeout = sock.gettimeout() if sock else None
+                if sock is not None:
+                    sock.settimeout(5)
+                try:
+                    self._sftp_client = self.ssh.open_sftp()
+                    self._sftp_ok = True
+                    logger.info("传输协议嗅探: SFTP 可用")
+                finally:
+                    if sock is not None and old_timeout is not None:
+                        sock.settimeout(old_timeout)
+            except Exception as e:
+                self._sftp_client = None
+                self._sftp_ok = False
+                logger.info("传输协议嗅探: SFTP 不可用(%s)，走 SCP", e)
+
+            # ---- sudo 能力探测（连接期一次）：非 root 时验证能否 sudo，结果缓存 ----
+            if self.username == 'root':
+                self.sudo_ok = True
+            else:
+                try:
+                    stdin, stdout, stderr = self.ssh.exec_command(
+                        f"echo {self.password} | sudo -S true")
+                    stdout.read()
+                    sudo_err = stderr.read().decode('utf-8', 'replace').strip()
+                    code = stdout.channel.recv_exit_status()
+                    if code == 0:
+                        self.sudo_ok = True
+                        logger.info("sudo 探测: 当前用户有 sudo 权限")
+                    elif code == 127:
+                        logger.info("sudo 探测: 服务器无 sudo 命令")
+                    else:
+                        reason = sudo_err.splitlines()[-1] if sudo_err else f"退出码 {code}"
+                        logger.info("sudo 探测: 当前用户无 sudo 权限(%s)", reason)
+                except Exception as e:
+                    logger.info("sudo 探测异常，按无 sudo 处理: %s", e)
+
             return True
         except Exception as e:
             logger.error(f"ssh连接失败: {e}")
             return False
 
-    def get_root_priority(self):
-        if not self.is_connected():
-            return False
-        if self.username != 'root':
-            logger.info(f"当前非root用户登录，尝试使用{self.username}密码切换到root权限")
-            try:
-                # 发送sudo -i命令
-                # 读取输出，判断是否需要输入sudo密码（通常提示"Password:"或"密码："）
-                output = self.send_get_output_once("sudo -i", False)
-                if "Password" in output or "password" in output or "密码" in output:
-                    # 输入当前用户密码
-                    # 验证是否切换成功（root提示符通常是#，普通用户是$）
-                    self.send_command_interactive(self.password)
-                    whoami_output = self.send_get_output_once("whoami", False)
-                    if "root" in whoami_output:
-                        logger.info("非root用户已切换root权限")
-                        self.sudo = True
-                        return True
-                    else:
-                        logger.error(f"root切换失败")
-                        return False
-                else:
-                    logger.error(f"不支持sudo -i，切换root权限失败{output}")
-                    return False
-            except Exception as e:
-                logger.error(f"切换root权限失败{e}")
-                return False
-        else:
-            self.sudo = True
-            logger.info("当前已是root用户，拥有root权限")
-            return True
-
     def disconnect(self):
+        if self._sftp_client is not None:
+            try:
+                self._sftp_client.close()
+            except Exception:
+                pass
+            self._sftp_client = None
+        self._sftp_ok = False
         if not self.is_connected():
-            self.sudo = False
             self.transfer_stat = 0
             self.win_tool.transfer_stat = 0
             logger.info('ssh断开成功')
@@ -125,7 +163,6 @@ class SSHTools(object):
         if self.ssh is not None:
             self.ssh.close()
             self.ssh = None
-        self.sudo = False
         self.transfer_stat = 0
         self.win_tool.transfer_stat = 0
         logger.info('ssh断开成功')
@@ -333,7 +370,7 @@ class SSHTools(object):
 
     def get_pathtree_info(self, remote_path, path_only=False, recursive=False, tree_list=None):
         """
-        获取远程路径的文件/目录信息（不依赖self.sudo，全程使用sudo指令）
+        获取远程路径的文件/目录信息（不依赖sudo_ok，全程使用sudo指令）
         参数：
             remote_path: 远程路径
             path_only: 是否只获取路径信息
@@ -552,24 +589,347 @@ class SSHTools(object):
 
         return dir_list, file_list
 
+    # ===================== 统一传输策略层 =====================
+    # 连接期嗅探协议（SFTP 优先 / SCP+exec 降级，见 connect），缓存于连接实例；
+    # 所有文件操作通过本层入口执行，内部按已知协议分派，运行期通道级失败自动
+    # 永久降级（文件级错误如"不存在/无权限"不降级），外部调用方零感知。
+
+    def _sftp_failed(self, e):
+        """判断 SFTP 异常是否为通道级失败（需要降级）：
+        - 带 errno 的 IOError 是文件级错误（不存在/无权限），不降级
+        - 用户中止（TransferAborted）在入口处已单独拦截，不会走到这里
+        - 其余（SSHException/EOFError/Socket closed 等）视为通道失败 → 降级
+        """
+        if isinstance(e, IOError) and getattr(e, 'errno', None) is not None:
+            return False
+        return True
+
+    def _mark_sftp_down(self):
+        """永久降级本连接的传输协议：后续操作全部走 SCP/exec，不再尝试 SFTP"""
+        self._sftp_ok = False
+        if self._sftp_client is not None:
+            try:
+                self._sftp_client.close()
+            except Exception:
+                pass
+            self._sftp_client = None
+        logger.debug("本连接传输协议已降级为 SCP/exec")
+
+    def _exec_read(self, cmd):
+        """exec 通道执行命令，返回 (exit_status, stdout文本)"""
+        stdin, stdout, stderr = self.ssh.exec_command(cmd)
+        out = stdout.read().decode('utf-8', 'replace')
+        stderr.read()
+        try:
+            rc = stdout.channel.recv_exit_status()
+        except Exception:
+            rc = -1
+        return rc, out
+
+    def put_file(self, local_path, remote_path, progress=None):
+        """统一单文件上传入口。
+        progress(name, size, sent)：可选回调，与 SCPClient 的 progress 签名一致。
+        """
+        if self._sftp_ok:
+            try:
+                self._sftp_client.put(
+                    local_path, remote_path,
+                    callback=lambda sent, total: progress(
+                        os.path.basename(local_path), total, sent) if progress else None)
+                return
+            except TransferAborted:
+                raise
+            except Exception as e:
+                if not self._sftp_failed(e):
+                    raise
+                logger.warning("SFTP 上传失败(%s)，降级为 SCP 重试本次上传", e)
+                self._mark_sftp_down()
+        with self._SCPClient(self.transport,
+                             progress=(lambda n, s, se: progress(n, s, se)) if progress else None) as client:
+            self._last_progress = -1
+            client.put(local_path, remote_path)
+
+    def get_file(self, remote_path, local_path, progress=None):
+        """统一单文件下载入口。progress(name, size, sent) 可选回调。"""
+        if self._sftp_ok:
+            try:
+                self._sftp_client.get(
+                    remote_path, local_path,
+                    callback=lambda sent, total: progress(
+                        os.path.basename(remote_path), total, sent) if progress else None)
+                return
+            except TransferAborted:
+                raise
+            except Exception as e:
+                if not self._sftp_failed(e):
+                    raise
+                logger.warning("SFTP 下载失败(%s)，降级为 SCP 重试本次下载", e)
+                self._mark_sftp_down()
+        with self._SCPClient(self.transport,
+                             progress=(lambda n, s, se: progress(n, s, se)) if progress else None) as client:
+            self._last_progress = -1
+            client.get(remote_path, local_path)
+
+    def get_dir(self, remote_dir, local_dir, progress=None):
+        """统一递归下载入口：远端目录整体下载到 local_dir 下（以其原目录名落盘，
+        与 SCPClient.get(recursive=True) 行为一致）。
+        progress(name, size, sent)：逐文件的字节级回调，可选。
+        """
+        if self._sftp_ok:
+            try:
+                local_target = os.path.join(
+                    local_dir, os.path.basename(remote_dir.rstrip('/')))
+                self._sftp_get_recursive(remote_dir, local_target, progress)
+                return
+            except TransferAborted:
+                raise
+            except Exception as e:
+                if not self._sftp_failed(e):
+                    raise
+                logger.warning("SFTP 递归下载失败(%s)，降级为 SCP 重试", e)
+                self._mark_sftp_down()
+        with self._SCPClient(self.transport,
+                             progress=(lambda n, s, se: progress(n, s, se)) if progress else None) as client:
+            self._last_progress = -1
+            client.get(remote_dir, local_dir, recursive=True)
+
+    def _sftp_get_recursive(self, remote_dir, local_target, progress):
+        """SFTP 后端的递归下载"""
+        os.makedirs(local_target, exist_ok=True)
+        entries = self._sftp_client.listdir_attr(remote_dir)
+        for attr in entries:
+            rpath = remote_dir.rstrip('/') + '/' + attr.filename
+            lpath = os.path.join(local_target, attr.filename)
+            if stat.S_ISDIR(attr.st_mode):
+                self._sftp_get_recursive(rpath, lpath, progress)
+            else:
+                callback = None
+                if progress:
+                    callback = (lambda sent, total, _n=attr.filename, _s=attr.st_size:
+                                progress(_n, _s, sent))
+                self._sftp_client.get(rpath, lpath, callback=callback)
+
+    # ---- 远程文件系统操作（文件浏览器目录管理用） ----
+
+    def fs_listdir(self, path):
+        """列目录：返回条目列表，条目含 filename/st_mode/st_size/st_mtime/owner/permission"""
+        if self._sftp_ok:
+            try:
+                return self._build_entries_from_attrs(
+                    self._sftp_client.listdir_attr(path))
+            except Exception as e:
+                if not self._sftp_failed(e):
+                    raise
+                logger.warning("SFTP 列目录失败(%s)，降级为 exec", e)
+                self._mark_sftp_down()
+        return self._exec_listdir(path)
+
+    def _build_entries_from_attrs(self, attrs):
+        """SFTPAttributes 列表 → RemoteEntry 列表。
+        权限串由 st_mode 计算；拥有者名由 uid 经一次 exec 批量解析（失败回退数字 uid）。"""
+        owner_map = {}
+        uids = sorted({a.st_uid for a in attrs if getattr(a, 'st_uid', None) is not None})
+        if uids:
+            try:
+                cmd = ';'.join(f"id -un {u} 2>/dev/null || echo {u}" for u in uids)
+                rc, out = self._exec_read(cmd)
+                for u, line in zip(uids, out.strip().split('\n')):
+                    name = line.strip()
+                    if name:
+                        owner_map[u] = name
+            except Exception:
+                pass  # 解析失败统一回退数字 uid
+        entries = []
+        for a in attrs:
+            try:
+                perm = stat.filemode(a.st_mode or 0)
+            except Exception:
+                perm = ''
+            owner = owner_map.get(getattr(a, 'st_uid', None), str(getattr(a, 'st_uid', '')))
+            entries.append(RemoteEntry(a.filename, a.st_mode, a.st_size or 0,
+                                       a.st_mtime or 0.0, owner, perm))
+        return entries
+
+    def _exec_listdir(self, path):
+        """exec 后端列目录：find -printf 一次输出 类型/大小/时间戳/拥有者/权限/文件名"""
+        rc, out = self._exec_read(
+            f"find {_sh_quote(path)} -maxdepth 1 -mindepth 1 "
+            f"-printf '%y\\t%s\\t%T@\\t%u\\t%M\\t%f\\n'")
+        entries = []
+        for line in out.split('\n'):
+            parts = line.split('\t', 5)
+            if len(parts) != 6:
+                continue
+            ftype, size, mtime, owner, perm, name = parts
+            mode = stat.S_IFDIR if ftype == 'd' else stat.S_IFREG
+            try:
+                size_v = int(size)
+            except ValueError:
+                size_v = 0
+            try:
+                mtime_v = float(mtime)
+            except ValueError:
+                mtime_v = 0.0
+            entries.append(RemoteEntry(name, mode, size_v, mtime_v, owner, perm))
+        if rc != 0 and not entries:
+            raise IOError(f"无法读取目录内容: {path}")
+        return entries
+
+    def fs_normalize(self, path):
+        """路径规范化（绝对路径展开，与 SFTP normalize 对齐）"""
+        if self._sftp_ok:
+            try:
+                return self._sftp_client.normalize(path)
+            except Exception as e:
+                if not self._sftp_failed(e):
+                    raise
+                logger.warning("SFTP 规范化路径失败(%s)，降级为 exec", e)
+                self._mark_sftp_down()
+        rc, out = self._exec_read(f"cd {_sh_quote(path)} >/dev/null 2>&1 && pwd")
+        if rc == 0 and out.strip():
+            return out.strip().split('\n')[-1]
+        return path
+
+    def fs_home(self):
+        """当前用户远程家目录"""
+        if self._sftp_ok:
+            try:
+                return self._sftp_client.normalize('.')
+            except Exception as e:
+                if not self._sftp_failed(e):
+                    raise
+                logger.warning("SFTP 获取家目录失败(%s)，降级为 exec", e)
+                self._mark_sftp_down()
+        rc, out = self._exec_read("echo $HOME")
+        return out.strip() or '/'
+
+    def fs_exists(self, path):
+        """远程路径是否存在"""
+        if self._sftp_ok:
+            try:
+                self._sftp_client.stat(path)
+                return True
+            except IOError as e:
+                if getattr(e, 'errno', None) is not None:
+                    return False  # 文件不存在等文件级错误
+                if not self._sftp_failed(e):
+                    raise
+                logger.warning("SFTP stat失败(%s)，降级为 exec", e)
+                self._mark_sftp_down()
+            except Exception as e:
+                if not self._sftp_failed(e):
+                    raise
+                logger.warning("SFTP stat失败(%s)，降级为 exec", e)
+                self._mark_sftp_down()
+        rc, out = self._exec_read(f"test -e {_sh_quote(path)} && echo Y || echo N")
+        return out.strip() == 'Y'
+
+    def fs_rename(self, old_path, new_path):
+        if self._sftp_ok:
+            try:
+                self._sftp_client.rename(old_path, new_path)
+                return
+            except Exception as e:
+                if not self._sftp_failed(e):
+                    raise
+                logger.warning("SFTP 重命名失败(%s)，降级为 exec", e)
+                self._mark_sftp_down()
+        rc, out = self._exec_read(
+            f"mv -f {_sh_quote(old_path)} {_sh_quote(new_path)} && echo OK")
+        if rc != 0 or 'OK' not in out:
+            raise IOError(f"重命名失败: {old_path} -> {new_path}")
+
+    def fs_remove(self, path):
+        if self._sftp_ok:
+            try:
+                self._sftp_client.remove(path)
+                return
+            except Exception as e:
+                if not self._sftp_failed(e):
+                    raise
+                logger.warning("SFTP 删除失败(%s)，降级为 exec", e)
+                self._mark_sftp_down()
+        rc, out = self._exec_read(f"rm -f {_sh_quote(path)} && echo OK")
+        if rc != 0 or 'OK' not in out:
+            raise IOError(f"删除失败: {path}")
+
+    def fs_mkdir(self, path):
+        if self._sftp_ok:
+            try:
+                self._sftp_client.mkdir(path)
+                return
+            except Exception as e:
+                if not self._sftp_failed(e):
+                    raise
+                logger.warning("SFTP 新建目录失败(%s)，降级为 exec", e)
+                self._mark_sftp_down()
+        rc, out = self._exec_read(f"mkdir {_sh_quote(path)} && echo OK")
+        if rc != 0 or 'OK' not in out:
+            raise IOError(f"新建目录失败: {path}")
+
+    def fs_touch(self, path):
+        if self._sftp_ok:
+            try:
+                with self._sftp_client.open(path, 'w'):
+                    pass
+                return
+            except Exception as e:
+                if not self._sftp_failed(e):
+                    raise
+                logger.warning("SFTP 新建文件失败(%s)，降级为 exec", e)
+                self._mark_sftp_down()
+        rc, out = self._exec_read(f"touch {_sh_quote(path)} && echo OK")
+        if rc != 0 or 'OK' not in out:
+            raise IOError(f"新建文件失败: {path}")
+
+    def fs_dir_size(self, path):
+        """递归计算远程目录总大小（字节）。元数据不提供目录总大小，
+        需要远端整树遍历（du），代价大——仅供右键"计算大小"按需调用。"""
+        rc, out = self._exec_read(f"du -sb {_sh_quote(path)} 2>/dev/null")
+        line = out.strip().split('\n')[0] if out.strip() else ''
+        if '\t' in line and line.split('\t')[0].isdigit():
+            return int(line.split('\t')[0])
+        raise IOError(f"无法计算大小: {path}")
+
+    def fs_rmtree(self, path):
+        """递归删除远程目录（含全部隐藏文件）"""
+        if self._sftp_ok:
+            try:
+                self._sftp_rmtree(path)
+                return
+            except Exception as e:
+                if not self._sftp_failed(e):
+                    raise
+                logger.warning("SFTP 递归删除失败(%s)，降级为 exec", e)
+                self._mark_sftp_down()
+        rc, out = self._exec_read(f"rm -rf {_sh_quote(path)} && echo OK")
+        if rc != 0 or 'OK' not in out:
+            raise IOError(f"递归删除失败: {path}")
+
+    def _sftp_rmtree(self, remote_dir):
+        """SFTP 后端递归删除"""
+        contents = self._sftp_client.listdir_attr(remote_dir)
+        for attr in contents:
+            child = remote_dir.rstrip('/') + '/' + attr.filename
+            if stat.S_ISDIR(attr.st_mode):
+                self._sftp_rmtree(child)
+            else:
+                self._sftp_client.remove(child)
+        self._sftp_client.rmdir(remote_dir)
+
     def upload_single_file(self, local_path, remote_path):
         """
         轻量单文件上传（双击打开的远程文件保存后回传覆盖）
-        直接 sftp.put 覆盖远端文件，不走 send_files 的打包/SCP 重流程。
+        走统一传输策略层（SFTP 优先 / SCP 降级），协议由连接期嗅探决定。
         注意：要求登录用户对远端文件有写权限（不做 sudo 中转）
         """
         if not self.is_connected():
             logger.error("upload_single_file: SSH 未连接")
             return False
+        # 呈现层路径统一正斜杠（正斜杠路径 Windows API 全兼容）
+        local_path = str(local_path).replace('\\', '/')
         try:
-            sftp = self.ssh.open_sftp()
-            try:
-                sftp.put(local_path, remote_path)
-            finally:
-                try:
-                    sftp.close()
-                except Exception:
-                    pass
+            self.put_file(local_path, remote_path)
             logger.info(f"单文件回传成功 [{local_path} -> {remote_path}]")
             return True
         except Exception as e:
@@ -813,30 +1173,27 @@ class SSHTools(object):
                 file_size = os.path.getsize(f_path)
                 if file_size < 100 * 1024 * 1024:
                     if progress_cb and file_count <= 10:
-                        with self._SCPClient(self.transport, progress=lambda n, s, se, fp=f_path: _scp_upload_progress(os.path.basename(fp), s, se)) as client:
-                            self._last_progress = -1
-                            client.put(f_path, dst_path)
+                        self.put_file(f_path, dst_path,
+                                      progress=lambda n, s, se, fp=f_path: _scp_upload_progress(os.path.basename(fp), s, se))
                     else:
-                        with self._SCPClient(self.transport) as client:
-                            self._last_progress = -1
-                            client.put(f_path, dst_path)
+                        self.put_file(f_path, dst_path)
                     if progress_cb and file_count > 10:
                         _upload_state['accumulated'] += file_size
                         extra = f"{os.path.basename(f_path)}|{file_size}|{file_size}|{up_count}|{file_count}"
                         progress_cb('upload', _upload_state['accumulated'], total_size, extra)
                 else:
                     logger.debug(f"大文件上传: {file_size} 字节")
-                    with self._SCPClient(self.transport, progress=lambda n, s, se, fp=f_path: _scp_upload_progress(os.path.basename(fp), s, se)) as client:
-                        if self.transfer_stat == 0:
-                            logger.warning("上传被中止")
-                            rm_cmd = f"rm -rf \"{temp_remote_dir}\""
-                            stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
-                            stdout.read()
-                            stderr.read()
-                            self.transfer_stat = 0
-                            return False
-                        self._last_progress = -1
-                        client.put(f_path, dst_path)
+                    if self.transfer_stat == 0:
+                        logger.warning("上传被中止")
+                        rm_cmd = f"rm -rf \"{temp_remote_dir}\""
+                        stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
+                        stdout.read()
+                        stderr.read()
+                        self.transfer_stat = 0
+                        return False
+                    self._last_progress = -1
+                    self.put_file(f_path, dst_path,
+                                  progress=lambda n, s, se, fp=f_path: _scp_upload_progress(os.path.basename(fp), s, se))
                 logger.debug(f"已上传到临时目录 {up_count}/{file_count}: {f_path} -> {dst_path}")
             except Exception as e:
                 err_msg = str(e)
@@ -1010,11 +1367,43 @@ class SSHTools(object):
 
         return dir_list, file_list
 
-    def get_files(self, source_items, local_path, work_dir=None, progress_cb=None):
+    @staticmethod
+    def _sanitize_member_name(name):
+        """tar 成员名逐段清洗 Windows 非法字符（服务器文件名可能含 : * ? 等，NTFS 落盘会失败）"""
+        parts = name.split('/')
+        return '/'.join(re.sub(r'[<>:"|?*\\]', '-', p) for p in parts)
+
+    def _extract_tar_local(self, tar_path, dest_dir, progress_cb=None):
+        """解包本地 tar 到目的路径。
+        - 成员名逐段清洗 Windows 非法字符后落盘
+        - 已存在同名内容按覆盖语义处理（与历史行为一致）
+        - 个别成员解包失败不中断整体，结束时汇总日志
+        """
+        with tarfile.open(tar_path, 'r') as tf:
+            members = tf.getmembers()
+            total = len(members)
+            failed = []
+            for i, m in enumerate(members):
+                if self.transfer_stat == 0:
+                    raise TransferAborted("解包被中止")
+                m.name = self._sanitize_member_name(m.name)
+                try:
+                    tf.extract(m, dest_dir)
+                except Exception as e:
+                    failed.append(f"{m.name}: {e}")
+                    continue
+                if progress_cb:
+                    progress_cb('extract', i + 1, total, m.name)
+            if failed:
+                logger.error(f"解包失败{len(failed)}个条目:\n  " + "\n  ".join(failed))
+
+    def get_files(self, source_items, local_path, work_dir=None, progress_cb=None, pack=False, archive_name=''):
         """
         SSH下载文件（支持多源路径，每条独立筛选）
-        流程：服务器端find筛选 -> 复制到临时目录 -> SCP下载 -> 清理临时文件
-        性能优化：使用find命令在服务器端完成时间粗筛，Python端完成名称精细过滤
+        流程：服务器端find筛选 -> 跨源重名消歧 -> 服务器端tar打包 -> 单文件下载
+             -> 勾选打包：包即产物落到目的路径；未勾选：本地解包到目的路径后删除中转包
+        性能优化：使用find命令在服务器端完成时间粗筛，Python端完成名称精细过滤；
+        打包后单文件传输（tar不压缩，速度与磁盘拷贝同量级）
         参数：
             source_items: 源路径列表，每项为 dict：
                 {
@@ -1024,11 +1413,14 @@ class SSHTools(object):
                     '名称不包含': {'关键词': [], '逻辑': '和'/'或'}
                 }
             local_path: 本地目标路径，只能是文件夹
-            work_dir: 服务器端临时目录所在路径，默认为 /home/{username}
+            work_dir: 服务器端临时文件所在路径，默认为 /home/{username}
             progress_cb: 可选的进度回调函数 progress_cb(phase, current, total, extra)
-                phase: 'find' | 'copy' | 'download'
+                phase: 'find' | 'pack' | 'download' | 'extract'
                 current/total: 进度数值
                 extra: 附加信息字符串
+            pack: True 时保留打包产物到目的路径（archive_name 为最终文件名）；
+                  False 时下载后自动解包到目的路径（历史行为）
+            archive_name: pack=True 时的包文件名（调用方已渲染占位符并校验合法字符）
         返回：
             成功返回True，失败返回False
         中断支持：
@@ -1044,6 +1436,10 @@ class SSHTools(object):
             logger.error(f"下载失败，本地路径不存在或不是文件夹: {local_path}")
             return False
 
+        if pack and not str(archive_name or '').strip():
+            logger.error("打包下载失败：包文件名为空")
+            return False
+
         # 修改时间映射（秒）
         mtime_dic = {
             "全部": float('inf'),
@@ -1055,19 +1451,21 @@ class SSHTools(object):
             "最近1年": 31536000
         }
 
-        # 构造sudo前缀
-        if self.username != 'root':
+        # 构造sudo前缀（连接期已探测 sudo 能力）：
+        # - 有 sudo：全程提权，可读任意路径（历史行为）
+        # - 无 sudo：全程不提权，能下多少下多少；find/tar 对无权限内容报错但
+        #   继续处理其余条目，最终在 tar_errors 中逐项报告（部分成功语义）
+        if self.username != 'root' and self.sudo_ok:
             sudo_prefix = f"echo {self.password} | sudo -S "
         else:
+            if self.username != 'root':
+                logger.info("当前用户无sudo权限，仅下载有读取权限的文件")
             sudo_prefix = ""
 
         # 校验所有源路径是否存在
         for item in source_items:
             path = item['路径'].replace('\\', '/').rstrip('/')
-            if self.username != 'root':
-                check_cmd = f"{sudo_prefix}bash -c 'test -e \"{path}\" && echo exists || echo not exists'"
-            else:
-                check_cmd = f"bash -c 'test -e \"{path}\" && echo exists || echo not exists'"
+            check_cmd = f"{sudo_prefix}bash -c 'test -e \"{path}\" && echo exists || echo not exists'"
             stdin, stdout, stderr = self.ssh.exec_command(check_cmd)
             check_result = stdout.read().decode('utf-8').strip()
             stderr.read()
@@ -1085,22 +1483,23 @@ class SSHTools(object):
         server_now = stdout.read().decode('utf-8').strip()
         stderr.read()
 
-        # 生成毫秒级本地时间戳，用于临时目录命名，避免重名
+        # 生成毫秒级本地时间戳，用于临时文件命名，避免重名
         local_timestamp_ms = f"{int(time.time() * 1000)}"
 
-        # 构造服务器临时目录（校验/规范化，非法路径回退家目录）
+        # 服务器端打包文件与条目列表文件的所在目录（校验/规范化，非法路径回退家目录）
         base_dir = self.resolve_work_dir(work_dir)
-        temp_remote_path = f"{base_dir}/OneClick_temp{local_timestamp_ms}"
+        remote_tar_path = f"{base_dir}/OneClick_temp{local_timestamp_ms}.tar"
 
         logger.debug("开始查找符合条件的文件...")
 
-        # 多源路径合并后的文件/目录列表，每项带源路径信息用于计算相对路径
-        all_file_list = []  # [(full_path, source_root)]
-        all_dir_list = []   # [(full_path, source_root)]
-        # 无筛选条件且源路径是目录的项，直接 cp -a 复制，不走 find + 逐文件复制
-        direct_copy_dirs = []  # [(src_path, source_root)]
+        # 多源路径合并后的文件/目录列表，每项带源根路径与源序号，
+        # 源根用于计算相对路径，源序号用于跨源重名消歧
+        all_file_list = []  # [(full_path, source_root, source_idx)]
+        all_dir_list = []   # [(full_path, source_root, source_idx)]
+        # 无筛选条件且源路径是目录的项，直接整目录打包，不走 find + 逐文件筛选
+        direct_copy_dirs = []  # [(src_path, source_root, source_idx)]
 
-        for item in source_items:
+        for src_idx, item in enumerate(source_items):
             src_path = item['路径'].replace('\\', '/').rstrip('/')
             mtime_str = item.get('修改时间', '全部')
             mtime_sec = mtime_dic.get(mtime_str, float('inf'))
@@ -1111,7 +1510,7 @@ class SSHTools(object):
             exc_kw = exc.get('关键词', []) if isinstance(exc, dict) else []
             exc_logic = exc.get('逻辑', '和') if isinstance(exc, dict) else '和'
 
-            # 判断：源路径是目录 且 完全没有筛选条件 → 直接 cp -a
+            # 判断：源路径是目录 且 完全没有筛选条件 → 整目录直接打包
             has_no_filter = (
                 mtime_sec == float('inf')
                 and not inc_kw
@@ -1119,25 +1518,22 @@ class SSHTools(object):
             )
             if has_no_filter:
                 # 检查源路径是否为目录
-                if self.username != 'root':
-                    check_cmd = f"{sudo_prefix}bash -c 'test -d \"{src_path}\" && echo dir || echo not_dir'"
-                else:
-                    check_cmd = f"bash -c 'test -d \"{src_path}\" && echo dir || echo not_dir'"
+                check_cmd = f"{sudo_prefix}bash -c 'test -d \"{src_path}\" && echo dir || echo not_dir'"
                 stdin, stdout, stderr = self.ssh.exec_command(check_cmd)
                 check_result = stdout.read().decode('utf-8').strip()
                 stderr.read()
                 exit_status = stdout.channel.recv_exit_status()
                 if exit_status == 0 and check_result == 'dir':
-                    direct_copy_dirs.append((src_path, src_path))
+                    direct_copy_dirs.append((src_path, src_path, src_idx))
                     continue
 
             dirs, files = self._filter_remote_source(
                 src_path, mtime_sec, inc_kw, inc_logic, exc_kw, exc_logic, server_now, sudo_prefix
             )
             for d in dirs:
-                all_dir_list.append((d, src_path))
+                all_dir_list.append((d, src_path, src_idx))
             for f in files:
-                all_file_list.append((f, src_path))
+                all_file_list.append((f, src_path, src_idx))
 
             if self.transfer_stat == 0:
                 logger.warning('下载被中止！')
@@ -1145,17 +1541,14 @@ class SSHTools(object):
 
         # 没有符合条件的项，直接返回
         if not all_dir_list and not all_file_list and not direct_copy_dirs:
-            logger.info(f"下载完成，未下载任何文件，待下载路径无符合条件的项")
+            logger.info("下载完成，未下载任何文件，待下载路径无符合条件的项")
             self.transfer_stat = 0
             return True
 
         # 统计直接复制目录的文件总数
         direct_copy_file_count = 0
-        for dir_path, _ in direct_copy_dirs:
-            if self.username != 'root':
-                count_cmd = f"echo {self.password} | sudo -S find \"{dir_path}\" -type f | wc -l"
-            else:
-                count_cmd = f"find \"{dir_path}\" -type f | wc -l"
+        for dir_path, _, _src_idx in direct_copy_dirs:
+            count_cmd = f"{sudo_prefix}find \"{dir_path}\" -type f | wc -l"
             stdin, stdout, stderr = self.ssh.exec_command(count_cmd)
             count_out = stdout.read().decode('utf-8').strip()
             stderr.read()
@@ -1172,320 +1565,223 @@ class SSHTools(object):
             else:
                 progress_cb('find', 0, total_files, f'找到{total_files}个文件')
 
-        # 清洗完整路径：所有目录名和文件名中的Windows不支持字符都替换为 -
-        def sanitize_path_for_windows(path):
-            parts = path.split('/')
-            sanitized_parts = [re.sub(r'[<>:"/\\|?*]', '-', part) for part in parts]
-            return '/'.join(sanitized_parts)
+        # ---- 组装打包条目：相对路径 + 跨源重名消歧 ----
+        # 每条源以自己的父目录为基准计算相对路径（与历史落盘结构一致）。
+        # 不同源路径算出相同相对路径时（如 /root/abc 与 /home/abc 都算出 'abc'），
+        # 后到的源加 "{源序号}_" 前缀消歧，避免打包落盘时静默覆盖/嵌套错乱
+        grouped_entries = {}  # 源父目录 -> [相对条目, ...]（按出现顺序）
+        rel_owner = {}        # 相对条目 -> 首个占用的源序号
 
-        # 收集所有需要创建的目录
-        all_dirs = set()
-        for d, src_root in all_dir_list:
-            src_parent = os.path.dirname(src_root)
-            rel_path = d.replace(src_parent, '', 1).lstrip('/')
-            if rel_path == '':
+        def _claim_rel(src_parent, rel, src_idx):
+            owner = rel_owner.get(rel)
+            if owner is not None:
+                if owner == src_idx:
+                    return  # 同源重复条目，去重
+                orig = rel
+                rel = f"{src_idx + 1}_{rel}"
+                # 极端情况：消歧后的名字仍被占用，继续追加序号直到唯一
+                while rel in rel_owner:
+                    rel = f"{src_idx + 1}_{rel}"
+                logger.warning(f"源{owner + 1}与源{src_idx + 1}的目标相对路径重名'{orig}'，"
+                               f"源{src_idx + 1}已改名为'{rel}'")
+            rel_owner[rel] = src_idx
+            grouped_entries.setdefault(src_parent, []).append(rel)
+
+        for dir_path, src_root, src_idx in all_dir_list:
+            if dir_path == src_root:
+                # 源目录本身是结构壳（_filter_remote_source 无条件放入），
+                # 绝不能进 tar -T 列表——tar 对目录条目会递归归档整个目录，
+                # 导致筛选失效全量打包；壳层由文件/子目录条目的相对路径自动带出
                 continue
-            sanitized_rel_path = sanitize_path_for_windows(rel_path)
-            dst_dir = f"{temp_remote_path}/{sanitized_rel_path}"
-            all_dirs.add(dst_dir)
-
-        for f, src_root in all_file_list:
             src_parent = os.path.dirname(src_root)
-            rel_path = f.replace(src_parent, '', 1).lstrip('/')
-            sanitized_rel_path = sanitize_path_for_windows(rel_path)
-            dst_dir = os.path.dirname(f"{temp_remote_path}/{sanitized_rel_path}")
-            all_dirs.add(dst_dir)
-
-        # 按路径长度从长到短排序
-        sorted_dirs = sorted(all_dirs, key=lambda x: len(x), reverse=True)
-        created_dirs = set()
-
-        logger.debug("开始创建目录")
-        for dst_dir in sorted_dirs:
-            if self.transfer_stat == 0:
-                logger.warning('下载被中止！')
-                rm_cmd = f"rm -rf \"{temp_remote_path}\""
-                stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
-                stdout.read()
-                stderr.read()
-                return False
-
-            need_create = True
-            for created in created_dirs:
-                if created.startswith(dst_dir + '/'):
-                    need_create = False
-                    break
-
-            if need_create:
-                if self.username != 'root':
-                    mkdir_cmd = f"echo {self.password} | sudo -S mkdir -p \"{dst_dir}\""
-                else:
-                    mkdir_cmd = f"mkdir -p \"{dst_dir}\""
-                stdin, stdout, stderr = self.ssh.exec_command(mkdir_cmd)
-                stdout.read()
-                stderr.read()
-                created_dirs.add(dst_dir)
-
-        # 设置临时目录权限为777
-        if self.username != 'root':
-            chmod_cmd = f"echo {self.password} | sudo -S chmod -R 777 \"{temp_remote_path}\""
-        else:
-            chmod_cmd = f"chmod -R 777 \"{temp_remote_path}\""
-        stdin, stdout, stderr = self.ssh.exec_command(chmod_cmd)
-        stdout.read()
-        stderr.read()
-
-        # 复制文件到临时目录
-        file_count = len(all_file_list)
-        logger.debug(f"开始复制文件到远程临时目录，共{file_count}个文件, {len(direct_copy_dirs)}个直接复制目录")
-
-        # 先创建临时目录根目录（直接复制目录需要）
-        if self.username != 'root':
-            mkdir_cmd = f"echo {self.password} | sudo -S mkdir -p \"{temp_remote_path}\""
-        else:
-            mkdir_cmd = f"mkdir -p \"{temp_remote_path}\""
-        stdin, stdout, stderr = self.ssh.exec_command(mkdir_cmd)
-        stdout.read()
-        stderr.read()
-
-        # 先处理直接复制的目录（cp -a 整个目录）
-        for dir_path, src_root in direct_copy_dirs:
-            if self.transfer_stat == 0:
-                logger.warning('下载被中止！')
-                rm_cmd = f"rm -rf \"{temp_remote_path}\""
-                stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
-                stdout.read()
-                stderr.read()
-                return False
-
+            _claim_rel(src_parent, dir_path.replace(src_parent, '', 1).lstrip('/'), src_idx)
+        for file_path, src_root, src_idx in all_file_list:
             src_parent = os.path.dirname(src_root)
-            rel_path = dir_path.replace(src_parent, '', 1).lstrip('/')
-            sanitized_rel_path = sanitize_path_for_windows(rel_path)
-            dst_path = f"{temp_remote_path}/{sanitized_rel_path}"
-
-            # 确保目标父目录存在
-            dst_parent = os.path.dirname(dst_path)
-            if dst_parent and dst_parent != temp_remote_path:
-                if self.username != 'root':
-                    mkdir_cmd = f"echo {self.password} | sudo -S mkdir -p \"{dst_parent}\""
-                else:
-                    mkdir_cmd = f"mkdir -p \"{dst_parent}\""
-                stdin, stdout, stderr = self.ssh.exec_command(mkdir_cmd)
-                stdout.read()
-                stderr.read()
-
-            if self.username != 'root':
-                cp_cmd = f"echo {self.password} | sudo -S cp -a \"{dir_path}\" \"{dst_path}\""
-            else:
-                cp_cmd = f"cp -a \"{dir_path}\" \"{dst_path}\""
-
-            stdin, stdout, stderr = self.ssh.exec_command(cp_cmd)
-            cp_err = stderr.read().decode('utf-8').strip()
-            stdout.read()
-            exit_status = stdout.channel.recv_exit_status()
-            if exit_status != 0:
-                logger.error(f"直接复制目录失败: {dir_path} -> {dst_path},原因: {cp_err}")
-            else:
-                logger.info(f"复制目录完成: {dir_path} -> {dst_path}")
-                if progress_cb:
-                    progress_cb('copy', 0, 0, f'复制目录{os.path.basename(dir_path)}完成')
-
-        # 再处理逐文件复制
-        cp_count = 0
-        failed_files = []
-        for file_path, src_root in all_file_list:
-            if self.transfer_stat == 0:
-                logger.warning('下载被中止！')
-                rm_cmd = f"rm -rf \"{temp_remote_path}\""
-                stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
-                stdout.read()
-                stderr.read()
-                return False
-
-            cp_count += 1
+            _claim_rel(src_parent, file_path.replace(src_parent, '', 1).lstrip('/'), src_idx)
+        for dir_path, src_root, src_idx in direct_copy_dirs:
             src_parent = os.path.dirname(src_root)
-            rel_path = file_path.replace(src_parent, '', 1).lstrip('/')
-            sanitized_rel_path = sanitize_path_for_windows(rel_path)
-            dst_path = f"{temp_remote_path}/{sanitized_rel_path}"
+            _claim_rel(src_parent, dir_path.replace(src_parent, '', 1).lstrip('/'), src_idx)
 
-            if self.username != 'root':
-                cp_cmd = f"echo {self.password} | sudo -S cp -p \"{file_path}\" \"{dst_path}\""
-            else:
-                cp_cmd = f"cp -p \"{file_path}\" \"{dst_path}\""
-
-            stdin, stdout, stderr = self.ssh.exec_command(cp_cmd)
-            cp_err = stderr.read().decode('utf-8').strip()
-            stdout.read()
-            exit_status = stdout.channel.recv_exit_status()
-            if exit_status != 0:
-                logger.debug(f"复制到临时目录失败 {cp_count}/{file_count}: {file_path} -> {dst_path},原因: {cp_err}")
-                failed_files.append({"文件": file_path, "原因": cp_err})
-            else:
-                logger.debug(f"已复制到临时目录 {cp_count}/{file_count}: {file_path} -> {dst_path}")
-                if progress_cb:
-                    progress_cb('copy', cp_count, file_count, os.path.basename(file_path))
-
-        # 打印复制失败汇总
-        if failed_files:
-            fail_lines = [f"复制失败{len(failed_files)}个文件："]
-            for idx, f_item in enumerate(failed_files, 1):
-                fail_lines.append(f"  {idx}. {f_item['文件']} - {f_item['原因']}")
-            logger.info("\n".join(fail_lines))
-
-        if self.transfer_stat == 0:
-            logger.warning('下载被中止！')
-            rm_cmd = f"rm -rf \"{temp_remote_path}\""
-            stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
-            stdout.read()
-            stderr.read()
-            return False
-
-        # 设置临时目录权限为777
-        if self.username != 'root':
-            chmod_cmd = f"echo {self.password} | sudo -S chmod -R 777 \"{temp_remote_path}\""
-        else:
-            chmod_cmd = f"chmod -R 777 \"{temp_remote_path}\""
-        stdin, stdout, stderr = self.ssh.exec_command(chmod_cmd)
-        stdout.read()
-        stderr.read()
-
-        # 多层fallback计算远程文件/目录大小
-        dst_size = 0
-        stdin, stdout, stderr = self.ssh.exec_command(f'du -sb "{temp_remote_path}" 2>/dev/null | awk \'{{print $1}}\'')
-        output = stdout.read().decode('utf-8').strip()
-        stderr.read()
-        if output.isdigit():
-            dst_size = int(output)
-        else:
-            stdin, stdout, stderr = self.ssh.exec_command(f'du -s "{temp_remote_path}" 2>/dev/null')
-            du_output = stdout.read().decode('utf-8').strip()
-            stderr.read()
-            output = du_output.split()[0] if du_output else ''
-            if output.isdigit():
-                dst_size = int(output) * 1024
-            else:
-                stdin, stdout, stderr = self.ssh.exec_command(f'find "{temp_remote_path}" -type f -exec wc -c {{}} \\; 2>/dev/null | awk \'{{sum+=$1}} END {{print sum}}\'')
-                output = stdout.read().decode('utf-8').strip()
-                stderr.read()
-                if output.isdigit():
-                    dst_size = int(output)
-
-        if dst_size > 0:
-            logger.debug(f"开始下载，大小: {dst_size/1048576:.2f} M")
-        else:
-            logger.warning(f"开始下载（无法获取大小）")
-
-        try:
-            # 直接复制目录的文件数 + 逐文件复制的文件数
-            _real_total_files = len(all_file_list) + direct_copy_file_count
-            _download_state = {
-                'accumulated': 0,
-                'last_name': '',
-                'last_size': 0,
-                'file_index': 0,
-                'total_files': _real_total_files,
-                'last_cb_pct': -1,
-            }
-
-            if progress_cb:
-                def _dl_progress(total_sent, total_size, cur_name, cur_size, cur_sent, file_idx, total_files):
-                    progress_cb('download', total_sent, total_size,
-                                f"{cur_name}|{cur_size}|{cur_sent}|{file_idx}|{total_files}")
-                self._download_progress_cb = _dl_progress
-            else:
-                self._download_progress_cb = None
-
-            def _scp_progress(name, size, sent):
-                file_changed = False
-                if _download_state['last_name'] and name != _download_state['last_name']:
-                    _download_state['accumulated'] += _download_state['last_size']
-                    _download_state['file_index'] += 1
-                    file_changed = True
-                _download_state['last_name'] = name
-                _download_state['last_size'] = size
-
-                total_sent = _download_state['accumulated'] + sent
-                self._print_progress(total_sent, dst_size)
-                if hasattr(self, '_download_progress_cb') and self._download_progress_cb:
-                    cur_pct = int(total_sent * 100 / dst_size) if dst_size > 0 else 0
-                    if file_changed or cur_pct != _download_state['last_cb_pct']:
-                        _download_state['last_cb_pct'] = cur_pct
-                        self._download_progress_cb(total_sent, dst_size, name, size, sent,
-                                                   _download_state['file_index'], _download_state['total_files'])
-
-            with self._SCPClient(self.transport, progress=_scp_progress) as client:
-                if self.transfer_stat == 0:
-                    raise Exception("下载被中止")
-                self._last_progress = -1
-                client.get(temp_remote_path, local_path, recursive=True)
-
-            # 补一次 100% 进度回调
-            if progress_cb and dst_size > 0:
-                last_name = _download_state['last_name']
-                last_size = _download_state['last_size']
-                last_idx = _download_state['file_index']
-                last_total = _download_state['total_files']
-                progress_cb('download', dst_size, dst_size,
-                            f"{last_name}|{last_size}|{last_size}|{last_idx}|{last_total}")
-        except Exception as e:
-            logger.error(f"\n下载失败: {e}")
-            try:
-                rm_cmd = f"rm -rf \"{temp_remote_path}\""
-                stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
-                stdout.read()
-                stderr.read()
-            except Exception:
-                pass
-            # 同步清理本地已下载一半的临时目录，避免残留 OneClick_temp* 目录
-            try:
-                _local_temp = os.path.join(local_path, os.path.basename(temp_remote_path))
-                if os.path.exists(_local_temp):
-                    shutil.rmtree(_local_temp, ignore_errors=True)
-            except Exception:
-                pass
+        if not grouped_entries:
+            logger.info("下载完成，未下载任何文件，待下载路径无符合条件的项")
             self.transfer_stat = 0
-            self._download_progress_cb = None
-            return False
+            return True
 
-        rm_cmd = f"rm -rf \"{temp_remote_path}\""
-        stdin, stdout, stderr = self.ssh.exec_command(rm_cmd)
-        stdout.read()
-        stderr.read()
-        logger.debug("远程临时目录已删除")
-
-        # 将本地下载的 temp 目录内容移动到 local_path，去掉多余的一层 temp 目录名
-        temp_basename = os.path.basename(temp_remote_path)
-        local_temp_dir = f"{local_path}/{temp_basename}"
-        if os.path.exists(local_temp_dir):
-            move_failed = []
-            for item in os.listdir(local_temp_dir):
-                src_item = os.path.join(local_temp_dir, item)
-                dst_item = os.path.join(local_path, item)
+        # ---- 写条目列表文件（本地生成，经统一传输入口上传，避免超长命令行）----
+        local_list_paths = []
+        remote_list_paths = []
+        try:
+            for g, (src_parent, rels) in enumerate(grouped_entries.items()):
+                remote_list = f"{base_dir}/OneClick_temp{local_timestamp_ms}_g{g}.list"
+                fd, local_list = tempfile.mkstemp(prefix='oneclick_tar_list_')
+                with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as fp:
+                    fp.write('\n'.join(rels) + '\n')
+                local_list_paths.append(local_list)
+                remote_list_paths.append(remote_list)
+                self.put_file(local_list, remote_list)
+                os.remove(local_list)
+                local_list_paths.pop()
+        except Exception as e:
+            logger.error(f"上传打包条目列表失败: {e}")
+            for p in local_list_paths:
                 try:
-                    # 目标存在则先删除（覆盖）
-                    if os.path.exists(dst_item):
-                        if os.path.isdir(dst_item):
-                            shutil.rmtree(dst_item)
-                        else:
-                            os.remove(dst_item)
-                    shutil.move(src_item, dst_item)
-                except Exception as e:
-                    # 目标被占用（如文件正被其他程序打开）时跳过该项，其余照常摊平
-                    move_failed.append(f"{item}: {e}")
-            if move_failed:
-                # 有文件挪不动（如本地同名文件被占用），保留临时目录及其中文件
-                logger.error("以下内容移动失败（目标可能被占用），已保留在 "
-                             f"{local_temp_dir}:\n  " + "\n  ".join(move_failed))
-            else:
-                # 删除空的 temp 目录
-                try:
-                    os.rmdir(local_temp_dir)
+                    os.remove(p)
                 except OSError:
                     pass
+            self.transfer_stat = 0
+            return False
+
+        def _cleanup_remote_artifacts():
+            """清理远端包与列表文件（普通用户经 sudo，root 直连直接删）"""
+            quoted = ' '.join(f'"{p}"' for p in [remote_tar_path] + remote_list_paths)
+            try:
+                stdin, stdout, stderr = self.ssh.exec_command(f"{sudo_prefix}rm -f {quoted}")
+                stdout.read()
+                stderr.read()
+            except Exception:
+                pass
+
+        # ---- 服务器端打包（tar 不压缩，速度与磁盘拷贝同量级）----
+        if progress_cb:
+            progress_cb('pack', 0, 0, '服务器端打包中...')
+        tar_errors = []
+        for g, (src_parent, rels) in enumerate(grouped_entries.items()):
+            if self.transfer_stat == 0:
+                logger.warning('下载被中止！')
+                _cleanup_remote_artifacts()
+                self.transfer_stat = 0
+                return False
+            # 首组建包，后续组追加（追加要求包未压缩）
+            # 注意：items() 的第二个值是 rels 列表，列表文件路径取 remote_list_paths[g]
+            remote_list = remote_list_paths[g]
+            mode = '-cf' if g == 0 else '-rf'
+            tar_cmd = (f"{sudo_prefix}bash -c 'cd \"{src_parent}\" && tar {mode} "
+                       f"\"{remote_tar_path}\" -T \"{remote_list}\"'")
+            stdin, stdout, stderr = self.ssh.exec_command(tar_cmd)
+            tar_err = stderr.read().decode('utf-8', 'replace').strip()
+            stdout.read()
+            exit_status = stdout.channel.recv_exit_status()
+            if exit_status != 0:
+                tar_errors.append(f"源目录 {src_parent}: {tar_err or f'退出码 {exit_status}'}")
+
+        # sudo 打包时包属主为 root，放开读权限供下载会话读取
+        # （无 sudo 时包以登录用户身份生成，本身可读，无需 chmod）
+        if sudo_prefix:
+            stdin, stdout, stderr = self.ssh.exec_command(f"{sudo_prefix}chmod 644 \"{remote_tar_path}\"")
+            stdout.read()
+            stderr.read()
+
+        # 包大小：存在性校验 + 下载进度总量
+        stdin, stdout, stderr = self.ssh.exec_command(
+            f'du -sb "{remote_tar_path}" 2>/dev/null | awk \'{{print $1}}\'')
+        output = stdout.read().decode('utf-8').strip()
+        stderr.read()
+        tar_size = int(output) if output.isdigit() else 0
+        if tar_size <= 0:
+            detail = "\n  ".join(tar_errors) if tar_errors else "打包命令未产出有效包文件"
+            logger.error(f"服务器端打包失败:\n  {detail}")
+            # 诊断：打印列表内容与源目录实况（列表此时还在远端，清理前取回），
+            # 定位"列表条目与磁盘实际条目对不上"类问题
+            for g, (src_parent, rels) in enumerate(grouped_entries.items()):
+                remote_list = remote_list_paths[g]
+                try:
+                    stdin, stdout, stderr = self.ssh.exec_command(
+                        f"echo '--- 列表内容 {remote_list} ---'; cat \"{remote_list}\" 2>&1; "
+                        f"echo '--- 源目录实况 {src_parent} ---'; ls -la \"{src_parent}\" 2>&1")
+                    diag = stdout.read().decode('utf-8', 'replace').strip()
+                    stderr.read()
+                    logger.error(f"打包诊断[组{g}]:\n{diag}")
+                except Exception:
+                    pass
+            _cleanup_remote_artifacts()
+            self.transfer_stat = 0
+            return False
+        if tar_errors:
+            # 个别源打包失败但包已生成：列出明细继续下载其余内容（与历史逐文件容错语义一致）
+            logger.error("以下源路径打包出错（已跳过）:\n  " + "\n  ".join(tar_errors))
+        if progress_cb:
+            progress_cb('pack', 1, 1, f'打包完成 ({tar_size / 1048576:.1f}MB)')
+        logger.debug(f"打包完成，大小: {tar_size / 1048576:.2f} M")
+
+        # ---- 单文件下载 ----
+        tar_basename = os.path.basename(remote_tar_path)
+        if pack:
+            local_target = os.path.join(local_path, archive_name)
+        else:
+            local_target = os.path.join(local_path, tar_basename)
+
+        try:
+            if self.transfer_stat == 0:
+                raise TransferAborted("下载被中止")
+
+            def _dl_progress(name, size, sent):
+                if self.transfer_stat == 0:
+                    raise TransferAborted("下载被中止")
+                self._print_progress(sent, tar_size)
+                if progress_cb:
+                    progress_cb('download', sent, tar_size, '')
+
+            self.get_file(remote_tar_path, local_target,
+                          progress=_dl_progress if progress_cb else None)
+            if progress_cb:
+                progress_cb('download', tar_size, tar_size, '')
+        except TransferAborted:
+            logger.warning('下载被中止！')
+            _cleanup_remote_artifacts()
+            try:
+                if os.path.exists(local_target):
+                    os.remove(local_target)
+            except OSError:
+                pass
+            self.transfer_stat = 0
+            return False
+        except Exception as e:
+            logger.error(f"\n下载失败: {e}")
+            _cleanup_remote_artifacts()
+            try:
+                if os.path.exists(local_target):
+                    os.remove(local_target)
+            except OSError:
+                pass
+            self.transfer_stat = 0
+            return False
+
+        # ---- 本地处理：落包 or 解包 ----
+        # 呈现层路径统一正斜杠（正斜杠路径 Windows API 全兼容，不影响后续 os 操作）
+        local_target = str(local_target).replace('\\', '/')
+        if pack:
+            logger.info(f"打包下载完成: {local_target}")
+        else:
+            try:
+                self._extract_tar_local(local_target, local_path, progress_cb)
+            except TransferAborted:
+                logger.warning('解包被中止！')
+                try:
+                    os.remove(local_target)
+                except OSError:
+                    pass
+                self.transfer_stat = 0
+                return False
+            except Exception as e:
+                logger.error(f"解包失败: {e}")
+                try:
+                    os.remove(local_target)
+                except OSError:
+                    pass
+                self.transfer_stat = 0
+                return False
+            # 解包完成，删除中转包
+            try:
+                os.remove(local_target)
+            except OSError:
+                pass
+
+        # ---- 清理远端临时文件 ----
+        _cleanup_remote_artifacts()
+        logger.debug("远程临时文件已删除")
 
         logger.debug(f"下载完毕！文件已保存到: {local_path}")
         self.transfer_stat = 0
-        self._download_progress_cb = None
         return True
 
     def _print_progress(self, sent, total):
@@ -1498,7 +1794,7 @@ class SSHTools(object):
             当self.transfer_stat为0时抛出异常，用于中断传输
         """
         if self.transfer_stat == 0:
-            raise Exception("传输被中止")
+            raise TransferAborted("传输被中止")
         if total <= 0:
             return
         # 计算当前进度（0~10）
@@ -1510,35 +1806,6 @@ class SSHTools(object):
             if '-' not in bar:
                 return
             logger.debug(f"传输进度: |{bar}|")
-
-            # 传输完成时换行，避免后续输出覆盖
-            if progress == 10:
-                logger.info()
-
-    def clean_empty_dir(self, sftp, path, f_name=''):
-        """将linux目录中的空文件夹删除，如果文件夹的名字包含f_name则不删除，注意需要传入一个已经open的sftp"""
-        try:
-            dir_list = sftp.listdir(path)
-        except Exception as e:
-            return
-        if len(dir_list) == 0:
-            if f_name == '':
-                try:
-                    sftp.rmdir(path)
-                except Exception as e:
-                    return
-                # 删除之后重新检查上一级目录
-                self.clean_empty_dir(sftp, path.rsplit('/', 1)[0], f_name)
-            else:
-                if not f_name in path.rsplit('/', 1)[1]:
-                    sftp.rmdir(path)
-                    # 删除之后重新检查上一级目录
-                    self.clean_empty_dir(sftp, path.rsplit('/', 1)[0], f_name)
-                else:
-                    return
-        else:
-            for item in dir_list:
-                self.clean_empty_dir(sftp, path + '/' + item)
 
     def mkdir(self, path):
         if not self.is_connected():

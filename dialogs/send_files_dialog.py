@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (QDialog, QListWidget,
                              QRadioButton)
 from UI import send_files_dlg
 from .base_dialog import sc_class2str, wrap_server_info_in_frame, validate_work_dir
+from utils.config_schema import derive_home
 
 
 class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
@@ -67,7 +68,7 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         # 临时文件路径：用户名变化时自动联动更新
         self.username_lineEdit.textChanged.connect(self._on_username_changed)
         if self.username_lineEdit.text():
-            self.work_dir_lineEdit.setText(f"/home/{self.username_lineEdit.text()}")
+            self.work_dir_lineEdit.setText(derive_home(self.username_lineEdit.text()))
 
         # 筛选条件变化 → 同步到当前选中条目
         self.time_comboBox.currentIndexChanged.connect(self._on_filter_changed)
@@ -426,7 +427,7 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
     def _on_username_changed(self, username):
         """用户名变化时自动更新临时文件路径"""
         if username:
-            self.work_dir_lineEdit.setText(f"/home/{username}")
+            self.work_dir_lineEdit.setText(derive_home(username))
 
     def create_sc(self):
         text_list = [
@@ -522,7 +523,8 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         self._loading = False  # 加载完成
 
     def reset(self):
-        self.server_comboBox.clear()
+        # 与 base_dialog.reset 对齐：只取消当前选中，保留服务器下拉列表
+        self.server_comboBox.setCurrentIndex(-1)
         self.linux_ip_lineEdit.clear()
         self.username_lineEdit.clear()
         self.passwd_lineEdit.clear()
@@ -547,4 +549,4 @@ class SendFilesDialog(QDialog, send_files_dlg.Ui_Dialog):
         self.passwd_lineEdit.setText(self.server_comboBox.currentData()['密码'])
         self.sc_name_lineEdit.setText(f'{sc_class2str[self.__class__.__name__]}：' + self.server_comboBox.currentText())
         # 选择服务器时，同步更新临时文件路径
-        self.work_dir_lineEdit.setText(f"/home/{self.server_comboBox.currentData()['用户名']}")
+        self.work_dir_lineEdit.setText(derive_home(self.server_comboBox.currentData()['用户名']))

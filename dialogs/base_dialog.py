@@ -2,6 +2,7 @@ from PyQt5 import QtCore
 from PyQt5.QtWidgets import QDialog, QFrame, QGridLayout, QLabel
 from UI import send_cmd_dlg
 from utils.logger import get_logger
+from utils.config_schema import derive_home
 
 # ── 临时文件路径前端校验（保存时即时反馈） ─────────────
 _WORKDIR_STYLE_INVALID = "border: 1px solid red;"
@@ -131,7 +132,7 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
             self.username_lineEdit.textChanged.connect(self._on_username_changed)
             # 初始化时设置默认值（如果已有用户名则自动填入）
             if self.username_lineEdit.text():
-                self.work_dir_lineEdit.setText(f"/home/{self.username_lineEdit.text()}")
+                self.work_dir_lineEdit.setText(derive_home(self.username_lineEdit.text()))
 
         # 仅发送命令和发送命令并接收回显不需要显示临时文件路径输入框
         if self.__class__.__name__ in ('SendCMDDialog', 'SendCMD2Dialog'):
@@ -154,7 +155,7 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
     def _on_username_changed(self, username):
         """用户名变化时自动更新临时文件路径"""
         if username:
-            self.work_dir_lineEdit.setText(f"/home/{username}")
+            self.work_dir_lineEdit.setText(derive_home(username))
 
     def create_sc(self):
         text_list = [
@@ -197,7 +198,7 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
         if hasattr(self, 'work_dir_lineEdit'):
             self.sc_cfg['临时文件路径'] = self.work_dir_lineEdit.text().strip()
         else:
-            self.sc_cfg['临时文件路径'] = f"/home/{self.username_lineEdit.text()}"
+            self.sc_cfg['临时文件路径'] = derive_home(self.username_lineEdit.text())
 
         # 将快捷方式的配置内容传递给主窗口，区分编辑模式还是添加模式
         if self.parent:
@@ -242,4 +243,4 @@ class SendCMDDialog(QDialog, send_cmd_dlg.Ui_Dialog):
         self.sc_name_lineEdit.setText(f'{sc_class2str[self.__class__.__name__]}：' + self.server_comboBox.currentText())
         # 选择服务器时，同步更新临时文件路径
         if hasattr(self, 'work_dir_lineEdit'):
-            self.work_dir_lineEdit.setText(f"/home/{self.server_comboBox.currentData()['用户名']}")
+            self.work_dir_lineEdit.setText(derive_home(self.server_comboBox.currentData()['用户名']))

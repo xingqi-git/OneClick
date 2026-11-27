@@ -261,11 +261,13 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
         self.loop_lineEdit.setText(cfg.get('循环次数', '0'))
         validate_loop_count()  # 初始化时验证一次
         self.saved_nic = cfg.get('网卡', '')  # 保存配置的网卡，用于后续恢复
+        # 空值或非法（Windows 路径等）→ 登录用户家目录（root 为 /root），
+        # 推导统一走 derive_home，保证下游路径安全
+        from utils.config_schema import derive_home
         self.work_dir = cfg.get('临时文件路径', '')
-        # 空值或非法（Windows 路径等）→ 登录用户家目录，保证下游路径安全
         if (not self.work_dir or not self.work_dir.strip().startswith('/')
                 or '\\' in self.work_dir):
-            self.work_dir = f"/home/{cfg.get('用户名', 'root')}"
+            self.work_dir = derive_home(cfg.get('用户名', 'root')) or '/home'
 
         # 【关键】如果有保存的网卡，先添加到下拉框并选中，让界面打开就显示
         if self.saved_nic:
@@ -666,6 +668,18 @@ class WeakNetControlDialog(QDialog, weak_net_control_dlg.Ui_Dialog):
             loop_count = int(loop_val) if loop_val else 0
         except ValueError:
             AutoCloseMessageBox("提示", "循环次数必须是正整数", 2000, self).exec_()
+            self.set_all_buttons_enable(True)
+            self._operation_running = False
+            return
+
+        # 弱网规则会真实影响服务器网络，执行前必须用户确认
+        ret = QMessageBox.warning(
+            self, "确认执行弱网",
+            "弱网规则生效后可能造成与服务器无法连接！\n"
+            "请仔细检查弱网规则与网卡选择，确认无误后再执行。\n\n"
+            "是否确定开始弱网？",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if ret != QMessageBox.Yes:
             self.set_all_buttons_enable(True)
             self._operation_running = False
             return

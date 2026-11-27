@@ -14,6 +14,7 @@ import stat
 import weakref
 import datetime
 import subprocess
+import threading
 from urllib.parse import unquote
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import QUrl, QEvent
@@ -73,7 +74,8 @@ class _RemoteTreeWidget(QtWidgets.QTreeWidget):
             if fb is not None and hasattr(fb, 'tree') and fb.tree is self and hasattr(fb, '_full_path'):
                 for item in self.selectedItems():
                     name = item.data(0, QtCore.Qt.UserRole)
-                    self._items_at_press.append(fb._full_path(name))
+                    is_dir = bool(item.data(0, QtCore.Qt.UserRole + 1))
+                    self._items_at_press.append((fb._full_path(name), is_dir))
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -178,17 +180,18 @@ class _DragOverlayWidget(QtWidgets.QWidget):
 
 
 class FileBrowserWidget(QtWidgets.QWidget):
-    """远程 SFTP 文件浏览器"""
+    """远程文件浏览器（目录操作走 SSHTools 统一传输策略层：SFTP 优先 / exec 降级）"""
 
     upload_requested = QtCore.pyqtSignal(str, list)       # (远程目标目录, 本地文件/文件夹列表)
-    download_requested = QtCore.pyqtSignal(list, str)     # (远程完整路径列表, 本地目标目录)
+    download_requested = QtCore.pyqtSignal(list, str)     # ((远程完整路径, 是否目录) 列表, 本地目标目录)
     open_file_requested = QtCore.pyqtSignal(str)          # (远程完整文件路径) 双击远程文件→本地打开
     open_with_requested = QtCore.pyqtSignal(str)          # (远程完整文件路径) 右键"打开方式..."→选择程序打开
     status_changed = QtCore.pyqtSignal(str)               # 状态变化提示
+    dir_size_computed = QtCore.pyqtSignal(object, str, int)   # (条目, 远程路径, 字节数) 计算大小完成
+    dir_size_failed = QtCore.pyqtSignal(object, str, str)     # (条目, 远程路径, 错误) 计算大小失败
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._sftp = None        # paramiko SFTPClient，外部设置
         self._ssh_tool = None    # SSHTools 实例，外部设置
         self._current_path = '/' # 当前远程路径
         self._connected = False
@@ -198,21 +201,21 @@ class FileBrowserWidget(QtWidgets.QWidget):
         # 手动拖出状态
         self._drag_overlay = None   # 当前显示的拖出浮窗
         self._drag_timer = None     # 跟随鼠标的 QTimer
-        self._drag_paths = []       # 当前拖拽的远程路径列表
+        self._drag_paths = []       # 当前拖拽的远程项列表（(路径, 是否目录) 元组）
+        # 列标题排序状态：None=默认顺序（目录前文件后、名称排）；否则 (列, Qt排序方向)
+        self._sort_col = None
+        self._sort_order = QtCore.Qt.SortOrder.AscendingOrder
+        self._default_order = []    # 列表填充时的原始顺序（恢复默认用）
 
         self._init_ui()
+        # du 计算在后台线程执行，结果经信号排队回主线程刷新条目
+        self.dir_size_computed.connect(self._on_dir_size_ok)
+        self.dir_size_failed.connect(self._on_dir_size_fail)
 
     def _init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
-
-        # ---- 标题行 ----
-        title_row = QtWidgets.QHBoxLayout()
-        self.title_label = QtWidgets.QLabel("远程文件", self)
-        title_row.addWidget(self.title_label)
-        title_row.addStretch(1)
-        layout.addLayout(title_row)
 
         # ---- 地址栏 + 工具栏 ----
         tool_row = QtWidgets.QHBoxLayout()
@@ -256,11 +259,13 @@ class FileBrowserWidget(QtWidgets.QWidget):
 
         # ---- 文件列表 ----
         self.tree = _RemoteTreeWidget(self)
-        self.tree.setColumnCount(3)
-        self.tree.setHeaderLabels(["名称", "大小", "修改时间"])
-        self.tree.setColumnWidth(0, 200)
-        self.tree.setColumnWidth(1, 80)
-        self.tree.setColumnWidth(2, 120)
+        self.tree.setColumnCount(5)
+        self.tree.setHeaderLabels(["名称", "大小", "修改时间", "权限", "拥有者"])
+        self.tree.setColumnWidth(0, 180)
+        self.tree.setColumnWidth(1, 70)
+        self.tree.setColumnWidth(2, 115)
+        self.tree.setColumnWidth(3, 105)
+        self.tree.setColumnWidth(4, 70)
         self.tree.setRootIsDecorated(False)
         self.tree.setAlternatingRowColors(True)
         self.tree.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
@@ -276,6 +281,11 @@ class FileBrowserWidget(QtWidgets.QWidget):
         self.tree.setDragDropMode(QtWidgets.QAbstractItemView.DropOnly)
         # 拖入上传：安装事件过滤器处理 DragEnter/Drop
         self.tree.installEventFilter(self)
+        # 列标题排序：点击循环 升序→降序→恢复默认
+        header = self.tree.header()
+        header.setSectionsClickable(True)
+        header.setSortIndicatorShown(True)  # 显示升/降序箭头指示器
+        header.sectionClicked.connect(self._on_header_clicked)
         layout.addWidget(self.tree, 1)
 
         # ---- 底部状态栏 ----
@@ -288,21 +298,14 @@ class FileBrowserWidget(QtWidgets.QWidget):
     # -------- 外部接口 --------
 
     def set_ssh_tool(self, ssh_tool):
-        """设置已连接的 SSHTools 实例"""
+        """设置已连接的 SSHTools 实例（传输协议已在其连接期完成嗅探，此处直接可用）"""
         self._ssh_tool = ssh_tool
         if ssh_tool is not None and ssh_tool.is_connected():
-            try:
-                self._sftp = ssh_tool.ssh.open_sftp()
-            except Exception as e:
-                self.status_label.setText(f"打开SFTP失败: {e}")
-                self._sftp = None
-                self._connected = False
-                return
             self._connected = True
             # 默认进入用户主目录；该连接此前浏览过目录则恢复它自己的目录
             # （多终端标签各自记住自己的位置，切换标签时互不干扰）
             try:
-                home = self._sftp.normalize('.')
+                home = ssh_tool.fs_home()
             except Exception:
                 home = '/'
             try:
@@ -324,12 +327,6 @@ class FileBrowserWidget(QtWidgets.QWidget):
             self.status_changed.emit("已连接")
         else:
             self._connected = False
-            if self._sftp is not None:
-                try:
-                    self._sftp.close()
-                except Exception:
-                    pass
-                self._sftp = None
             self.tree.clear()
             self.path_edit.clear()
             self._set_buttons_enabled(False)
@@ -337,11 +334,10 @@ class FileBrowserWidget(QtWidgets.QWidget):
             self.status_changed.emit("未连接")
 
     def is_connected(self):
-        return self._connected and self._sftp is not None
+        return self._connected and self._ssh_tool is not None and self._ssh_tool.is_connected()
 
     def set_title_style(self, style_sheet):
-        """设置标题标签样式（与主界面其他标题统一）"""
-        self.title_label.setStyleSheet(style_sheet)
+        """保留兼容：标题行已移除，不再有标题标签"""
 
     def current_path(self):
         return self._current_path
@@ -376,14 +372,14 @@ class FileBrowserWidget(QtWidgets.QWidget):
         if not self.is_connected():
             return
         try:
-            items = self._sftp.listdir_attr(path)
+            items = self._ssh_tool.fs_listdir(path)
         except Exception as e:
             self.status_label.setText(f"无法访问: {e}")
             return
 
         # 规范化路径
         try:
-            normalized = self._sftp.normalize(path)
+            normalized = self._ssh_tool.fs_normalize(path)
             self._current_path = normalized
             self.path_edit.setText(normalized)
         except Exception:
@@ -421,6 +417,12 @@ class FileBrowserWidget(QtWidgets.QWidget):
             item = self._make_item(attr, is_dir=False)
             self.tree.addTopLevelItem(item)
 
+        # 记录默认顺序（恢复默认排序用），刷新后按用户之前的排序状态重排
+        self._default_order = [self.tree.topLevelItem(i)
+                               for i in range(self.tree.topLevelItemCount())]
+        if self._sort_col is not None:
+            self._apply_sort(self._sort_col, self._sort_order)
+
         self.status_label.setText(f"{len(dirs)} 个目录，{len(files)} 个文件")
 
     def _make_item(self, attr, is_dir):
@@ -440,12 +442,24 @@ class FileBrowserWidget(QtWidgets.QWidget):
         try:
             mtime = datetime.datetime.fromtimestamp(attr.st_mtime)
             time_str = mtime.strftime('%Y-%m-%d %H:%M')
+            mtime_key = attr.st_mtime
         except Exception:
             time_str = ''
+            mtime_key = None
 
-        item = QtWidgets.QTreeWidgetItem([display_name, size_str, time_str])
+        item = QtWidgets.QTreeWidgetItem([
+            display_name, size_str, time_str,
+            getattr(attr, 'permission', '') or '',
+            getattr(attr, 'owner', '') or '',
+        ])
         item.setData(0, QtCore.Qt.UserRole, name)
         item.setData(0, QtCore.Qt.UserRole + 1, is_dir)
+        # 各列排序键（UserRole+2）：名称/权限/拥有者用字符串，大小用字节，时间用时间戳
+        item.setData(0, QtCore.Qt.UserRole + 2, name)
+        item.setData(1, QtCore.Qt.UserRole + 2, None if is_dir else attr.st_size)
+        item.setData(2, QtCore.Qt.UserRole + 2, mtime_key)
+        item.setData(3, QtCore.Qt.UserRole + 2, getattr(attr, 'permission', '') or '')
+        item.setData(4, QtCore.Qt.UserRole + 2, getattr(attr, 'owner', '') or '')
 
         # 图标
         icon = self.style().standardIcon(
@@ -475,6 +489,64 @@ class FileBrowserWidget(QtWidgets.QWidget):
             return '/' + name
         return self._current_path.rstrip('/') + '/' + name
 
+    # -------- 列标题排序（点击循环：升序→降序→恢复默认） --------
+
+    def _on_header_clicked(self, col):
+        if self._sort_col != col:
+            # 新列 → 升序
+            self._sort_col, self._sort_order = col, QtCore.Qt.SortOrder.AscendingOrder
+        elif self._sort_order == QtCore.Qt.SortOrder.AscendingOrder:
+            # 同列第二次点击 → 降序
+            self._sort_order = QtCore.Qt.SortOrder.DescendingOrder
+        else:
+            # 同列第三次点击 → 恢复默认顺序
+            self._reset_sort()
+            return
+        self._apply_sort(self._sort_col, self._sort_order)
+
+    def _sort_key(self, item, col):
+        """列排序键（同构三元组，避免数值/字符串混比崩溃）：
+        数值键→(0, 值, '')；字符串/缺键（目录无大小等）→(1, 0, 名称)"""
+        name = (item.data(0, QtCore.Qt.UserRole) or '').lower()
+        key = item.data(col, QtCore.Qt.UserRole + 2)
+        if key is None:
+            return (1, 0.0, name)
+        if isinstance(key, str):
+            return (1, 0.0, key.lower())
+        return (0, float(key), '')
+
+    def _apply_sort(self, col, order):
+        try:
+            rev = order == QtCore.Qt.SortOrder.DescendingOrder
+            dirs, files = [], []
+            for i in range(self.tree.topLevelItemCount()):
+                it = self.tree.topLevelItem(i)
+                (dirs if it.data(0, QtCore.Qt.UserRole + 1) else files).append(it)
+            # 目录/文件分组各自排序，目录组恒在文件组前（组内规则一致）
+            dirs.sort(key=lambda it: self._sort_key(it, col), reverse=rev)
+            files.sort(key=lambda it: self._sort_key(it, col), reverse=rev)
+            items = dirs + files
+            for i, it in enumerate(items):
+                cur = self.tree.indexOfTopLevelItem(it)
+                if cur != i:
+                    self.tree.takeTopLevelItem(cur)
+                    self.tree.insertTopLevelItem(i, it)
+        except RuntimeError:
+            return  # 列表正在刷新，条目已销毁
+        self.tree.header().setSortIndicator(col, order)
+
+    def _reset_sort(self):
+        self._sort_col = None
+        self.tree.header().setSortIndicator(-1, QtCore.Qt.SortOrder.AscendingOrder)
+        try:
+            for i, it in enumerate(self._default_order):
+                cur = self.tree.indexOfTopLevelItem(it)
+                if cur >= 0 and cur != i:
+                    self.tree.takeTopLevelItem(cur)
+                    self.tree.insertTopLevelItem(i, it)
+        except RuntimeError:
+            pass  # 列表正在刷新，条目已销毁
+
     # -------- 右键菜单 --------
 
     def _show_context_menu(self, pos):
@@ -492,6 +564,7 @@ class FileBrowserWidget(QtWidgets.QWidget):
         act_rename = None
         act_delete = None
         act_download = None
+        act_calc_size = None
 
         if has_selection:
             # 有选中项：文件/文件夹操作
@@ -500,6 +573,9 @@ class FileBrowserWidget(QtWidgets.QWidget):
                 act_open_with = menu.addAction("打开方式...")
             if len(selected) == 1:
                 act_rename = menu.addAction("重命名")
+            if len(selected) == 1 and selected[0].data(0, QtCore.Qt.UserRole + 1):
+                # 单选且是文件夹：按需计算递归总大小（元数据不提供，需遍历）
+                act_calc_size = menu.addAction("计算大小")
             act_delete = menu.addAction(f"删除 ({len(selected)}项)")
             act_download = menu.addAction(f"下载 ({len(selected)}项)")
             menu.addSeparator()
@@ -520,6 +596,8 @@ class FileBrowserWidget(QtWidgets.QWidget):
                 self._full_path(selected[0].data(0, QtCore.Qt.UserRole)))
         elif act_rename is not None and action == act_rename:
             self._rename_item(selected[0])
+        elif act_calc_size is not None and action == act_calc_size:
+            self._calc_dir_size(selected[0])
         elif act_delete is not None and action == act_delete:
             self._delete_items(selected)
         elif act_download is not None and action == act_download:
@@ -532,6 +610,44 @@ class FileBrowserWidget(QtWidgets.QWidget):
             self.refresh()
 
     # -------- 右键操作实现 --------
+
+    def _calc_dir_size(self, item):
+        """右键"计算大小"：后台 du 递归求和，完成后回填大小列"""
+        if not self.is_connected():
+            return
+        name = item.data(0, QtCore.Qt.UserRole)
+        full_path = self._full_path(name)
+
+        item.setText(1, "计算中...")
+        self.status_label.setText(f"正在计算大小: {name}")
+
+        def worker():
+            try:
+                size = self._ssh_tool.fs_dir_size(full_path)
+                self.dir_size_computed.emit(item, full_path, size)
+            except Exception as e:
+                self.dir_size_failed.emit(item, full_path, str(e))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_dir_size_ok(self, item, path, size):
+        try:
+            item.setText(1, self._format_size(size))
+            # 同步大小排序键（回填后按大小排序用）
+            item.setData(1, QtCore.Qt.UserRole + 2, size)
+        except RuntimeError:
+            return  # 条目已随列表刷新被销毁，丢弃结果
+        name = path.rsplit('/', 1)[-1]
+        self.status_label.setText(f"大小计算完成: {name}")
+
+    def _on_dir_size_fail(self, item, path, err):
+        try:
+            item.setText(1, "")
+            item.setData(1, QtCore.Qt.UserRole + 2, None)
+        except RuntimeError:
+            return
+        name = path.rsplit('/', 1)[-1]
+        self.status_label.setText(f"大小计算失败 [{name}]: {err}")
 
     def _rename_item(self, item):
         """重命名文件/文件夹"""
@@ -547,7 +663,7 @@ class FileBrowserWidget(QtWidgets.QWidget):
         new_path = self._full_path(new_name)
 
         try:
-            self._sftp.rename(old_path, new_path)
+            self._ssh_tool.fs_rename(old_path, new_path)
             self.refresh()
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "重命名失败", str(e))
@@ -579,9 +695,9 @@ class FileBrowserWidget(QtWidgets.QWidget):
         for full_path, is_dir in targets:
             try:
                 if is_dir:
-                    self._sftp_rmtree(full_path)
+                    self._ssh_tool.fs_rmtree(full_path)
                 else:
-                    self._sftp.remove(full_path)
+                    self._ssh_tool.fs_remove(full_path)
             except Exception as e:
                 errors.append(f"{full_path}: {e}")
 
@@ -591,25 +707,6 @@ class FileBrowserWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(
                 self, "部分删除失败",
                 "以下项目删除失败：\n\n" + '\n'.join(errors))
-
-    def _sftp_rmtree(self, remote_dir):
-        """递归删除远程目录（SFTP 没提供，自己实现）"""
-        # 先列出目录内容
-        try:
-            contents = self._sftp.listdir_attr(remote_dir)
-        except Exception:
-            return  # 目录不存在或无权限，跳过
-
-        for attr in contents:
-            if attr.filename.startswith('.'):
-                continue
-            child_path = remote_dir.rstrip('/') + '/' + attr.filename
-            if stat.S_ISDIR(attr.st_mode):
-                self._sftp_rmtree(child_path)
-            else:
-                self._sftp.remove(child_path)
-
-        self._sftp.rmdir(remote_dir)
 
     def _new_file(self):
         """在当前目录新建空文件"""
@@ -622,16 +719,14 @@ class FileBrowserWidget(QtWidgets.QWidget):
 
         # 检查是否已存在
         try:
-            self._sftp.stat(full_path)
-            QtWidgets.QMessageBox.warning(self, "已存在", f"文件 '{name}' 已存在")
-            return
-        except IOError:
-            pass  # 不存在，继续
+            if self._ssh_tool.fs_exists(full_path):
+                QtWidgets.QMessageBox.warning(self, "已存在", f"文件 '{name}' 已存在")
+                return
+        except Exception:
+            pass
 
         try:
-            # SFTP.open 相当于 touch
-            with self._sftp.open(full_path, 'w'):
-                pass
+            self._ssh_tool.fs_touch(full_path)
             self.refresh()
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "创建失败", str(e))
@@ -647,14 +742,14 @@ class FileBrowserWidget(QtWidgets.QWidget):
 
         # 检查是否已存在
         try:
-            self._sftp.stat(full_path)
-            QtWidgets.QMessageBox.warning(self, "已存在", f"文件夹 '{name}' 已存在")
-            return
-        except IOError:
+            if self._ssh_tool.fs_exists(full_path):
+                QtWidgets.QMessageBox.warning(self, "已存在", f"文件夹 '{name}' 已存在")
+                return
+        except Exception:
             pass
 
         try:
-            self._sftp.mkdir(full_path)
+            self._ssh_tool.fs_mkdir(full_path)
             self.refresh()
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "创建失败", str(e))
@@ -708,11 +803,11 @@ class FileBrowserWidget(QtWidgets.QWidget):
 
     # -------- 拖出下载：纯手动拖拽（无 QDrag / 无后台下载） --------
 
-    def _start_manual_drag_out(self, remote_paths):
+    def _start_manual_drag_out(self, targets):
         """超过拖拽阈值时调用：显示跟随鼠标的半透明浮窗，启动 QTimer 跟随"""
-        self._drag_paths = remote_paths
+        self._drag_paths = targets  # [(远程完整路径, 是否目录), ...]
         # app_window = self.window() 获取顶层主窗口，供浮窗判断"在窗口内/外"
-        self._drag_overlay = _DragOverlayWidget(remote_paths, app_window=self.window())
+        self._drag_overlay = _DragOverlayWidget([p for p, _ in targets], app_window=self.window())
         self._drag_overlay.show()
         self._drag_overlay.follow_cursor()
 
@@ -849,12 +944,13 @@ class FileBrowserWidget(QtWidgets.QWidget):
         if not local_dir:
             return
 
-        remote_paths = []
+        targets = []
         for item in selected:
             name = item.data(0, QtCore.Qt.UserRole)
-            remote_paths.append(self._full_path(name))
+            is_dir = bool(item.data(0, QtCore.Qt.UserRole + 1))
+            targets.append((self._full_path(name), is_dir))
 
-        self.download_requested.emit(remote_paths, local_dir)
+        self.download_requested.emit(targets, local_dir)
 
     def _set_buttons_enabled(self, enabled):
         self.up_btn.setEnabled(enabled)

@@ -10,7 +10,6 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 import matplotlib.pyplot as plt
 import matplotlib.text
 from utils.graph_data_tools import Worker
-from scp import SCPClient
 
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
@@ -1411,7 +1410,8 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
         self._switch_data_source(folder)
 
     def _switch_data_source(self, new_path):
-        logger.info("切换数据源: %s -> %s", self.data_path, new_path)
+        # 呈现层路径统一正斜杠
+        logger.info("切换数据源: %s -> %s", str(self.data_path).replace('\\', '/'), str(new_path).replace('\\', '/'))
         for action_name in list(self.action_tab_map.keys()):
             self.remove_plot_tab(action_name)
         for key in list(self.threads.keys()):
@@ -1464,7 +1464,7 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
             if reply != QtWidgets.QMessageBox.StandardButton.Yes:
                 return
 
-        logger.info("开始更新数据: ip=%s, 本地路径=%s", self.server_config.get('IP'), self.data_path)
+        logger.info("开始更新数据: ip=%s, 本地路径=%s", self.server_config.get('IP'), str(self.data_path).replace('\\', '/'))
         from utils import ssh_tools
         from utils import qthread_worker
 
@@ -1549,10 +1549,8 @@ class GraphWindow(QMainWindow, GraphMainWindow.Ui_MainWindow):
                     except Exception:
                         pass
                     try:
-                        # 与项目主传输约定一致，单文件下载走 SCP（scp 命令走 exec 通道，
-                        # 不依赖 sftp 子系统——后者可能被网络策略单独阻断导致 Channel closed）
-                        with SCPClient(ssh_client.transport) as client:
-                            client.get(remote_file, local_file)
+                        # 统一传输策略层单文件下载（SFTP 优先 / SCP 降级，连接期已嗅探）
+                        ssh_client.get_file(remote_file, local_file)
                     except Exception as e:
                         ssh_client.disconnect()
                         logger.error("更新数据失败：下载 %s 出错: %s", fname, e)

@@ -1211,12 +1211,10 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                                 end_str = end_time.strftime('%Y-%m-%d %H:%M:%S')
                                 log_cleaner.write_remote_linux_clean_script(user_path, start_str, end_str, local_script)
 
-                                # 2. 上传脚本到服务器
+                                # 2. 上传脚本到服务器（统一传输策略层）
                                 worker.info_signal.emit(('label', "上传清理脚本..."))
                                 remote_script = f"{work_dir}/oneclick_clean.sh"
-                                sftp = ssh_client.ssh.open_sftp()
-                                sftp.put(local_script, remote_script)
-                                sftp.close()
+                                ssh_client.put_file(local_script, remote_script)
 
                                 # 3. 执行脚本，实时读取进度
                                 worker.info_signal.emit(('label', "执行清理中..."))
@@ -1455,12 +1453,10 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
                             user_path, filter_tmp_dir, start_str, end_str, local_script
                         )
 
-                        # 2. 上传脚本到服务器
+                        # 2. 上传脚本到服务器（统一传输策略层）
                         worker.info_signal.emit(('filter_phase', 'upload'))
                         remote_script = f"{work_dir}/oneclick_filter.sh"
-                        sftp = ssh_client.ssh.open_sftp()
-                        sftp.put(local_script, remote_script)
-                        sftp.close()
+                        ssh_client.put_file(local_script, remote_script)
 
                         # 3. 执行脚本，实时读取进度
                         worker.info_signal.emit(('filter_phase', 'running'))
@@ -1818,7 +1814,7 @@ class ResourceMonitorDialog2(QDialog, resource_monitor_dlg.Ui_Dialog):
         """打开监控绘图窗口（直接打开，按需加载数据）"""
         logger.info("【监控绘图】点击监控绘图按钮，开始打开窗口")
         data_path = self.monitor_data_path + '/Monitor'
-        logger.info("【监控绘图】数据目录: %s", data_path)
+        logger.info("【监控绘图】数据目录: %s", str(data_path).replace('\\', '/'))
 
         # 服务器模式下传服务器配置，用于增量更新
         server_config = None

@@ -1,6 +1,8 @@
 # 当前进度与待办
 
 ## 已完成（2026-11 近期）
+- 界面简化一轮（用户推动）：四区域标题控件从源头删除（UI/MainWindow.py 为唯一源无 .ui）；清屏/指令管理挪入终端标签页连接条（清屏按标签各自清）；全局"结束所有/开始所有"按钮及 stop_sc/execute_all_buttons 删除，批量操作收敛为分组工具栏 全选/执行选中/停止选中 一套；get_files 修复三连（tar -T 参数错位、默认包名 .tar.gz 名不副实、源目录壳条目进打包列表致筛选失效+重复条目）；_print_progress 100% 档 logger.info() 零参调用残留导致所有下载到 100% 即失败；root 家目录推导 /home/root→/root（derive_home 单一真相源收口 10 处）；呈现层路径统一正斜杠 11 处；文件浏览器列标题三态排序；多数修改**待真机回归**
+- sudo 能力连接期探测 + 传输按权限分层：connect() 探测缓存 sudo_ok；get_files 非 root 无 sudo 时全程不提权（部分成功语义）；文件浏览器下载改直传（get_file/get_dir）+ 失败询问 sudo 兜底；双击打开对齐；死代码 self.sudo/get_root_priority 清理。冒烟通过，**待用户真机实测**（无 sudo 用户下载、浏览器直传/兜底弹窗、中止）
 - 终端回显接收循环改阻塞式读取（ssh_tools.get_output_continue）：原 sleep(0.1)+recv_ready 轮询平均引入 50ms 按键延迟、吞吐上限 40KB/s；现 channel.settimeout(0.5) 阻塞 recv + 抽干缓冲 + 增量 UTF-8 解码（修跨包乱码），空闲期 0.5s 做健康检查，超时语义保留历史 3 倍行为
 - 弱网控制窗口 + 服务器列表编辑窗口改为自动落盘（600ms 防抖，启动/停止/关闭前冲刷）：删除手动保存按钮/关闭时三问/_original_* 快照，启动与停止前冲刷防抖；服务器列表 del/clear 行需手动调度（removeRow 不触发 cellChanged），主窗口 server_cfg_dialog 不再依赖 accept 返回码
 - 弱网 sudo 提权（方案A+C）：脚本内 sudo tc + 凭据缓存，启动前三连探测（sudo 存在/密码/tc 存在）失败给明确原因，停止命令同步提权；脚本第4参数传密码（单引号包裹）
